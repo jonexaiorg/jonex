@@ -1,0 +1,113 @@
+{
+  "common": {
+    "search": "Search",
+    "download": "Download",
+    "preview": "Preview",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "edit": "Edit",
+    "delete": "Delete",
+    "add": "Add",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "loading": "Loading...",
+    "noData": "No data available",
+    "error": "Error",
+    "success": "Success",
+    "yes": "Yes",
+    "no": "No",
+    "times": " times",
+    "years": " Years",
+    "year": " Year",
+    "months": " months",
+    "operationSuccessful": "Operation successful",
+    "pass": "pass",
+    "notPass": "not pass",
+    "clearFilters": "Clear Filters",
+    "backTo": "Back to {{title}}",
+    "copySuccess": "Copy Success",
+    "saveSuccess": "Save Success",
+    "prompt": "Prompt",
+    "noChanges": "No changes",
+    "columnsSettings": "Columns Settings",
+    "selectAll": "Select All",
+    "loginSuccess": "Login Success",
+    "logoutFailed": "Logout Failed",
+    "deleteSuccess": "Delete Success",
+    "page": "Page",
+    "chapters": "Chapters",
+    "interrupt": "Interrupt",
+    "totalPage": "Total {{total}}",
+    "dataError": "Data error",
+    "pageNotFound": "Page not found",
+    "backHome": "Back to home"
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signInSSO": "Sign in with Company SSO",
+    "signOut": "Sign Out",
+    "email": "Email",
+    "password": "Password",
+    "verificationCode": "Verification code",
+    "rememberMe": "Remember me",
+    "forgotPassword": "Forgot password?",
+    "signInDescription": "Access your management dashboard",
+    "welcomeBack": "Welcome back",
+    "neddHelp": "Need help accessing your account?",
+    "systemAdmin": "System Administrator",
+    "admin": "admin",
+    "user": "user",
+    "orContinueEmail": "Or continue with email",
+    "expired": "Login expired, please sign in again"
+  },
+  "reset": {
+    "forgotPassword": "Forgot Password",
+    "forgotPasswordDescription": "Enter your email address and we'll send you a link to reset your password.",
+    "emailAddress": "Email Address",
+    "send": "Send Reset Link",
+    "BackToLogin": "Back to Login"
+  },
+  "rules": {
+    "required": "Please fill in this field",
+    "email": "Please enter your email",
+    "yourEmail": "your.email@example.com",
+    "verificationCode": "Please enter the verification code",
+    "invalidEmail": "Please enter a valid email address",
+    "verificationCodeDesc": "Enter the verification code shown in the image",
+    "password": "Please enter your password",
+    "minLength": "Minimum length is {{min}} characters",
+    "maxLength": "Maximum length is {{max}} characters",
+    "placeholder": "Please enter",
+    "selectPlaceholder": "Please select",
+    "confirmDelete": "Are you sure to delete this data?"
+  },
+  "language": {
+    "chinese": "中文",
+    "english": "English",
+    "switchLanguage": "Switch Language"
+  },
+  "error": {
+    "401": "Unauthorized access. Please sign in.",
+    "403": "Forbidden. You don't have permission to access this resource.",
+    "404": "Page not found.",
+    "500": "Internal server error. Please try again later.",
+    "network": "Network error. Please check your connection."
+  },
+  "navigation": {
+    "home": "Home"
+  },
+  "site": {
+    "title": "{{APP_TITLE}}"
+  },
+  "status": {
+    "ongoing": "Ongoing",
+    "completed": "Completed",
+    "paused": "Paused",
+    "planned": "Planned",
+    "allStatus": "All Status",
+    "success": "Success",
+    "failed": "Failed"
+  }
+}

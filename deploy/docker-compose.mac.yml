@@ -1,0 +1,14 @@
+# ============================================================
+# Development-only configuration for services.
+# Service dependency and startup ordering for services.
+# Development-only configuration for services.
+# macOS-specific configuration for services.
+# ============================================================
+
+services:
+  atomic-rag:
+    environment:
+      MINERU_BACKEND: pipeline
+      RAG_WORKER_NUM: "1"
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"

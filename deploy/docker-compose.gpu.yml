@@ -1,0 +1,16 @@
+# ============================================================
+# Configuration note for services.
+# Default configuration for services.
+# parser configuration for services.
+# GPU-specific configuration for services.
+# ============================================================
+
+services:
+  atomic-rag:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

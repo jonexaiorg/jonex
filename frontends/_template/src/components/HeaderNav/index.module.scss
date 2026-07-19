@@ -1,0 +1,126 @@
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  background-color: #fff;
+  border-bottom: 1px solid #e5e5e5;
+  height: 68px;
+  overflow: hidden;
+
+  .left {
+    display: flex;
+    align-items: center;
+    flex: 1;
+
+    .btnBack {
+      color: #fafafa;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .logo {
+      cursor: pointer;
+      margin: 0 24px 0 0;
+      color: #0a0a0a;
+      font-weight: 600;
+      font-size: 24px;
+    }
+
+    .title {
+      margin: 0 0 0 10px;
+    }
+
+    .menuBox {
+      flex: 1;
+      height: 68px;
+      overflow: hidden;
+      font-weight: 500;
+      font-size: 14px;
+    }
+  }
+
+  .right {
+    display: flex;
+    align-items: center;
+  }
+}
+
+.headerBack {
+  background-color: var(--primary-color);
+
+  .left {
+    .logo, .title {
+      color: #fff !important;
+    }
+  }
+
+  .avatar {
+    border: solid 1px #fff;
+  }
+}
+
+.dropdownRenderBox {
+  background-color: #fff;
+  border-radius: 6px;
+  box-shadow: 0 8px 16px rgba(31, 35, 41, 0.1);
+  border: 1px solid rgb(222, 224, 227);
+  width: 280px;
+  padding: 0;
+
+  .topBox {
+    padding: 15px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    overflow: hidden;
+    gap: 10px;
+  }
+
+  .userBox {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .logoutBox {
+    height: 40px;
+    padding: 0 12px;
+    line-height: 40px;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(31, 35, 41, 0.15);
+    }
+  }
+}
+
+.avatar {
+  background-color: var(--primary-color);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 768px) {
+  .header {
+    .left {
+      height: 48px;
+
+      .logo {
+        font-size: 14px;
+        margin-right: 8px;
+      }
+
+      .menuBox {
+        display: none;
+      }
+    }
+  }
+}

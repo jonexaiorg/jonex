@@ -1,0 +1,70 @@
+.user-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.tenant-panel {
+  width: 220px;
+  flex-shrink: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.tenant-panel-header {
+  padding: 16px 20px;
+  font-weight: 600;
+  font-size: 15px;
+  color: #0b2b5c;
+  border-bottom: 1px solid #e8edf3;
+}
+
+.tenant-list {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.tenant-item {
+  padding: 12px 20px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-left: 3px solid transparent;
+  transition: all 0.15s;
+  font-size: 14px;
+  color: #334155;
+  user-select: none;
+}
+
+.tenant-item:hover {
+  background: #f8fafc;
+}
+
+.tenant-item.active {
+  background: #eff6ff;
+  border-left-color: #3b82f6;
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+.tenant-item .tenant-count {
+  font-size: 12px;
+  color: #94a3b8;
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 400;
+}
+
+.tenant-item.active .tenant-count {
+  background: #dbeafe;
+  color: #3b82f6;
+}
+
+.user-main {
+  flex: 1;
+  min-width: 0;
+}

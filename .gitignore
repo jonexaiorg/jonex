@@ -1,0 +1,136 @@
+# Python bytecode, caches, and packaging artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+site/
+*.whl
+*.tar
+*.tar.gz
+*.tgz
+
+# Python environments and tool caches
+.venv/
+.venv-*/
+venv/
+env/
+.tox/
+.cache/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.gradio/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Keep reproducible dependency lock files in version control:
+#   /uv.lock
+#   /frontends/pnpm-lock.yaml
+**/package-lock.json
+**/yarn.lock
+
+# Environment files. Public examples are explicitly allowed.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+.env.backup.*
+
+# Local-only runtime configuration
+*.local.yaml
+*.local.yml
+capability_runtime.local.yaml
+
+# IDEs and local AI tooling
+.idea/
+.vscode/
+.kiro/
+.claude/
+.agents/
+.jules/
+.planning/
+.worktrees/
+*.code-workspace
+launch.json
+settings.json
+*.sw?
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Frontend dependencies and build output
+**/node_modules/
+frontends/**/dist/
+frontends/**/dist-ssr/
+frontends/**/.vite/
+frontends/**/.turbo/
+frontends/**/coverage/
+frontends/**/*.local
+frontends/**/npm-debug.log*
+frontends/**/yarn-debug.log*
+frontends/**/yarn-error.log*
+frontends/**/pnpm-debug.log*
+frontends/**/lerna-debug.log*
+
+# Logs and reports
+logs/
+log/
+.dev-logs/
+frontends/.dev-logs/
+*.log
+*.log.*
+*.logfire
+test-results/
+
+# Runtime data and generated storage
+inputs/
+output/
+data/
+!frontends/*/src/data/
+!frontends/*/src/data/**
+rag_storage/
+.lightrag_data/
+local_neo4jWorkDir/
+neo4jWorkDir/
+*.sqlite
+*.sqlite3
+*.db
+prompts/entity_type/
+lightrag/evaluation/results/
+parse_output/
+
+# Temporary and scratch files
+.tmp_*/
+tmp/
+temp/
+*.tmp
+.history/
+/test_*
+/dickens*/
+/book.txt
+/ag2_demo_workdir/
+ignore_this.txt
+*.ignore.*
+jonex.ps1.bak
+memory-bank/
+/memory/
+.mcp.json
+.playwright-mcp/
+.codegraph/
+
+# Generated local Docker Compose overrides
+docker-compose.local.yml
+docker-compose.generated.yml
+
+# Operating-system files
+.DS_Store
+Thumbs.db

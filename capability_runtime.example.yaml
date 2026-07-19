@@ -1,0 +1,61 @@
+# ============================================================
+# Configuration note for this setting.
+# ------------------------------------------------------------
+# Configuration note for this setting.
+# Default configuration for this setting.
+# Sidecar configuration for this setting.
+# Configuration note for this setting.
+#
+# Configuration note for this setting.
+# Configuration note for this setting.
+# Path configuration for atomic.
+# Default configuration for atomic.
+#
+# Configuration note for atomic.
+# Configuration note for atomic.
+# ============================================================
+
+atomic:
+  # Default configuration for llm.qwen.
+  llm.qwen:
+    mode: local
+    options:
+      timeout: 30
+
+  vector.milvus:
+    mode: local
+
+  audio.asr:
+    mode: local
+
+  rag.lightrag:
+    mode: remote
+    endpoint: ${SIDECAR_URL:-http://localhost:8001}
+    options:
+      timeout: 60
+
+  # Configuration note for this setting.
+  # audio.asr:
+  #   mode: remote
+  #   endpoint: ${SIDECAR_URL:-http://localhost:8001}
+  #   options:
+  #     timeout: 60
+
+  # Configuration note for domain.
+  # llm.qwen:
+  #   mode: mock
+  #   options:
+  #     embedding_dim: 1536
+
+# Configuration note for domain.
+domain:
+  domain.rag.text.v1:
+    mode: remote
+    endpoint: ${SIDECAR_URL:-http://localhost:8001}
+    options:
+      timeout: 60
+
+# domain:
+#   domain.knowledge.semantic_search.v1:
+#     mode: remote
+#     endpoint: ${SIDECAR_URL}

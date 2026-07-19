@@ -1,0 +1,18 @@
+{
+  "name": "@jonex/dev-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Development Node.js gateway replacing Nginx frontend-gateway for local dev",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "http-proxy": "^1.18.1"
+  },
+  "engines": {
+    "node": ">=20.18.0",
+    "pnpm": ">=9.0.0"
+  }
+}

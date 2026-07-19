@@ -1,0 +1,9 @@
+
+
+
+
+
+CREATE SCHEMA IF NOT EXISTS platform;
+CREATE SCHEMA IF NOT EXISTS knowledge_base;
+CREATE SCHEMA IF NOT EXISTS business_domain;
+CREATE SCHEMA IF NOT EXISTS metering;

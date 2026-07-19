@@ -1,0 +1,1 @@
+from capabilities.platform.auth.auth_service import AuthService

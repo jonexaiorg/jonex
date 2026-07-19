@@ -1,0 +1,25 @@
+{
+  "name": "@jonex/frontend-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=20.18.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev:gateway": "pnpm --filter @jonex/dev-gateway dev",
+    "dev:shell": "pnpm --filter @jonex/shell dev",
+    "dev:core-business": "pnpm --filter @jonex/core-business dev",
+    "dev:platform-management": "pnpm --filter @jonex/platform-management dev",
+    "dev:ecosystem-management": "pnpm --filter @jonex/ecosystem-management dev",
+    "build": "pnpm run build:shared && pnpm run build:apps",
+    "build:shared": "pnpm --filter @jonex/shell-sdk build",
+    "build:apps": "pnpm -r --filter @jonex/shell --filter @jonex/core-business --filter @jonex/platform-management --filter @jonex/ecosystem-management --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "i18n:check": "node scripts/check-i18n.mjs",
+    "lint": "pnpm -r --if-present lint"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5"
+  }
+}

@@ -1,0 +1,95 @@
+# ============================================================
+# Default configuration for version.
+# ============================================================
+# Configuration note for version.
+# Configuration note for version.
+# LLM configuration for version.
+
+version: 1
+domain: default
+
+entity_types:
+  - name: Organization
+    aliases: ["公司", "企业", "机构", "集团", "组织"]
+    attributes:
+      - { name: legal_name, type: string, required: false, description: "法定全称" }
+      - { name: industry, type: string, required: false, description: "所属行业" }
+
+  - name: Person
+    aliases: ["人", "人员", "个人", "员工"]
+    attributes:
+      - { name: title, type: string, required: false, description: "职位头衔" }
+
+  - name: Location
+    aliases: ["地点", "位置", "地区", "城市"]
+    attributes:
+      - { name: address, type: string, required: false }
+
+  - name: Product
+    aliases: ["产品", "服务", "解决方案"]
+    attributes:
+      - { name: model, type: string, required: false }
+
+  - name: Concept
+    aliases: ["概念", "术语", "定义"]
+    attributes: []
+
+  - name: Method
+    aliases: ["方法", "技术", "算法", "方法论"]
+    attributes: []
+
+  - name: Event
+    aliases: ["事件", "活动", "会议"]
+    attributes:
+      - { name: date, type: string, required: false }
+
+relation_types:
+  - name: BELONGS_TO
+    source: Person
+    target: Organization
+    description: "人员属于某个组织"
+
+  - name: PRODUCES
+    source: Organization
+    target: Product
+    description: "组织生产/提供产品"
+
+  - name: LOCATED_AT
+    source: Organization
+    target: Location
+    description: "组织位于某地"
+
+  - name: WORKS_WITH
+    source: Person
+    target: Person
+    description: "人员之间的协作关系"
+
+  - name: USES
+    source: Organization
+    target: Method
+    description: "组织使用某种方法"
+
+  - name: RELATES_TO
+    source: Concept
+    target: Concept
+    description: "概念之间的关联"
+
+  - name: PART_OF
+    source: Concept
+    target: Product
+    description: "概念/功能属于某个产品/解决方案"
+
+  - name: HAS_FEATURE
+    source: Product
+    target: Concept
+    description: "产品/解决方案包含某概念/功能"
+
+constraints:
+  - type: required_attribute
+    entity: Organization
+    attribute: legal_name
+    severity: warning
+
+disambiguation:
+  case_insensitive: true
+  alias_merge: true

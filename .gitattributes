@@ -1,0 +1,12 @@
+# Shell scripts — must have LF shebang for Linux containers
+*.sh text eol=lf
+
+# Nginx configs — used in Linux containers
+deploy/nginx/*.conf text eol=lf
+frontends/*/nginx/*.conf text eol=lf
+
+# PowerShell scripts — always CRLF (Windows-native)
+*.ps1 text eol=crlf
+
+# Python files — auto (cross-platform compatible)
+*.py text

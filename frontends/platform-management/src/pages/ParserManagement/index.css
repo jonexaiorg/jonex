@@ -1,0 +1,132 @@
+.parser-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.parser-state,
+.parser-page-error {
+  grid-column: 1 / -1;
+  padding: 32px 16px;
+  border: 1px dashed #dbe4ef;
+  border-radius: 12px;
+  background: #fff;
+  color: #94a3b8;
+  font-size: 14px;
+  text-align: center;
+}
+
+.parser-page-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+  text-align: left;
+}
+
+.parser-page-error button {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.parser-page-error button:hover {
+  background: #b91c1c;
+}
+
+.parser-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 24px;
+  transition: box-shadow 0.2s;
+}
+
+.parser-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.parser-card.grey {
+  opacity: 0.5;
+}
+
+.parser-card .future-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: #f1f5f9;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.parser-card .parser-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+}
+
+.parser-card h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.parser-card .parser-desc {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 12px;
+}
+
+.parser-card .parser-meta {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 12px;
+}
+
+.parser-card .parser-meta span {
+  margin-right: 16px;
+}
+
+.parser-card .form-row {
+  margin-bottom: 10px;
+}
+
+.parser-card .form-row label {
+  display: block;
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 2px;
+}
+
+.parser-card .status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+
+.parser-card .status-dot.green {
+  background: #22c55e;
+}
+
+@media (max-width: 1200px) {
+  .parser-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .parser-grid {
+    grid-template-columns: 1fr;
+  }
+}

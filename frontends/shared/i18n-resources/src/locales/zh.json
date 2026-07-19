@@ -1,0 +1,109 @@
+{
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "delete": "删除",
+    "edit": "编辑",
+    "create": "新建",
+    "search": "搜索",
+    "reset": "重置",
+    "submit": "提交",
+    "back": "返回",
+    "more": "更多",
+    "operation": "操作",
+    "status": "状态",
+    "loading": "加载中...",
+    "noData": "暂无数据",
+    "retry": "重试",
+    "detail": "详情",
+    "close": "关闭",
+    "yes": "是",
+    "no": "否",
+    "all": "全部",
+    "export": "导出",
+    "import": "导入"
+  },
+  "auth": {
+    "login": "登录",
+    "logout": "退出登录",
+    "username": "用户名",
+    "password": "密码",
+    "admin": "管理员",
+    "user": "普通用户",
+    "loginSuccess": "登录成功",
+    "loginFailed": "登录失败",
+    "sessionExpired": "会话已过期，请重新登录",
+    "noPermission": "暂无权限访问"
+  },
+  "error": {
+    "networkError": "网络异常，请稍后重试",
+    "requestFailed": "请求失败",
+    "unknownError": "未知错误",
+    "timeout": "请求超时",
+    "notFound": "页面不存在",
+    "serverError": "服务器错误",
+    "tryAgain": "请稍后重试",
+    "contactAdmin": "请联系管理员"
+  },
+  "navigation": {
+    "home": "首页",
+    "settings": "设置",
+    "profile": "个人中心",
+    "help": "帮助",
+    "coreBusiness": "核心功能",
+    "knowledgeSearch": "领域知识检索",
+    "domainKnowledge": "领域知识库",
+    "domainManagement": "领域服务",
+    "platformManagement": "平台",
+    "administration": "管理后台",
+    "engineManagement": "引擎管理",
+    "dataAccess": "数据源",
+    "parserManagement": "解析器",
+    "modelAdapter": "模型适配器",
+    "promptTemplates": "提示词模板",
+    "tenantManagement": "租户",
+    "userManagement": "用户",
+    "rolePermission": "角色权限",
+    "systemConfig": "系统设置",
+    "operationLog": "审计日志",
+    "ecosystemManagement": "集成",
+    "ecoAdapter": "集成适配器",
+    "adapterList": "适配器目录",
+    "skills": "技能库",
+    "skillManagement": "技能管理",
+    "templateDomains": "领域模板"
+  },
+  "rules": {
+    "required": "请输入{{field}}",
+    "selectRequired": "请选择{{field}}",
+    "maxLength": "最多输入{{max}}个字符",
+    "minLength": "至少输入{{min}}个字符",
+    "email": "请输入正确的邮箱格式",
+    "phone": "请输入正确的手机号"
+  },
+  "status": {
+    "enabled": "启用",
+    "disabled": "禁用",
+    "active": "活跃",
+    "inactive": "停用",
+    "pending": "待处理",
+    "processing": "处理中",
+    "completed": "已完成",
+    "failed": "失败",
+    "draft": "草稿"
+  },
+  "language": {
+    "switch": "切换语言",
+    "zh": "中文",
+    "en": "English"
+  },
+  "site": {
+    "title": "Jonex Platform",
+    "subtitle": "AI 能力平台"
+  },
+  "space": {
+    "select": "选择领域空间",
+    "add": "添加领域空间"
+  }
+}

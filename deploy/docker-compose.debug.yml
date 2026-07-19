@@ -1,0 +1,68 @@
+# Host-side single-service debugging. Production uses docker-compose.yml only.
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  milvus:
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+
+  gateway:
+    ports:
+      - "8000:8000"
+
+  sidecar:
+    ports:
+      - "8001:8000"
+    environment:
+      KNOWLEDGE_BASE_URL: http://host.docker.internal:8003
+      BUSINESS_DOMAIN_URL: http://host.docker.internal:8005
+      ATOMIC_RAG_URL: http://host.docker.internal:8004
+      PLATFORM_URL: http://host.docker.internal:8006
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  llm-gateway:
+    ports:
+      - "8787:8787"
+
+  lightrag:
+    ports:
+      - "9621:9621"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  atomic-rag:
+    ports:
+      - "8004:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "lightrag:host-gateway"
+
+  knowledge-base-service:
+    ports:
+      - "8003:8000"
+
+  business-domain-service:
+    ports:
+      - "8005:8000"
+
+  platform-service:
+    ports:
+      - "8006:8000"
+
+  neo4j:
+    ports:
+      - "7474:7474"
+      - "7687:7687"

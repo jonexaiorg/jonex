@@ -1,0 +1,3 @@
+recursive-include lightrag/api/webui *
+recursive-include lightrag/api/static *
+include scripts/build_server_wheel.py

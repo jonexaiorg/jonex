@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+
+
+
+
+
+
+
+
+
+ARG PYTHON_BASE=jonex/python-base:local
+FROM ${PYTHON_BASE} AS base
+
+WORKDIR /app
+
+
+COPY jonex_core/ ./jonex_core/
+COPY capabilities/ ./capabilities/
+
+
+COPY api_gateway/ ./api_gateway/
+
+
+COPY run_gateway.py .
+
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+
+EXPOSE 8000
+
+
+CMD ["uvicorn", "api_gateway.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

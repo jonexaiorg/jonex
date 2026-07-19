@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 2,
+  "updatedAt": "2026-05-23T00:00:00+08:00",
+  "apps": [
+    {
+      "id": "core-business",
+      "name": "业务领域管理",
+      "description": "知识检索、领域空间、领域知识管理",
+      "enabled": true,
+      "order": 100,
+      "category": "core-business",
+      "icon": "SearchOutlined",
+      "basePath": "/apps/core-business",
+      "standaloneUrl": "/core-business/",
+      "entry": "/remotes/core-business/assets/remoteEntry.js",
+      "scope": "coreBusiness",
+      "module": "./Mount",
+      "apiPrefix": "/api/v1/core-business",
+      "roles": ["admin", "user"],
+      "routes": {
+        "hostedBase": "/apps/core-business",
+        "standaloneBase": "/core-business"
+      },
+      "remote": {
+        "type": "module-federation",
+        "scope": "coreBusiness",
+        "module": "./Mount",
+        "entry": "/remotes/core-business/assets/remoteEntry.js"
+      },
+      "health": {
+        "url": "/remotes/core-business/version.json",
+        "timeoutMs": 3000
+      },
+      "permissions": {
+        "visibleRoles": ["admin", "user"]
+      },
+      "fallback": {
+        "mode": "standalone",
+        "url": "/core-business/"
+      },
+      "version": {
+        "expected": "1.x",
+        "source": "/remotes/core-business/version.json"
+      }
+    },
+    {
+      "id": "platform-management",
+      "name": "平台管理",
+      "description": "租户、用户、角色、任务、系统配置管理",
+      "enabled": true,
+      "order": 300,
+      "category": "platform-management",
+      "icon": "SettingOutlined",
+      "basePath": "/apps/platform-management",
+      "standaloneUrl": "/platform-management/",
+      "entry": "/remotes/platform-management/assets/remoteEntry.js",
+      "scope": "platformManagement",
+      "module": "./Mount",
+      "apiPrefix": "/api/v1/platform-management",
+      "roles": ["admin"],
+      "routes": {
+        "hostedBase": "/apps/platform-management",
+        "standaloneBase": "/platform-management"
+      },
+      "remote": {
+        "type": "module-federation",
+        "scope": "platformManagement",
+        "module": "./Mount",
+        "entry": "/remotes/platform-management/assets/remoteEntry.js"
+      },
+      "health": {
+        "url": "/remotes/platform-management/version.json",
+        "timeoutMs": 3000
+      },
+      "permissions": {
+        "visibleRoles": ["admin"]
+      },
+      "fallback": {
+        "mode": "standalone",
+        "url": "/platform-management/"
+      },
+      "version": {
+        "expected": "1.x",
+        "source": "/remotes/platform-management/version.json"
+      }
+    },
+    {
+      "id": "ecosystem-management",
+      "name": "生态管理",
+      "description": "适配器、业务商场、应用场景管理",
+      "enabled": true,
+      "order": 400,
+      "category": "ecosystem-management",
+      "icon": "AppstoreOutlined",
+      "basePath": "/apps/ecosystem-management",
+      "standaloneUrl": "/ecosystem-management/",
+      "entry": "/remotes/ecosystem-management/assets/remoteEntry.js",
+      "scope": "ecosystemManagement",
+      "module": "./Mount",
+      "apiPrefix": "/api/v1/ecosystem-management",
+      "roles": ["admin", "user"],
+      "routes": {
+        "hostedBase": "/apps/ecosystem-management",
+        "standaloneBase": "/ecosystem-management"
+      },
+      "remote": {
+        "type": "module-federation",
+        "scope": "ecosystemManagement",
+        "module": "./Mount",
+        "entry": "/remotes/ecosystem-management/assets/remoteEntry.js"
+      },
+      "health": {
+        "url": "/remotes/ecosystem-management/version.json",
+        "timeoutMs": 3000
+      },
+      "permissions": {
+        "visibleRoles": ["admin", "user"]
+      },
+      "fallback": {
+        "mode": "standalone",
+        "url": "/ecosystem-management/"
+      },
+      "version": {
+        "expected": "1.x",
+        "source": "/remotes/ecosystem-management/version.json"
+      }
+    }
+  ]
+}

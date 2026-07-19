@@ -1,0 +1,29 @@
+# ============================================================
+# atomic-rag 容器专属依赖
+# 此镜像包含 RAG 解析相关依赖，检索/图谱由 lightrag 容器承担
+# ============================================================
+
+# ========== HTTP 客户端（调用 lightrag-server）
+httpx>=0.27.0,<0.28.0
+
+# ========== 文档解析器
+# PyMuPDF（默认 MVP 解析器，适合纯文本 PDF）
+pymupdf~=1.24
+
+# mineru（中文复杂文档，依赖重，需模型缓存与预热；启用前把 RAG_PARSER 改为 mineru）
+# mineru[pipeline]>=2.0.0,<3.0.0
+
+# docling（IBM 文档解析器，可选）
+# docling>=1.0.0
+
+# paddleocr（百度 OCR，可选）
+# paddleocr>=2.7.0
+
+# ========== 向量模型依赖
+# NOTE(jonex): 已移除 sentence-transformers（~2.7.0）。
+#   全仓 jonex_core / raganything 对其零引用，embedding 统一经 llm-gateway；
+#   它会拉入 torch + torchvision（约 1.2G+16M），是 atomic-rag 镜像最大瘦身项之一。
+#   如将来确需本地嵌入，再按需在对应 profile 显式加回。
+
+# ========== 腾讯云 SDK（MPS 视频智能分析）
+tencentcloud-sdk-python>=3.0.0

@@ -1,0 +1,292 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: Sidecar",
+      "consoleName": "Sidecar",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "program": "${workspaceFolder}/main.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env.local",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "CAPABILITY_RUNTIME_FILE": "${workspaceFolder}/deploy/config/capability_runtime.yaml"
+      }
+    },
+    {
+      "name": "Backend: API Gateway",
+      "consoleName": "API Gateway",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "program": "${workspaceFolder}/run_gateway.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env.local",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "CAPABILITY_RUNTIME_FILE": "${workspaceFolder}/deploy/config/capability_runtime.yaml"
+      }
+    },
+    {
+      "name": "Backend: Capability - Knowledge Base",
+      "consoleName": "Knowledge Base",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "program": "${workspaceFolder}/deploy/start_capability.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env.local",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "CAPABILITY_KIND": "business",
+        "CAPABILITY_NAME": "knowledge_base",
+        "SERVICE_PORT": "8003",
+        "SERVICE_ENDPOINT": "http://127.0.0.1:8003",
+        "CAPABILITY_RUNTIME_FILE": "${workspaceFolder}/deploy/config/capability_runtime.yaml"
+      }
+    },
+    {
+      "name": "Backend: Capability - Business Domain",
+      "consoleName": "Business Domain",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "program": "${workspaceFolder}/deploy/start_capability.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env.local",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "CAPABILITY_KIND": "business",
+        "CAPABILITY_NAME": "business_domain",
+        "SERVICE_PORT": "8005",
+        "SERVICE_ENDPOINT": "http://127.0.0.1:8005",
+        "CAPABILITY_RUNTIME_FILE": "${workspaceFolder}/deploy/config/capability_runtime.yaml"
+      }
+    },
+    {
+      "name": "Backend: Capability - Platform",
+      "consoleName": "Platform",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "program": "${workspaceFolder}/deploy/start_capability.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env.local",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "CAPABILITY_KIND": "business",
+        "CAPABILITY_NAME": "platform",
+        "SERVICE_PORT": "8006",
+        "SERVICE_ENDPOINT": "http://127.0.0.1:8006",
+        "CAPABILITY_RUNTIME_FILE": "${workspaceFolder}/deploy/config/capability_runtime.yaml"
+      }
+    },
+    {
+      "name": "Backend: LightRAG",
+      "consoleName": "LightRAG",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv-atomic-rag/bin/python",
+      "module": "lightrag.api.lightrag_server",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env.local.rag.local",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": "${workspaceFolder}/Reference/LightRAG",
+        "HOST": "0.0.0.0",
+        "PORT": "9621",
+        "WORKERS": "1",
+        "WORKING_DIR": "${workspaceFolder}/.lightrag_data/rag_storage",
+        "INPUT_DIR": "${workspaceFolder}/.lightrag_data/inputs",
+        "LLM_BINDING_HOST": "http://127.0.0.1:8787/v1",
+        "LLM_BINDING_API_KEY": "CHANGE_ME_LIGHTRAG",
+        "EMBEDDING_BINDING_HOST": "http://127.0.0.1:8787/v1",
+        "EMBEDDING_BINDING_API_KEY": "CHANGE_ME_LIGHTRAG"
+      }
+    },
+    {
+      "name": "Backend: Capability - Atomic RAG",
+      "consoleName": "Atomic RAG",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv-atomic-rag/bin/python",
+      "program": "${workspaceFolder}/deploy/start_capability.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env.local.local",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "CAPABILITY_KIND": "atomic",
+        "CAPABILITY_NAME": "rag.lightrag",
+        "SERVICE_PORT": "8004",
+        "SERVICE_ENDPOINT": "http://127.0.0.1:8004",
+        "CAPABILITY_RUNTIME_FILE": "${workspaceFolder}/deploy/config/capability_runtime.yaml",
+        "LIGHTRAG_API_URL": "http://127.0.0.1:9621",
+        "LIGHTRAG_API_TIMEOUT": "300"
+      }
+    },
+    {
+      "name": "Frontend: Shell",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/frontends",
+      "command": "pnpm run dev:shell"
+    },
+    {
+      "name": "Frontend: Core Business",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/frontends",
+      "command": "pnpm run dev:core-business"
+    },
+    {
+      "name": "Frontend: Ecosystem Management",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/frontends",
+      "command": "pnpm run dev:ecosystem-management"
+    },
+    {
+      "name": "Frontend: Platform Management",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/frontends",
+      "command": "pnpm run dev:platform-management"
+    },
+    {
+      "name": "Browser: Shell",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/frontends",
+      "sourceMaps": true
+    },
+    {
+      "name": "Browser: Template Domains",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173/apps/ecosystem-management/template-domains",
+      "webRoot": "${workspaceFolder}/frontends",
+      "sourceMaps": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Backend: All",
+      "configurations": [
+        "Backend: Sidecar",
+        "Backend: API Gateway",
+        "Backend: Capability - Knowledge Base",
+        "Backend: Capability - Business Domain",
+        "Backend: Capability - Platform",
+        "Backend: LightRAG",
+        "Backend: Capability - Atomic RAG"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Frontend: All",
+      "configurations": [
+        "Frontend: Shell",
+        "Frontend: Core Business",
+        "Frontend: Ecosystem Management",
+        "Frontend: Platform Management"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Debug: Core Business",
+      "configurations": [
+        "Backend: Sidecar",
+        "Backend: API Gateway",
+        "Backend: Capability - Business Domain",
+        "Frontend: Shell",
+        "Frontend: Core Business",
+        "Browser: Shell"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Debug: Ecosystem Management",
+      "configurations": [
+        "Backend: Sidecar",
+        "Backend: API Gateway",
+        "Backend: Capability - Business Domain",
+        "Frontend: Shell",
+        "Frontend: Ecosystem Management",
+        "Browser: Shell"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Debug: Platform Management",
+      "configurations": [
+        "Backend: Sidecar",
+        "Backend: API Gateway",
+        "Backend: Capability - Platform",
+        "Frontend: Shell",
+        "Frontend: Platform Management",
+        "Browser: Shell"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Debug: Template Domains",
+      "configurations": [
+        "Backend: Sidecar",
+        "Backend: API Gateway",
+        "Backend: Capability - Business Domain",
+        "Frontend: Shell",
+        "Frontend: Ecosystem Management",
+        "Browser: Template Domains"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Debug: RAG Services",
+      "configurations": [
+        "Backend: Sidecar",
+        "Backend: API Gateway",
+        "Backend: Capability - Knowledge Base",
+        "Backend: LightRAG",
+        "Backend: Capability - Atomic RAG",
+        "Frontend: Shell",
+        "Browser: Shell"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Jonex: Full Stack",
+      "configurations": [
+        "Backend: Sidecar",
+        "Backend: API Gateway",
+        "Backend: Capability - Knowledge Base",
+        "Backend: Capability - Business Domain",
+        "Backend: Capability - Platform",
+        "Backend: LightRAG",
+        "Backend: Capability - Atomic RAG",
+        "Frontend: Shell",
+        "Frontend: Core Business",
+        "Frontend: Ecosystem Management",
+        "Frontend: Platform Management",
+        "Browser: Shell"
+      ],
+      "stopAll": true
+    }
+  ]
+}

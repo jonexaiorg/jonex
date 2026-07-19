@@ -1,0 +1,10 @@
+packages:
+  - '*'
+  - 'shared/*'
+  - 'dev-gateway'
+verifyDepsBeforeRun: false
+confirmModulesPurge: false
+managePackageManagerVersions: false
+allowBuilds:
+  '@parcel/watcher': false
+  esbuild: false

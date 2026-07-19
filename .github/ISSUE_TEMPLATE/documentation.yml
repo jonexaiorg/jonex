@@ -1,0 +1,32 @@
+name: Documentation issue
+description: Report missing, incorrect, or confusing public documentation
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Document or page
+      placeholder: README.md, deploy/README.md, or URL
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Explain what is missing, incorrect, outdated, or unclear.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing documentation issues.
+          required: true
+        - label: I removed credentials, private URLs, and personal data.
+          required: true

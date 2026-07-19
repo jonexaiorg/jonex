@@ -1,0 +1,45 @@
+{
+  "name": "@jonex/platform-management",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.18.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.2.3",
+    "@loadable/component": "^5.15.3",
+    "@jonex/i18n-resources": "workspace:*",
+    "@jonex/platform-theme": "workspace:*",
+    "@jonex/shell-sdk": "workspace:*",
+    "antd": "^6.4.3",
+    "axios": "^1.10.0",
+    "classnames": "^2.5.1",
+    "dayjs": "^1.11.13",
+    "dompurify": "^3.3.1",
+    "i18next": "^25.3.1",
+    "lodash": "^4.17.21",
+    "mobx": "^6.13.7",
+    "mobx-react-lite": "^4.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-i18next": "^15.6.0",
+    "react-router-dom": "^6.22.3",
+    "sass": "^1.89.2"
+  },
+  "devDependencies": {
+    "@originjs/vite-plugin-federation": "^1.4.1",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "^5.4.0",
+    "vite": "^4.5.2"
+  }
+}

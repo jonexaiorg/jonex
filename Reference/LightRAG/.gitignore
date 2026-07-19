@@ -1,0 +1,93 @@
+# Python-related files
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+*.tgz
+*.tar.gz
+*.ini
+
+# Virtual Environment
+.venv/
+venv/
+
+# Enviroment Variable Files
+.env
+.env.backup.*
+
+# Generated Docker Compose files (output of setup wizard)
+docker-compose.*.yml
+!docker-compose.podman.yml
+
+# Build / Distribution
+dist/
+build/
+site/
+
+# Logs / Reports
+*.log
+*.log.*
+*.logfire
+*.coverage/
+log/
+
+# Caches
+.cache/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.gradio/
+.history/
+temp/
+
+# IDE / Editor Files
+.idea/
+.vscode/
+.vscode/settings.json
+
+# Framework-specific files
+local_neo4jWorkDir/
+neo4jWorkDir/
+
+# Data & Storage
+inputs/
+output/
+rag_storage/
+data/
+
+# Runtime-provided entity type prompt profiles (keep sample files only)
+prompts/entity_type/
+
+# Evaluation results
+lightrag/evaluation/results/
+
+# Miscellaneous
+.DS_Store
+TODO.md
+ignore_this.txt
+*.ignore.*
+
+# Project-specific files
+/dickens*/
+/book.txt
+/ag2_demo_workdir/
+
+# Frontend build output (built during PyPI release)
+/lightrag/api/webui/
+
+# temporary test files in project root
+/test_*
+
+# Cline files
+memory-bank
+.claude/CLAUDE.md
+.claude/
+
+# Claude Code
+CLAUDE.md
+
+# Google Jules
+.jules/
+
+# native_parser/docx CLI output (audit JSONL + image dir)
+/parse_output/

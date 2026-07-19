@@ -1,0 +1,13 @@
+.page-layout {
+  font-size: 14px;
+  height: 100vh;
+  display: flex;
+
+  .page-content {
+    background: #fff;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    overflow-y: auto;
+  }
+}

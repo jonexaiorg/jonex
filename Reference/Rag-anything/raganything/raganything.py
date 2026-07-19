@@ -1,0 +1,881 @@
+"""
+Complete document parsing + multimodal content insertion Pipeline
+
+This script integrates:
+1. Document parsing (using configurable parsers)
+2. Pure text content LightRAG insertion
+3. Specialized processing for multimodal content (using different processors)
+"""
+
+import os
+from typing import Dict, Any, Optional, Callable
+import sys
+import asyncio
+import atexit
+from dataclasses import dataclass, field
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Add project root directory to Python path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Load environment variables from .env file BEFORE importing LightRAG
+# This is critical for TIKTOKEN_CACHE_DIR to work properly in offline environments
+# The OS environment variables take precedence over the .env file
+load_dotenv(dotenv_path=".env", override=False)
+
+from lightrag import LightRAG
+from lightrag.utils import logger
+
+# Import configuration and modules
+from raganything.config import RAGAnythingConfig
+from raganything.query import QueryMixin
+from raganything.processor import ProcessorMixin
+from raganything.batch import BatchMixin
+from raganything.utils import get_processor_supports
+from raganything.parser import MineruParser, SUPPORTED_PARSERS, get_parser
+from raganything.callbacks import CallbackManager
+from raganything.asr import get_asr_backend
+from raganything.asr.backends.legacy import LegacyFunctionBackend
+from raganything.asr.backends import *  # noqa: F401, F403 -- trigger registration
+from raganything.video_analysis.backends import *  # noqa: F401, F403 -- trigger registration
+from raganything.video_analysis import (
+    get_video_analysis_backend,
+    VideoAnalysisBackend,
+    VideoAnalysisResult,
+)
+
+# Import specialized processors
+from raganything.modalprocessors import (
+    ImageModalProcessor,
+    TableModalProcessor,
+    EquationModalProcessor,
+    GenericModalProcessor,
+    ContextExtractor,
+    ContextConfig,
+)
+
+
+@dataclass
+class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
+    """Multimodal Document Processing Pipeline - Complete document parsing and insertion pipeline"""
+
+    # Core Components
+    # ---
+    lightrag: Optional[LightRAG] = field(default=None)
+    """Optional pre-initialized LightRAG instance."""
+
+    llm_model_func: Optional[Callable] = field(default=None)
+    """LLM model function for text analysis."""
+
+    vision_model_func: Optional[Callable] = field(default=None)
+    """Vision model function for image analysis."""
+
+    embedding_func: Optional[Callable] = field(default=None)
+    """Embedding function for text vectorization."""
+
+    asr_model_func: Optional[Callable] = field(default=None)
+    """ASR model function for audio transcription. Must be synchronous.
+    Processor wraps in asyncio.to_thread. Required when enable_audio_processing=True."""
+
+    _asr_backend: Optional[Any] = field(default=None, init=False)
+    """Internal ASR backend instance, auto-selected or wrapped from asr_model_func."""
+
+    preprocess_audio_func: Optional[Callable] = field(default=None)
+    """Optional audio preprocessing function (resample, normalize, VAD).
+    Signature: (audio_path: str, output_dir: str) -> str (returns preprocessed path)."""
+
+    vlm_model_func: Optional[Callable] = field(default=None)
+    """VLM model function for video keyframe analysis. Used by VideoModalProcessor."""
+
+    config: Optional[RAGAnythingConfig] = field(default=None)
+    """Configuration object, if None will create with environment variables."""
+
+    # LightRAG Configuration
+    # ---
+    lightrag_kwargs: Dict[str, Any] = field(default_factory=dict)
+    """Additional keyword arguments for LightRAG initialization when lightrag is not provided.
+    This allows passing all LightRAG configuration parameters like:
+    - kv_storage, vector_storage, graph_storage, doc_status_storage
+    - top_k, chunk_top_k, max_entity_tokens, max_relation_tokens, max_total_tokens
+    - cosine_threshold, related_chunk_number
+    - chunk_token_size, chunk_overlap_token_size, tokenizer, tiktoken_model_name
+    - embedding_batch_num, embedding_func_max_async, embedding_cache_config
+    - llm_model_name, llm_model_max_token_size, llm_model_max_async, llm_model_kwargs
+    - rerank_model_func, vector_db_storage_cls_kwargs, enable_llm_cache
+    - max_parallel_insert, max_graph_nodes, addon_params, etc.
+    """
+
+    # Internal State
+    # ---
+    modal_processors: Dict[str, Any] = field(default_factory=dict, init=False)
+    """Dictionary of multimodal processors."""
+
+    context_extractor: Optional[ContextExtractor] = field(default=None, init=False)
+    """Context extractor for providing surrounding content to modal processors."""
+
+    parse_cache: Optional[Any] = field(default=None, init=False)
+    """Parse result cache storage using LightRAG KV storage."""
+
+    multimodal_status_cache: Optional[Any] = field(default=None, init=False)
+    """Compatibility KV storage for multimodal completion state."""
+
+    callback_manager: CallbackManager = field(
+        default_factory=CallbackManager, init=False, repr=False
+    )
+    """Processing callbacks manager (optional hooks for observability and metrics)."""
+
+    _parser_installation_checked: bool = field(default=False, init=False)
+    """Flag to track if parser installation has been checked."""
+
+    def __post_init__(self):
+        """Post-initialization setup following LightRAG pattern"""
+        # Initialize configuration if not provided
+        if self.config is None:
+            self.config = RAGAnythingConfig()
+
+        # Set working directory
+        self.working_dir = self.config.working_dir
+
+        # Set up logger (use existing logger, don't configure it)
+        self.logger = logger
+
+        # Set up document parser
+        self.doc_parser = get_parser(self.config.parser)
+
+        # Register close method for cleanup
+        atexit.register(self.close)
+
+        # Create working directory if needed
+        if not os.path.exists(self.working_dir):
+            os.makedirs(self.working_dir)
+            self.logger.info(f"Created working directory: {self.working_dir}")
+
+        # Log configuration info
+        self.logger.info("RAGAnything initialized with config:")
+        self.logger.info(f"  Working directory: {self.config.working_dir}")
+        self.logger.info(f"  Parser: {self.config.parser}")
+        self.logger.info(f"  Parse method: {self.config.parse_method}")
+        self.logger.info(
+            f"  Multimodal processing - Image: {self.config.enable_image_processing}, "
+            f"Table: {self.config.enable_table_processing}, "
+            f"Equation: {self.config.enable_equation_processing}, "
+            f"Audio: {self.config.enable_audio_processing}, "
+            f"Video: {self.config.enable_video_processing}"
+        )
+        self.logger.info(f"  Max concurrent files: {self.config.max_concurrent_files}")
+
+    def close(self):
+        """Cleanup resources when object is destroyed.
+
+        Handles three common scenarios:
+        1. Inside a running async context (e.g., FastAPI shutdown) -> schedule task
+        2. No event loop in thread (typical atexit) -> create one with asyncio.run()
+        3. Event loop exists but is closed/closing (atexit race) -> create new loop
+        """
+        # Release ASR backend first (synchronous, outside event loop concerns)
+        if getattr(self, '_asr_backend', None) is not None:
+            try:
+                self._asr_backend.close()
+                self._asr_backend = None
+            except Exception:
+                pass  # Silently ignore during shutdown
+
+        try:
+            import asyncio
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop is not None and loop.is_running():
+                # Case 1: We're inside a running event loop, schedule cleanup task
+                loop.create_task(self.finalize_storages())
+            else:
+                # Case 2/3: No running loop. Clean up any stale loop reference
+                # so asyncio.run() can create a fresh one (Python 3.10+ raises
+                # RuntimeError if a loop is already set for the thread).
+                if loop is not None:
+                    try:
+                        loop.close()
+                    except Exception:
+                        pass
+                    asyncio.set_event_loop(None)
+                asyncio.run(self.finalize_storages())
+        except Exception:
+            # Silently ignore during interpreter shutdown - the event loop and
+            # resources are being torn down anyway, and printing may fail if
+            # stdout/stderr are already closed. This avoids the noisy
+            # "There is no current event loop in thread 'MainThread'" warning
+            # that confused users (#135).
+            pass
+
+    def _create_context_config(self) -> ContextConfig:
+        """Create context configuration from RAGAnything config"""
+        return ContextConfig(
+            context_window=self.config.context_window,
+            context_mode=self.config.context_mode,
+            max_context_tokens=self.config.max_context_tokens,
+            include_headers=self.config.include_headers,
+            include_captions=self.config.include_captions,
+            filter_content_types=self.config.context_filter_content_types,
+        )
+
+    def _create_context_extractor(self) -> ContextExtractor:
+        """Create context extractor with tokenizer from LightRAG"""
+        if self.lightrag is None:
+            raise ValueError(
+                "LightRAG must be initialized before creating context extractor"
+            )
+
+        context_config = self._create_context_config()
+        return ContextExtractor(
+            config=context_config, tokenizer=self.lightrag.tokenizer
+        )
+
+    def _auto_create_vlm_func(self):
+        """Auto-create VLM function from vision binding config when not explicitly provided.
+
+        Reads VISION_BINDING_HOST / VISION_BINDING_API_KEY (fallback to LLM_BINDING_HOST/KEY),
+        constructs an OpenAI-compatible VLM wrapper that encodes image → base64 → API call.
+        Returns None if no binding host is configured.
+        """
+        vision_host = self.config.vision_binding_host or os.getenv("LLM_BINDING_HOST", "")
+        vision_key = self.config.vision_binding_api_key or os.getenv("LLM_BINDING_API_KEY", "")
+        if not vision_host:
+            return None
+
+        from lightrag.llm.openai import openai_complete_if_cache
+        import base64
+
+        vlm_model = self.config.vlm_model_name or "gpt-4o"
+
+        async def _vlm_func(image_path: str, prompt: str) -> str:
+            with open(image_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("utf-8")
+            return await openai_complete_if_cache(
+                vlm_model,
+                None,
+                system_prompt=None,
+                history_messages=[],
+                base_url=vision_host,
+                api_key=vision_key,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+                            },
+                        ],
+                    }
+                ],
+            )
+
+        _vlm_func.vlm_model = vlm_model
+        from raganything.image_transport import VLMSupport
+
+        _vlm_func.vlm_support = VLMSupport(
+            supports_url=True,
+            supports_base64=True,
+        )
+        return _vlm_func
+
+    def _initialize_processors(self):
+        """Initialize multimodal processors with appropriate model functions"""
+        if self.lightrag is None:
+            raise ValueError(
+                "LightRAG instance must be initialized before creating processors"
+            )
+
+        # Auto-create VLM function for video if not explicitly provided
+        if self.config.enable_video_processing and self.vlm_model_func is None:
+            self.vlm_model_func = self._auto_create_vlm_func()
+            if self.vlm_model_func is not None:
+                self.logger.info("Auto-created vlm_model_func from vision binding config")
+
+        # Create context extractor
+        self.context_extractor = self._create_context_extractor()
+
+        # Create different multimodal processors based on configuration
+        self.modal_processors = {}
+
+        if self.config.enable_image_processing:
+            self.modal_processors["image"] = ImageModalProcessor(
+                lightrag=self.lightrag,
+                modal_caption_func=self.vision_model_func or self.llm_model_func,
+                context_extractor=self.context_extractor,
+            )
+
+        if self.config.enable_table_processing:
+            self.modal_processors["table"] = TableModalProcessor(
+                lightrag=self.lightrag,
+                modal_caption_func=self.llm_model_func,
+                context_extractor=self.context_extractor,
+            )
+
+        if self.config.enable_equation_processing:
+            self.modal_processors["equation"] = EquationModalProcessor(
+                lightrag=self.lightrag,
+                modal_caption_func=self.llm_model_func,
+                context_extractor=self.context_extractor,
+            )
+
+        if self.config.enable_audio_processing:
+            from raganything.modalprocessors import AsrModalProcessor
+
+            if self.asr_model_func is not None:
+                # Manual asr_model_func -- wrap in LegacyFunctionBackend
+                self._asr_backend = LegacyFunctionBackend(
+                    self.config, self.asr_model_func
+                )
+                self.asr_model_func = self._asr_backend.create_func()
+            else:
+                # Auto-select from registry
+                backend_cls = get_asr_backend(self.config.asr_binding)
+                issues = backend_cls.validate_config(self.config)
+                if issues:
+                    msgs = [
+                        f"[{i['level']}] {i['field']}: {i['message']}"
+                        for i in issues
+                    ]
+                    raise RuntimeError(
+                        f"ASR backend '{self.config.asr_binding}' "
+                        f"configuration invalid: {'; '.join(msgs)}"
+                    )
+                self._asr_backend = backend_cls(self.config)
+                self.asr_model_func = self._asr_backend.create_func()
+
+            self.modal_processors["audio"] = AsrModalProcessor(
+                lightrag=self.lightrag,
+                modal_caption_func=self.llm_model_func,
+                asr_backend=self._asr_backend,
+                preprocess_audio_func=self.preprocess_audio_func,
+                config=self.config,
+                tokenizer=self.lightrag.tokenizer,
+                context_extractor=self.context_extractor,
+            )
+
+        if self.config.enable_video_processing:
+            from raganything.video_processor import VideoModalProcessor
+
+            # Video processing requires audio transcription (ASR backend).
+            # Auto-create it if not already initialized (e.g. when audio was disabled).
+            if not hasattr(self, "_asr_backend") or self._asr_backend is None:
+                try:
+                    if self.asr_model_func is not None:
+                        self._asr_backend = LegacyFunctionBackend(
+                            self.config, self.asr_model_func)
+                        self.asr_model_func = self._asr_backend.create_func()
+                        self.logger.info("Auto-created ASR backend for video audio track")
+                    else:
+                        backend_cls = get_asr_backend(self.config.asr_binding)
+                        issues = backend_cls.validate_config(self.config)
+                        if issues:
+                            msgs = [f"[{i['level']}] {i['field']}: {i['message']}"
+                                    for i in issues]
+                            self.logger.warning(
+                                f"ASR backend '{self.config.asr_binding}' invalid: "
+                                f"{'; '.join(msgs)}. Video audio track will be skipped.")
+                        else:
+                            self._asr_backend = backend_cls(self.config)
+                            self.asr_model_func = self._asr_backend.create_func()
+                            self.logger.info("Auto-created ASR backend for video audio track")
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to auto-create ASR backend: {e}. "
+                        f"Video audio track will be skipped.")
+
+            image_transport = None
+            if (self.config.cos_bucket and self.config.cos_appid
+                    and self.config.cos_region):
+                try:
+                    from raganything.image_transport import CosImageHost
+                    image_transport = CosImageHost(
+                        bucket=self.config.cos_bucket,
+                        appid=self.config.cos_appid,
+                        region=self.config.cos_region,
+                        secret_id=self.config.cos_secret_id,
+                        secret_key=self.config.cos_secret_key,
+                        key_prefix=self.config.cos_key_prefix,
+                        max_concurrent=self.config.cos_max_concurrent,
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        f"CosImageHost init failed, using base64: {e}")
+
+            # Initialise all available video analysis backends (multi-backend coexistence)
+            self._video_analysis_backends: Dict[str, VideoAnalysisBackend] = {}
+
+            # Local backend — always available, wraps existing local pipeline
+            try:
+                local_cls = get_video_analysis_backend("local")
+                self._video_analysis_backends["local"] = local_cls(
+                    self.config,
+                    local_analyze_func=None,  # will be wired after VideoModalProcessor creation
+                )
+                self.logger.info("Video analysis backend 'local' initialised")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialise local video backend: {e}")
+
+            # MPS backend — only when credentials are present
+            if self.config.mps_secret_id and self.config.mps_secret_key:
+                try:
+                    mps_cls = get_video_analysis_backend("mps")
+                    mps_issues = mps_cls.validate_config(self.config)
+                    if not mps_issues:
+                        self._video_analysis_backends["mps"] = mps_cls(self.config)
+                        self.logger.info("Video analysis backend 'mps' initialised")
+                    else:
+                        msgs = [f"[{i.level}] {i.field}: {i.message}" for i in mps_issues]
+                        self.logger.warning(
+                            f"MPS backend config incomplete, skipping: {'; '.join(msgs)}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to initialise MPS backend: {e}")
+
+            self.modal_processors["video"] = VideoModalProcessor(
+                lightrag=self.lightrag,
+                modal_caption_func=self.llm_model_func,
+                vlm_model_func=self.vlm_model_func,
+                asr_backend=getattr(self, "_asr_backend", None),
+                config=self.config,
+                tokenizer=self.lightrag.tokenizer,
+                context_extractor=self.context_extractor,
+                image_transport=image_transport,
+                video_analysis_backends=self._video_analysis_backends,
+                default_backend=self.config.video_analysis_binding,
+            )
+
+            # Wire local backend's analyze_func to the processor's method
+            local_backend = self._video_analysis_backends.get("local")
+            if local_backend is not None:
+                local_backend._analyze_func = (
+                    self.modal_processors["video"]._analyze_via_local
+                )
+
+        # Always include generic processor as fallback
+        self.modal_processors["generic"] = GenericModalProcessor(
+            lightrag=self.lightrag,
+            modal_caption_func=self.llm_model_func,
+            context_extractor=self.context_extractor,
+        )
+
+        self.logger.info("Multimodal processors initialized with context support")
+        self.logger.info(f"Available processors: {list(self.modal_processors.keys())}")
+        self.logger.info(f"Context configuration: {self._create_context_config()}")
+
+    def update_config(self, **kwargs):
+        """Update configuration with new values"""
+        for key, value in kwargs.items():
+            if hasattr(self.config, key):
+                setattr(self.config, key, value)
+                self.logger.debug(f"Updated config: {key} = {value}")
+            else:
+                self.logger.warning(f"Unknown config parameter: {key}")
+
+    async def _ensure_lightrag_initialized(self):
+        """Ensure LightRAG instance is initialized, create if necessary"""
+        try:
+            # Check parser installation first
+            if not self._parser_installation_checked:
+                if not self.doc_parser.check_installation():
+                    error_msg = (
+                        f"Parser '{self.config.parser}' is not properly installed. "
+                        "Please install it using 'pip install' or 'uv pip install'."
+                    )
+                    self.logger.error(error_msg)
+                    return {"success": False, "error": error_msg}
+
+                self._parser_installation_checked = True
+                self.logger.info(f"Parser '{self.config.parser}' installation verified")
+
+            if self.lightrag is not None:
+                # LightRAG was pre-provided, but we need to ensure it's properly initialized
+                # Inherit model functions from LightRAG if not explicitly provided
+                if self.llm_model_func is None and hasattr(
+                    self.lightrag, "llm_model_func"
+                ):
+                    self.llm_model_func = self.lightrag.llm_model_func
+                    self.logger.debug("Inherited llm_model_func from LightRAG instance")
+
+                if self.embedding_func is None and hasattr(
+                    self.lightrag, "embedding_func"
+                ):
+                    self.embedding_func = self.lightrag.embedding_func
+                    self.logger.debug("Inherited embedding_func from LightRAG instance")
+
+                try:
+                    # Ensure LightRAG storages are initialized
+                    if (
+                        not hasattr(self.lightrag, "_storages_status")
+                        or self.lightrag._storages_status.name != "INITIALIZED"
+                    ):
+                        self.logger.info(
+                            "Initializing storages for pre-provided LightRAG instance"
+                        )
+                        await self.lightrag.initialize_storages()
+                        from lightrag.kg.shared_storage import (
+                            initialize_pipeline_status,
+                        )
+
+                        await initialize_pipeline_status()
+
+                    # Initialize parse cache if not already done
+                    if self.parse_cache is None:
+                        self.logger.info(
+                            "Initializing parse cache for pre-provided LightRAG instance"
+                        )
+                        self.parse_cache = (
+                            self.lightrag.key_string_value_json_storage_cls(
+                                namespace="parse_cache",
+                                workspace=self.lightrag.workspace,
+                                global_config=self.lightrag.__dict__,
+                                embedding_func=self.embedding_func,
+                            )
+                        )
+                        await self.parse_cache.initialize()
+
+                    if self.multimodal_status_cache is None:
+                        self.logger.info(
+                            "Initializing multimodal status cache for pre-provided LightRAG instance"
+                        )
+                        self.multimodal_status_cache = (
+                            self.lightrag.key_string_value_json_storage_cls(
+                                namespace="multimodal_status",
+                                workspace=self.lightrag.workspace,
+                                global_config=self.lightrag.__dict__,
+                                embedding_func=self.embedding_func,
+                            )
+                        )
+                        await self.multimodal_status_cache.initialize()
+
+                    # Initialize processors if not already done
+                    if not self.modal_processors:
+                        self._initialize_processors()
+
+                    return {"success": True}
+
+                except Exception as e:
+                    error_msg = (
+                        f"Failed to initialize pre-provided LightRAG instance: {str(e)}"
+                    )
+                    self.logger.error(error_msg, exc_info=True)
+                    return {"success": False, "error": error_msg}
+
+            # Validate required functions for creating new LightRAG instance
+            if self.llm_model_func is None:
+                error_msg = "llm_model_func must be provided when LightRAG is not pre-initialized"
+                self.logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+
+            if self.embedding_func is None:
+                error_msg = "embedding_func must be provided when LightRAG is not pre-initialized"
+                self.logger.error(error_msg)
+                return {"success": False, "error": error_msg}
+
+            from lightrag.kg.shared_storage import initialize_pipeline_status
+
+            # Prepare LightRAG initialization parameters
+            lightrag_params = {
+                "working_dir": self.working_dir,
+                "llm_model_func": self.llm_model_func,
+                "embedding_func": self.embedding_func,
+            }
+
+            # Merge user-provided lightrag_kwargs, which can override defaults
+            lightrag_params.update(self.lightrag_kwargs)
+
+            # Log the parameters being used for initialization (excluding sensitive data)
+            log_params = {
+                k: v
+                for k, v in lightrag_params.items()
+                if not callable(v)
+                and k not in ["llm_model_kwargs", "vector_db_storage_cls_kwargs"]
+            }
+            self.logger.info(f"Initializing LightRAG with parameters: {log_params}")
+
+            try:
+                # Create LightRAG instance with merged parameters
+                self.lightrag = LightRAG(**lightrag_params)
+                await self.lightrag.initialize_storages()
+                await initialize_pipeline_status()
+
+                # Initialize parse cache storage using LightRAG's KV storage
+                self.parse_cache = self.lightrag.key_string_value_json_storage_cls(
+                    namespace="parse_cache",
+                    workspace=self.lightrag.workspace,
+                    global_config=self.lightrag.__dict__,
+                    embedding_func=self.embedding_func,
+                )
+                await self.parse_cache.initialize()
+
+                self.multimodal_status_cache = (
+                    self.lightrag.key_string_value_json_storage_cls(
+                        namespace="multimodal_status",
+                        workspace=self.lightrag.workspace,
+                        global_config=self.lightrag.__dict__,
+                        embedding_func=self.embedding_func,
+                    )
+                )
+                await self.multimodal_status_cache.initialize()
+
+                # Initialize processors after LightRAG is ready
+                self._initialize_processors()
+
+                self.logger.info(
+                    "LightRAG, parse cache, multimodal status cache, and multimodal processors initialized"
+                )
+                return {"success": True}
+
+            except Exception as e:
+                error_msg = f"Failed to initialize LightRAG instance: {str(e)}"
+                self.logger.error(error_msg, exc_info=True)
+                return {"success": False, "error": error_msg}
+
+        except Exception as e:
+            error_msg = f"Unexpected error during LightRAG initialization: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg}
+
+    async def finalize_storages(self):
+        """Finalize all storages including parse cache and LightRAG storages
+
+        This method should be called when shutting down to properly clean up resources
+        and persist any cached data. It will finalize both the parse cache and LightRAG's
+        internal storages.
+
+        Example usage:
+            try:
+                rag_anything = RAGAnything(...)
+                await rag_anything.process_file("document.pdf")
+                # ... other operations ...
+            finally:
+                # Always finalize storages to clean up resources
+                if rag_anything:
+                    await rag_anything.finalize_storages()
+
+        Note:
+            - This method is automatically called in __del__ when the object is destroyed
+            - Manual calling is recommended in production environments
+            - All finalization tasks run concurrently for better performance
+        """
+        try:
+            tasks = []
+
+            # Finalize parse cache if it exists
+            if self.parse_cache is not None:
+                tasks.append(self.parse_cache.finalize())
+                self.logger.debug("Scheduled parse cache finalization")
+
+            if self.multimodal_status_cache is not None:
+                tasks.append(self.multimodal_status_cache.finalize())
+                self.logger.debug("Scheduled multimodal status cache finalization")
+
+            # Finalize LightRAG storages if LightRAG is initialized
+            if self.lightrag is not None:
+                tasks.append(self.lightrag.finalize_storages())
+                self.logger.debug("Scheduled LightRAG storages finalization")
+
+            # Run all finalization tasks concurrently
+            if tasks:
+                await asyncio.gather(*tasks)
+                self.logger.info("Successfully finalized all RAGAnything storages")
+            else:
+                self.logger.debug("No storages to finalize")
+
+        except Exception as e:
+            self.logger.error(f"Error during storage finalization: {e}")
+            raise
+
+    def check_parser_installation(self) -> bool:
+        """
+        Check if the configured parser is properly installed
+
+        Returns:
+            bool: True if the configured parser is properly installed
+        """
+        return self.doc_parser.check_installation()
+
+    def verify_parser_installation_once(self) -> bool:
+        if not self._parser_installation_checked:
+            if not self.doc_parser.check_installation():
+                raise RuntimeError(
+                    f"Parser '{self.config.parser}' is not properly installed. "
+                    "Please install it using pip install or uv pip install."
+                )
+            self._parser_installation_checked = True
+            self.logger.info(f"Parser '{self.config.parser}' installation verified")
+        return True
+
+    def get_config_info(self) -> Dict[str, Any]:
+        """Get current configuration information"""
+        config_info = {
+            "directory": {
+                "working_dir": self.config.working_dir,
+                "parser_output_dir": self.config.parser_output_dir,
+            },
+            "parsing": {
+                "parser": self.config.parser,
+                "parse_method": self.config.parse_method,
+                "display_content_stats": self.config.display_content_stats,
+            },
+            "multimodal_processing": {
+                "enable_image_processing": self.config.enable_image_processing,
+                "enable_table_processing": self.config.enable_table_processing,
+                "enable_equation_processing": self.config.enable_equation_processing,
+                "enable_audio_processing": self.config.enable_audio_processing,
+                "enable_video_processing": self.config.enable_video_processing,
+            },
+            "audio_processing": {
+                "audio_asr_timeout": self.config.audio_asr_timeout,
+                "max_parallel_asr": self.config.max_parallel_asr,
+                "audio_chunk_token_size": self.config.audio_chunk_token_size,
+                "min_asr_confidence": self.config.min_asr_confidence,
+                "audio_summarize_batch_size": self.config.audio_summarize_batch_size,
+                "audio_summarize_max_batches": self.config.audio_summarize_max_batches,
+            },
+            "context_extraction": {
+                "context_window": self.config.context_window,
+                "context_mode": self.config.context_mode,
+                "max_context_tokens": self.config.max_context_tokens,
+                "include_headers": self.config.include_headers,
+                "include_captions": self.config.include_captions,
+                "filter_content_types": self.config.context_filter_content_types,
+            },
+            "batch_processing": {
+                "max_concurrent_files": self.config.max_concurrent_files,
+                "supported_file_extensions": self.config.supported_file_extensions,
+                "recursive_folder_processing": self.config.recursive_folder_processing,
+            },
+            "logging": {
+                "note": "Logging fields have been removed - configure logging externally",
+            },
+        }
+
+        # Add LightRAG configuration if available
+        if self.lightrag_kwargs:
+            # Filter out sensitive data and callable objects for display
+            safe_kwargs = {
+                k: v
+                for k, v in self.lightrag_kwargs.items()
+                if not callable(v)
+                and k not in ["llm_model_kwargs", "vector_db_storage_cls_kwargs"]
+            }
+            config_info["lightrag_config"] = {
+                "custom_parameters": safe_kwargs,
+                "note": "LightRAG will be initialized with these additional parameters",
+            }
+        else:
+            config_info["lightrag_config"] = {
+                "custom_parameters": {},
+                "note": "Using default LightRAG parameters",
+            }
+
+        return config_info
+
+    def set_content_source_for_context(
+        self, content_source, content_format: str = "auto"
+    ):
+        """Set content source for context extraction in all modal processors
+
+        Args:
+            content_source: Source content for context extraction (e.g., MinerU content list)
+            content_format: Format of content source ("minerU", "text_chunks", "auto")
+        """
+        if not self.modal_processors:
+            self.logger.warning(
+                "Modal processors not initialized. Content source will be set when processors are created."
+            )
+            return
+
+        for processor_name, processor in self.modal_processors.items():
+            try:
+                processor.set_content_source(content_source, content_format)
+                self.logger.debug(f"Set content source for {processor_name} processor")
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to set content source for {processor_name}: {e}"
+                )
+
+        self.logger.info(
+            f"Content source set for context extraction (format: {content_format})"
+        )
+
+    def update_context_config(self, **context_kwargs):
+        """Update context extraction configuration
+
+        Args:
+            **context_kwargs: Context configuration parameters to update
+                (context_window, context_mode, max_context_tokens, etc.)
+        """
+        # Update the main config
+        for key, value in context_kwargs.items():
+            if hasattr(self.config, key):
+                setattr(self.config, key, value)
+                self.logger.debug(f"Updated context config: {key} = {value}")
+            else:
+                self.logger.warning(f"Unknown context config parameter: {key}")
+
+        # Recreate context extractor with new config if processors are initialized
+        if self.lightrag and self.modal_processors:
+            try:
+                self.context_extractor = self._create_context_extractor()
+                # Update all processors with new context extractor
+                for processor_name, processor in self.modal_processors.items():
+                    processor.context_extractor = self.context_extractor
+
+                self.logger.info(
+                    "Context configuration updated and applied to all processors"
+                )
+                self.logger.info(
+                    f"New context configuration: {self._create_context_config()}"
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to update context configuration: {e}")
+
+    def get_processor_info(self) -> Dict[str, Any]:
+        """Get processor information"""
+        base_info = {
+            "mineru_installed": MineruParser.check_installation(MineruParser()),
+            "parser_installation": {
+                parser_name: get_parser(parser_name).check_installation()
+                for parser_name in SUPPORTED_PARSERS
+            },
+            "config": self.get_config_info(),
+            "models": {
+                "llm_model": "External function"
+                if self.llm_model_func
+                else "Not provided",
+                "vision_model": "External function"
+                if self.vision_model_func
+                else "Not provided",
+                "embedding_model": "External function"
+                if self.embedding_func
+                else "Not provided",
+            },
+        }
+
+        if not self.modal_processors:
+            base_info["status"] = "Not initialized"
+            base_info["processors"] = {}
+        else:
+            base_info["status"] = "Initialized"
+            base_info["processors"] = {}
+
+            for proc_type, processor in self.modal_processors.items():
+                base_info["processors"][proc_type] = {
+                    "class": processor.__class__.__name__,
+                    "supports": get_processor_supports(proc_type),
+                    "enabled": True,
+                }
+
+        return base_info
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()

@@ -1,0 +1,50 @@
+# FastAPI framework
+fastapi>=0.109.0,<0.110.0  # Limit to versions compatible with pydantic v1
+uvicorn[standard]>=0.27.0
+pydantic[dotenv]>=1.10.0,<2.0.0  # Use pydantic v1 with dotenv support (no pydantic-settings needed)
+
+# Database
+sqlalchemy>=2.0.25
+asyncpg>=0.29.0
+alembic>=1.13.0
+
+# Cache
+redis>=5.0.0
+
+# Authentication
+PyJWT>=2.8.0
+bcrypt>=4.0.0
+python-multipart>=0.0.6
+
+# Configuration
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+
+# HTTP Client
+aiohttp>=3.9.0
+httpx>=0.27.0
+
+# Neo4j (本体图数据库)
+neo4j>=5.25.0,<6.0.0
+
+# Ontology LLM (分流问答)
+openai>=1.0.0
+
+# Chinese word segmentation (本体全文检索)
+jieba>=0.42.1
+
+# Utilities
+python-dateutil>=2.8.2
+cos-python-sdk-v5>=1.9.0
+
+# 数据源接入（外部 S3/MinIO 拉取、API JSON 定位、凭据加密）
+boto3>=1.34.0,<2.0.0
+jsonpath-ng>=1.6.0,<2.0.0
+cryptography>=42.0.0
+
+# Logging
+python-json-logger>=2.0.7
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.23.0

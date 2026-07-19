@@ -1,0 +1,100 @@
+import { colors, radius, typography } from './tokens'
+
+export const antdTheme = {
+  token: {
+    colorPrimary: colors.accent,
+    colorPrimaryHover: colors.accentHover,
+    colorPrimaryActive: colors.brandBlue,
+    colorPrimaryBg: colors.infoBg,
+    colorBgLayout: colors.bg,
+    colorBgContainer: colors.white,
+    colorBgElevated: colors.white,
+    colorBorder: colors.border,
+    colorBorderSecondary: colors.borderTable,
+    colorText: colors.textPrimary,
+    colorTextSecondary: colors.textSecondary,
+    colorTextTertiary: colors.textMuted,
+    fontFamily: typography.fontFamily,
+    borderRadius: radius.btn,
+    borderRadiusLG: radius.card,
+    borderRadiusSM: radius.tag,
+    controlHeight: 36,
+    fontSize: typography.bodySize,
+    fontSizeLG: typography.bodySize,
+    lineHeight: 1.6,
+    paddingContentHorizontal: 24,
+    boxShadow:
+      '0 1px 4px rgba(0,0,0,0.04)',
+    boxShadowSecondary:
+      '0 4px 12px rgba(59,130,246,0.06)',
+  },
+  components: {
+    Layout: {
+      bodyBg: colors.bg,
+      headerBg: colors.white,
+      headerHeight: 64,
+      siderBg: colors.white,
+    },
+    Menu: {
+      itemBg: 'transparent',
+      itemColor: colors.sidebarText,
+      itemHoverBg: colors.sidebarHover,
+      itemSelectedBg: colors.sidebarActive,
+      itemSelectedColor: colors.accent,
+      itemBorderRadius: 0,
+      itemHeight: 42,
+      iconSize: 15,
+      activeBarWidth: 0,
+    },
+    Card: {
+      paddingLG: 24,
+      borderRadiusLG: radius.card,
+    },
+    Button: {
+      borderRadius: radius.btn,
+      primaryColor: colors.white,
+      primaryShadow: 'none',
+      defaultBorderColor: colors.border,
+      defaultColor: colors.textSecondary,
+      defaultBg: colors.white,
+      fontWeight: 500,
+    },
+    Table: {
+      headerBg: colors.white,
+      headerColor: colors.textSecondary,
+      headerBorderRadius: 0,
+      rowHoverBg: colors.rowHover,
+      borderColor: colors.rowBorder,
+      cellPaddingBlock: 12,
+      cellPaddingInline: 16,
+      fontSize: typography.bodySize,
+    },
+    Input: {
+      borderRadius: radius.input,
+      activeBorderColor: colors.accent,
+      activeShadow: '0 0 0 3px rgba(59,130,246,0.1)',
+    },
+    Select: {
+      borderRadius: radius.input,
+    },
+    Tabs: {
+      inkBarColor: colors.accent,
+      itemActiveColor: colors.accent,
+      itemHoverColor: colors.accent,
+      itemColor: colors.textSecondary,
+      horizontalItemGutter: 0,
+    },
+    Tag: {
+      borderRadiusSM: radius.tag,
+    },
+    Breadcrumb: {
+      itemColor: colors.textSecondary,
+      lastItemColor: colors.brandBlue,
+      linkColor: colors.textSecondary,
+      linkHoverColor: colors.accent,
+    },
+    Spin: {
+      colorPrimary: colors.accent,
+    },
+  },
+}

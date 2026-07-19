@@ -1,0 +1,3 @@
+# Convenience entry point for pip users. Project dependencies are declared in
+# pyproject.toml; reproducible development installs use uv.lock.
+-e .
