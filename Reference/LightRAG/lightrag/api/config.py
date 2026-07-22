@@ -160,39 +160,6 @@ def validate_auth_configuration(args: argparse.Namespace) -> None:
         )
 
 
-# [yuexi] Fail-fast guard: workspace-override env vars force all KBs into a
-# single workspace, silently re-collapsing the isolation the platform injects
-# via LIGHTRAG-WORKSPACE header. These must NEVER be set in this platform,
-# regardless of whether RAG_WORKSPACE_ISOLATION is enabled.
-_WORKSPACE_OVERRIDE_VARS = (
-    "POSTGRES_WORKSPACE",
-    "PG_WORKSPACE",
-    "NEO4J_WORKSPACE",
-)
-
-
-def validate_workspace_isolation_config() -> None:
-    """Raise if any storage-level workspace override env var is set.
-
-    These variables forcibly override the per-instance workspace at the
-    storage-driver level (PostgreSQL / Neo4j), collapsing all knowledge
-    bases into a single space regardless of the LIGHTRAG-WORKSPACE header.
-    They must never be set in the yuexi-platform deployment.
-    """
-    violations = [
-        v for v in _WORKSPACE_OVERRIDE_VARS
-        if os.getenv(v, "").strip()
-    ]
-    if violations:
-        raise ValueError(
-            "The following storage-level workspace-override environment "
-            f"variables are set: {', '.join(violations)}. "
-            "These overrides force all knowledge bases into a single "
-            "workspace, which will cause cross-KB query leakage. "
-            "Unset them before starting the server."
-        )
-
-
 def parse_args() -> argparse.Namespace:
     """
     Parse command line arguments with environment variable fallback
@@ -615,8 +582,6 @@ def parse_args() -> argparse.Namespace:
             args.workspace = sanitized
 
     validate_auth_configuration(args)
-    # [yuexi] Reject storage-level workspace overrides that silently collapse isolation
-    validate_workspace_isolation_config()
     return args
 
 

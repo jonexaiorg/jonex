@@ -1,96 +1,49 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { Button, Tag, Spin, Result } from 'antd'
-import {
-  ThunderboltOutlined, ApiOutlined, CloudOutlined,
-  SketchOutlined, CarryOutOutlined, BugOutlined,
-} from '@ant-design/icons'
-import { useTranslation } from 'react-i18next'
-import { colors } from '@jonex/platform-theme/tokens'
-import { listAdapters, type AdapterItem } from '../../api/adapters'
-import './index.css'
+import React from 'react'
+import { Button, Tag } from 'antd'
+import { ThunderboltOutlined, ShakeOutlined, CloudOutlined, CodepenOutlined, CarryOutOutlined, ExperimentOutlined } from '@ant-design/icons'
 
-const ADAPTER_DISPLAY: {
-  type: string
-  icon: React.ReactNode
-  color: string
-}[] = [
-  { type: 'dingtalk', icon: <ThunderboltOutlined />, color: '#3b82f6' },
-  { type: 'wechat_work', icon: <ApiOutlined />, color: '#8b5cf6' },
-  { type: 'feishu', icon: <CloudOutlined />, color: '#94a3b8' },
+const adapters = [
+  { name: 'ADP 适配器', desc: 'ADP 人力资源数据接入', icon: <ThunderboltOutlined />, color: '#3b82f6', status: '已连接', enabled: true },
+  { name: 'HiAgent 适配器', desc: 'HiAgent 智能体平台集成', icon: <ShakeOutlined />, color: '#8b5cf6', status: '已连接', enabled: true },
+  { name: 'AWS QuickSight', desc: 'AWS 数据分析平台集成', icon: <CloudOutlined />, color: '#94a3b8', status: '待接入', enabled: false },
+  { name: 'Gemini 适配器', desc: 'Google Gemini 模型接入', icon: <CodepenOutlined />, color: '#94a3b8', status: '待接入', enabled: false },
+  { name: 'WorkBuddy', desc: 'WorkBuddy 工作流集成', icon: <CarryOutOutlined />, color: '#94a3b8', status: '待接入', enabled: false },
+  { name: 'Claw 适配器', desc: 'Claw 数据抓取平台集成', icon: <ExperimentOutlined />, color: '#94a3b8', status: '待接入', enabled: false },
 ]
-
-const FALLBACK_ICONS: { icon: React.ReactNode; color: string }[] = [
-  { icon: <SketchOutlined />, color: '#94a3b8' },
-  { icon: <CarryOutOutlined />, color: '#94a3b8' },
-  { icon: <BugOutlined />, color: '#94a3b8' },
-]
-
-function getDisplay(idx: number) {
-  return ADAPTER_DISPLAY[idx] || { icon: FALLBACK_ICONS[idx % 3].icon, color: FALLBACK_ICONS[idx % 3].color }
-}
-
-const STATUS_BADGE_MAP: Record<string, { labelKey: string; color: string }> = {
-  connected: { labelKey: 'adapter.connected', color: 'success' },
-  disconnected: { labelKey: 'adapter.disconnected', color: 'warning' },
-  error: { labelKey: 'adapter.error', color: 'error' },
-}
 
 export default function AdapterManagement() {
-  const { t } = useTranslation('business')
-  const [adapters, setAdapters] = useState<AdapterItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const loadAdapters = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await listAdapters(0, 100)
-      setAdapters(result.items)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('common.loadFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }, [t])
-
-  useEffect(() => { loadAdapters() }, [loadAdapters])
-
-  if (loading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}><Spin size="large" /></div>
-  }
-
-  if (error) {
-    return <Result status="error" title={t('common.loadFailed')} subTitle={error} extra={<Button type="primary" onClick={loadAdapters}>{t('common.retry')}</Button>} />
-  }
-
   return (
     <div>
       <div className="yx-page-title">
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: colors.brandDark, margin: 0 }}>{t('adapter.list')}</h1>
+        <h1>适配器列表</h1>
+        <p style={{ color: '#64748b', margin: '4px 0 0', fontSize: 14 }}>管理第三方生态适配器</p>
       </div>
-      <div className="adapter-grid">
-        {adapters.map((adapter, idx) => {
-          const display = getDisplay(idx)
-          const badge = STATUS_BADGE_MAP[adapter.status] || { labelKey: adapter.status, color: 'default' }
-          const isGrey = adapter.status !== 'connected'
-
-          return (
-            <div key={adapter.id} className={`adapter-card${isGrey ? ' grey' : ''}`}>
-              {isGrey && <span className="future-tag">{t('common.comingSoon')}</span>}
-              <div className="adapter-icon" style={{ background: isGrey ? '#94a3b8' : display.color }}>
-                {display.icon}
-              </div>
-              <h3>{adapter.name}</h3>
-              <div className="adapter-desc">
-                {(adapter.config_json as Record<string, string>)?.description || adapter.adapter_type}
-              </div>
-              <div className="adapter-status">
-                <Tag color={badge.color} style={{ marginBottom: 0 }}>{t(badge.labelKey)}</Tag>
-              </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 20 }}>
+        {adapters.map((a, i) => (
+          <div
+            key={i}
+            style={{
+              background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 24,
+              textAlign: 'center', opacity: a.enabled ? 1 : 0.5, transition: 'box-shadow 0.2s',
+            }}
+          >
+            {!a.enabled && <Tag style={{ marginBottom: 8, background: '#f1f5f9', color: '#94a3b8', border: 'none' }}>即将上线</Tag>}
+            <div style={{ width: 64, height: 64, borderRadius: 16, background: a.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, color: '#fff', margin: '0 auto 16px' }}>{a.icon}</div>
+            <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>{a.name}</h3>
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>{a.desc}</div>
+            <Tag color={a.status === '已连接' ? 'success' : 'warning'} style={{ marginBottom: 12 }}>{a.status}</Tag>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+              {a.enabled ? (
+                <>
+                  <Button type="primary" size="small">配置</Button>
+                  <Button size="small">监控</Button>
+                </>
+              ) : (
+                <Button size="small" disabled>配置</Button>
+              )}
             </div>
-          )
-        })}
+          </div>
+        ))}
       </div>
     </div>
   )

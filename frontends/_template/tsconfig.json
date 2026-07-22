@@ -13,8 +13,6 @@
     "resolveJsonModule": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@jonex/platform-theme": ["../shared/platform-theme/src/index.ts"],
-      "@jonex/platform-theme/*": ["../shared/platform-theme/src/*"],
       "@jonex/shell-sdk": ["../shared/shell-sdk/src/index.ts"]
     },
 

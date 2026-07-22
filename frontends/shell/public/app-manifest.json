@@ -15,7 +15,7 @@
       "entry": "/remotes/core-business/assets/remoteEntry.js",
       "scope": "coreBusiness",
       "module": "./Mount",
-      "apiPrefix": "/api/v1/core-business",
+      "apiPrefix": "/core-business/",
       "roles": ["admin", "user"],
       "routes": {
         "hostedBase": "/apps/core-business",
@@ -56,7 +56,7 @@
       "entry": "/remotes/platform-management/assets/remoteEntry.js",
       "scope": "platformManagement",
       "module": "./Mount",
-      "apiPrefix": "/api/v1/platform-management",
+      "apiPrefix": "/platform-management/",
       "roles": ["admin"],
       "routes": {
         "hostedBase": "/apps/platform-management",
@@ -97,7 +97,7 @@
       "entry": "/remotes/ecosystem-management/assets/remoteEntry.js",
       "scope": "ecosystemManagement",
       "module": "./Mount",
-      "apiPrefix": "/api/v1/ecosystem-management",
+      "apiPrefix": "/ecosystem-management/",
       "roles": ["admin", "user"],
       "routes": {
         "hostedBase": "/apps/ecosystem-management",

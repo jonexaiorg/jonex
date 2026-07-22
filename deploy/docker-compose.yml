@@ -1,13 +1,3 @@
-# ============================================================
-# platform, Docker configuration for this setting.
-# ============================================================
-# Configuration note for this setting.
-#   PostgreSQL  15-alpine   (LTS → 2027-11)
-# Redis configuration for networks.
-# Milvus configuration for networks.
-# Milvus, etcd configuration for networks.
-# MinIO configuration for networks.
-# ============================================================
 
 networks:
   jonex-network:
@@ -41,23 +31,23 @@ volumes:
     driver: local
 
 services:
-  # ============================================================
-  # PostgreSQL, database configuration for postgres.
-  # ============================================================
+
   postgres:
     image: postgres:15-alpine
     container_name: jonex-postgres
     hostname: postgres
     networks:
       - jonex-network
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: ${DB_USERNAME:-jonex}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in deploy/.env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-jonex123}
       POSTGRES_DB: ${DB_NAME:-jonex}
       TZ: Asia/Shanghai
     volumes:
       - jonex-postgres-data:/var/lib/postgresql/data
-      - ./postgres/migrations:/docker-entrypoint-initdb.d:ro
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-jonex} -d ${DB_NAME:-jonex}"]
       interval: 10s
@@ -65,15 +55,14 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ============================================================
-  # Cache configuration for redis.
-  # ============================================================
   redis:
     image: redis:7-alpine
     container_name: jonex-redis
     hostname: redis
     networks:
       - jonex-network
+    ports:
+      - "6379:6379"
     environment:
       TZ: Asia/Shanghai
     volumes:
@@ -87,9 +76,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ============================================================
-  # Milvus, etcd, storage configuration for etcd.
-  # ============================================================
   etcd:
     image: quay.io/coreos/etcd:v3.5.18
     container_name: jonex-etcd
@@ -119,9 +105,6 @@ services:
       retries: 3
     restart: unless-stopped
 
-  # ============================================================
-  # MinIO, Milvus, object storage configuration for minio.
-  # ============================================================
   minio:
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: jonex-minio
@@ -129,8 +112,8 @@ services:
     networks:
       - jonex-network
     environment:
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?Set MINIO_ACCESS_KEY in deploy/.env}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?Set MINIO_SECRET_KEY in deploy/.env}
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
       TZ: Asia/Shanghai
     volumes:
       - jonex-minio-data:/minio_data
@@ -142,21 +125,21 @@ services:
       retries: 3
     restart: unless-stopped
 
-  # ============================================================
-  # database, Milvus configuration for milvus.
-  # ============================================================
   milvus:
     image: milvusdb/milvus:v2.5.14
     container_name: jonex-milvus
     hostname: milvus
     networks:
       - jonex-network
+    ports:
+      - "19530:19530"
+      - "9091:9091"
     environment:
       TZ: Asia/Shanghai
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?Set MINIO_ACCESS_KEY in deploy/.env}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?Set MINIO_SECRET_KEY in deploy/.env}
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
     volumes:
       - jonex-milvus-data:/var/lib/milvus
     command: ["milvus", "run", "standalone"]
@@ -173,22 +156,18 @@ services:
       start_period: 90s
     restart: unless-stopped
 
-  # ============================================================
-  # knowledge base configuration for knowledge-base-service.
-  # ============================================================
   knowledge-base-service:
     build:
       context: ..
       dockerfile: deploy/docker/capability.Dockerfile
       args:
         CAPABILITY_NAME: knowledge_base
-        PYTHON_BASE: python-base  # Configuration note for additional contexts.
-      additional_contexts:
-        python-base: "docker-image://jonex/python-base:local"
     container_name: jonex-knowledge-base
     hostname: knowledge-base
     networks:
       - jonex-network
+    ports:
+      - "8003:8000"
     environment:
       TZ: Asia/Shanghai
       CAPABILITY_NAME: knowledge_base
@@ -197,46 +176,26 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: ${DB_USERNAME:-jonex}
-      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in deploy/.env}
+      DB_PASSWORD: ${DB_PASSWORD:-jonex123}
       DB_NAME: ${DB_NAME:-jonex}
       REDIS_URL: redis://redis:6379/0
-      # RAG, Sidecar configuration for SIDECAR URL.
+
       SIDECAR_URL: http://sidecar:8000
-      # Proxy and routing configuration for AUDIT INGEST URL.
-      AUDIT_INGEST_URL: http://platform-service:8000
       CAPABILITY_RUNTIME_FILE: /app/config/capability_runtime.yaml
-      # database, Neo4j, ontology configuration for NEO4J URI.
+
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USERNAME: neo4j
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in deploy/.env}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-jonex_neo4j_123}
       NEO4J_ONTOLOGY_LABEL: OntologyEntity
-      # LLM configuration for ONTOLOGY LLM BINDING HOST.
-      ONTOLOGY_LLM_BINDING_HOST: ${ONTOLOGY_LLM_BINDING_HOST:-http://llm-gateway:8787/v1}
-      ONTOLOGY_LLM_BINDING_API_KEY: ${LLM_BINDING_API_KEY_FOR_ONTOLOGY:?Set LLM_BINDING_API_KEY_FOR_ONTOLOGY in deploy/.env}
-      ONTOLOGY_LLM_MODEL: ${ONTOLOGY_LLM_MODEL:-deepseek-v4-flash-202605}
-      # Default configuration for ONTOLOGY RAG FALLBACK RERANK ENABLED.
-      ONTOLOGY_RAG_FALLBACK_RERANK_ENABLED: ${ONTOLOGY_RAG_FALLBACK_RERANK_ENABLED:-false}
-      # reranking, LightRAG, RAG configuration for RAG RETRIEVAL RERANK ENABLED.
-      RAG_RETRIEVAL_RERANK_ENABLED: ${RAG_RETRIEVAL_RERANK_ENABLED:-false}
-      RERANK_BINDING_HOST: ${RERANK_BINDING_HOST:-http://llm-gateway:8787/v1}
-      RERANK_BINDING_API_KEY: ${RERANK_BINDING_API_KEY:?Set RERANK_BINDING_API_KEY in deploy/.env}
-      RERANK_MODEL: ${RERANK_MODEL:-awenleven/Qwen3-Reranker-4B:Q4_K_M}
-      # Default configuration for OBJECT STORAGE BACKEND.
-      OBJECT_STORAGE_BACKEND: ${OBJECT_STORAGE_BACKEND:-local}
-      COS_REGION: ${COS_REGION:-}
-      COS_SECRET_ID: ${COS_SECRET_ID:-}
-      COS_SECRET_KEY: ${COS_SECRET_KEY:-}
-      COS_BUCKET: ${COS_BUCKET:-}
-      COS_KEY_PREFIX: ${COS_KEY_PREFIX:-jonex}
-      COS_PRESIGN_EXPIRES: ${COS_PRESIGN_EXPIRES:-900}
-      KB_INPUT_DIR: /app/inputs  # RAG, backend configuration for env file.
+
+      ONTOLOGY_LLM_BINDING_HOST: ${ONTOLOGY_LLM_BINDING_HOST:-https://tokenhub.tencentmaas.com/v1}
+      ONTOLOGY_LLM_BINDING_API_KEY: ${LLM_BINDING_API_KEY_FOR_ONTOLOGY:-${LLM_BINDING_API_KEY:-}}
+      ONTOLOGY_LLM_MODEL: ${ONTOLOGY_LLM_MODEL:-deepseek-v4-flash}
     env_file:
       - .env
     volumes:
       - jonex-logs:/app/logs
-      - jonex-rag-inputs:/app/inputs  # RAG, backend configuration for depends on.
       - ./config/capability_runtime.yaml:/app/config/capability_runtime.yaml:ro
-      - ./config/ontology:/app/deploy/config/ontology:ro  # Configuration note for depends on.
     depends_on:
       postgres:
         condition: service_healthy
@@ -244,8 +203,6 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
-      llm-gateway:
-        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -254,109 +211,10 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  # ============================================================
-  # business domain configuration for business-domain-service.
-  # ============================================================
-  business-domain-service:
-    build:
-      context: ..
-      dockerfile: deploy/docker/capability.Dockerfile
-      args:
-        CAPABILITY_NAME: business_domain
-        PYTHON_BASE: python-base  # Configuration note for additional contexts.
-      additional_contexts:
-        python-base: "docker-image://jonex/python-base:local"
-    container_name: jonex-business-domain
-    hostname: business-domain
-    networks:
-      - jonex-network
-    environment:
-      TZ: Asia/Shanghai
-      CAPABILITY_NAME: business_domain
-      SERVICE_ENDPOINT: http://business-domain-service:8000
-      LOG_LEVEL: INFO
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USERNAME: ${DB_USERNAME:-jonex}
-      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in deploy/.env}
-      DB_NAME: ${DB_NAME:-jonex}
-      REDIS_URL: redis://redis:6379/0
-      SIDECAR_URL: http://sidecar:8000
-      # Proxy and routing configuration for AUDIT INGEST URL.
-      AUDIT_INGEST_URL: http://platform-service:8000
-    env_file:
-      - .env
-    volumes:
-      - jonex-logs:/app/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
-
-  # ============================================================
-  # platform, authentication configuration for platform-service.
-  # ============================================================
-  platform-service:
-    build:
-      context: ..
-      dockerfile: deploy/docker/capability.Dockerfile
-      args:
-        CAPABILITY_NAME: platform
-        PYTHON_BASE: python-base  # Configuration note for additional contexts.
-      additional_contexts:
-        python-base: "docker-image://jonex/python-base:local"
-    container_name: jonex-platform
-    hostname: platform
-    networks:
-      - jonex-network
-    environment:
-      TZ: Asia/Shanghai
-      CAPABILITY_NAME: platform
-      SERVICE_ENDPOINT: http://platform-service:8000
-      LOG_LEVEL: INFO
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USERNAME: ${DB_USERNAME:-jonex}
-      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in deploy/.env}
-      DB_NAME: ${DB_NAME:-jonex}
-      REDIS_URL: redis://redis:6379/0
-      AUDIT_INGEST_URL: ""  # Proxy and routing configuration for env file.
-    env_file:
-      - .env
-    volumes:
-      - jonex-logs:/app/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
-
-  # ============================================================
-  # Proxy and routing configuration for sidecar.
-  # ============================================================
   sidecar:
     build:
       context: ..
       dockerfile: deploy/docker/sidecar.Dockerfile
-      args:
-        PYTHON_BASE: python-base  # Configuration note for additional contexts.
-      additional_contexts:
-        python-base: "docker-image://jonex/python-base:local"
     container_name: jonex-sidecar
     hostname: sidecar
     networks:
@@ -366,13 +224,15 @@ services:
     environment:
       TZ: Asia/Shanghai
       LOG_LEVEL: INFO
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-jonex}
+      DB_PASSWORD: ${DB_PASSWORD:-jonex123}
+      DB_NAME: ${DB_NAME:-jonex}
       REDIS_URL: redis://redis:6379/0
       KNOWLEDGE_BASE_URL: http://knowledge-base-service:8000
-      BUSINESS_DOMAIN_URL: http://business-domain-service:8000
       ATOMIC_RAG_URL: http://atomic-rag:8000
-      PLATFORM_URL: http://platform-service:8000
       JWT_SECRET: ${JWT_SECRET}
-      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       LOGIN_TICKET_EXPIRE_SECONDS: ${LOGIN_TICKET_EXPIRE_SECONDS:-60}
       AUTH_ALLOWED_REDIRECT_URIS: ${AUTH_ALLOWED_REDIRECT_URIS:-{}}
       WORKERS: 4
@@ -381,13 +241,11 @@ services:
     volumes:
       - jonex-logs:/app/logs
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
-      platform-service:
-        condition: service_healthy
       knowledge-base-service:
-        condition: service_healthy
-      business-domain-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -397,21 +255,16 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  # ============================================================
-  # frontend configuration for gateway.
-  # ============================================================
   gateway:
     build:
       context: ..
       dockerfile: deploy/docker/gateway.Dockerfile
-      args:
-        PYTHON_BASE: python-base  # Configuration note for additional contexts.
-      additional_contexts:
-        python-base: "docker-image://jonex/python-base:local"
     container_name: jonex-gateway
     hostname: gateway
     networks:
       - jonex-network
+    ports:
+      - "8000:8000"
     expose:
       - "8000"
     environment:
@@ -420,24 +273,15 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: ${DB_USERNAME:-jonex}
-      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in deploy/.env}
+      DB_PASSWORD: ${DB_PASSWORD:-jonex123}
       DB_NAME: ${DB_NAME:-jonex}
       REDIS_URL: redis://redis:6379/0
       SIDECAR_URL: http://sidecar:8000
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
-      KB_INPUT_DIR: /app/inputs  # Path configuration for AUTH CORS ORIGINS.
+      KB_INPUT_DIR: /app/inputs
       AUTH_CORS_ORIGINS: ${AUTH_CORS_ORIGINS:-}
-      # Default configuration for OBJECT STORAGE BACKEND.
-      OBJECT_STORAGE_BACKEND: ${OBJECT_STORAGE_BACKEND:-local}
-      COS_KEY_PREFIX: ${COS_KEY_PREFIX:-jonex}
-      COS_REGION: ${COS_REGION:-}
-      COS_SECRET_ID: ${COS_SECRET_ID:-}
-      COS_SECRET_KEY: ${COS_SECRET_KEY:-}
-      COS_BUCKET: ${COS_BUCKET:-}
     volumes:
       - jonex-logs:/app/logs
-      - jonex-rag-inputs:/app/inputs  # RAG configuration for depends on.
+      - jonex-rag-inputs:/app/inputs
     depends_on:
       postgres:
         condition: service_healthy
@@ -453,62 +297,6 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  # ============================================================
-  # Proxy and routing configuration for llm-gateway.
-  # LLM, embedding, LightRAG configuration for llm-gateway.
-  # ============================================================
-  llm-gateway:
-    build:
-      context: ..
-      dockerfile: deploy/docker/llm-gateway.Dockerfile
-      args:
-        PYTHON_BASE: python-base  # Configuration note for additional contexts.
-      additional_contexts:
-        python-base: "docker-image://jonex/python-base:local"
-    container_name: jonex-llm-gateway
-    hostname: llm-gateway
-    networks:
-      - jonex-network
-    expose:
-      - "8787"
-    environment:
-      TZ: Asia/Shanghai
-      LOG_LEVEL: INFO
-      REDIS_URL: redis://redis:6379/0
-      LLMGW_UPSTREAM_LLM_HOST: ${LLMGW_UPSTREAM_LLM_HOST:-https://tokenhub.tencentmaas.com/v1}
-      LLMGW_UPSTREAM_LLM_API_KEY: ${LLMGW_UPSTREAM_LLM_API_KEY:-}
-      LLMGW_UPSTREAM_EMBED_HOST: ${LLMGW_UPSTREAM_EMBED_HOST:-http://host.docker.internal:11434/v1}
-      LLMGW_UPSTREAM_EMBED_API_KEY: ${LLMGW_UPSTREAM_EMBED_API_KEY:-ollama}
-      # reranking, RAG configuration for LLMGW RERANK BINDING.
-      LLMGW_RERANK_BINDING: ${LLMGW_RERANK_BINDING:-ollama-generate}
-      LLMGW_RERANK_MODEL: ${LLMGW_RERANK_MODEL:-awenleven/Qwen3-Reranker-4B:Q4_K_M}
-      LLMGW_UPSTREAM_RERANK_HOST: ${LLMGW_UPSTREAM_RERANK_HOST:-http://host.docker.internal:11434}
-      LLMGW_UPSTREAM_RERANK_API_KEY: ${LLMGW_UPSTREAM_RERANK_API_KEY:-ollama}
-      LLMGW_RERANK_PROMPT_PROFILE: ${LLMGW_RERANK_PROMPT_PROFILE:-qwen3}
-      LLMGW_RERANK_MAX_DOCS: ${LLMGW_RERANK_MAX_DOCS:-12}
-      LLMGW_RERANK_CONCURRENCY: ${LLMGW_RERANK_CONCURRENCY:-4}
-      LLMGW_RERANK_TIMEOUT: ${LLMGW_RERANK_TIMEOUT:-30}
-      LLMGW_INTERNAL_TOKENS: ${LLMGW_INTERNAL_TOKENS:?Set LLMGW_INTERNAL_TOKENS in deploy/.env}
-      LLMGW_METERING_ENABLED: ${LLMGW_METERING_ENABLED:-true}
-      LLMGW_PG_FLUSH_MAX_ROWS: ${LLMGW_PG_FLUSH_MAX_ROWS:-20}
-    env_file:
-      - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"  # Configuration note for depends on.
-    depends_on:
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8787/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
-
-  # ============================================================
-  # Port configuration for frontend-gateway.
-  # ============================================================
   frontend-gateway:
     build:
       context: ..
@@ -538,9 +326,6 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  # ============================================================
-  # Port configuration for shell-frontend.
-  # ============================================================
   shell-frontend:
     build:
       context: ..
@@ -553,7 +338,7 @@ services:
       - "80"
     environment:
       TZ: Asia/Shanghai
-      API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
+      API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://gateway:8000}
       ENV: production
       VITE_ALLOWED_REDIRECT_ORIGINS: ${VITE_ALLOWED_REDIRECT_ORIGINS:-}
     healthcheck:
@@ -564,9 +349,6 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # ============================================================
-  # Port configuration for core-business-frontend.
-  # ============================================================
   core-business-frontend:
     build:
       context: ..
@@ -579,7 +361,7 @@ services:
       - "80"
     environment:
       TZ: Asia/Shanghai
-      API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
+      API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://gateway:8000}
       ENV: production
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1/health"]
@@ -589,9 +371,6 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # ============================================================
-  # Port configuration for platform-management-frontend.
-  # ============================================================
   platform-management-frontend:
     build:
       context: ..
@@ -604,7 +383,7 @@ services:
       - "80"
     environment:
       TZ: Asia/Shanghai
-      API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
+      API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://gateway:8000}
       ENV: production
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1/health"]
@@ -614,9 +393,6 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # ============================================================
-  # Port configuration for ecosystem-management-frontend.
-  # ============================================================
   ecosystem-management-frontend:
     build:
       context: ..
@@ -629,7 +405,7 @@ services:
       - "80"
     environment:
       TZ: Asia/Shanghai
-      API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
+      API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://gateway:8000}
       ENV: production
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1/health"]
@@ -639,11 +415,6 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  # ============================================================
-  # LightRAG, RAG, knowledge base configuration for lightrag.
-  # ============================================================
-  # RAG, platform configuration for lightrag.
-  # Redis, Neo4j, Milvus configuration for lightrag.
   lightrag:
     build:
       context: ..
@@ -654,14 +425,14 @@ services:
     networks:
       - jonex-network
     expose:
-      - "9621"  # Port configuration for env file.
+      - "9621"
     env_file:
-      - .env.rag  # LightRAG, RAG configuration for volumes.
+      - .env.rag
     volumes:
-      - jonex-rag-storage:/app/data/rag_storage  # Cache configuration for jonex-rag-inputs.
-      - jonex-rag-inputs:/app/data/inputs  # RAG configuration for extra hosts.
+      - jonex-rag-storage:/app/data/rag_storage
+      - jonex-rag-inputs:/app/data/inputs
     extra_hosts:
-      - "host.docker.internal:host-gateway"  # Configuration note for healthcheck.
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9621/health')"]
       interval: 30s
@@ -672,31 +443,13 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
-      # PostgreSQL, Milvus configuration for postgres.
-      postgres:
-        condition: service_healthy
-      milvus:
-        condition: service_healthy
-      llm-gateway:
-        condition: service_started
 
-  # ============================================================
-  # LightRAG, RAG, parser configuration for atomic-rag.
-  # ============================================================
-  # LightRAG, RAG configuration for atomic-rag.
-  # Sidecar configuration for atomic-rag.
-  # Proxy and routing configuration for atomic-rag.
-  # Health-check configuration for atomic-rag.
-  # ============================================================
   atomic-rag:
     build:
       context: ..
       dockerfile: deploy/docker/atomic-rag.Dockerfile
       args:
         MINERU_SOURCE: ${MINERU_SOURCE:-modelscope}
-        # Default configuration for RAG PROFILE.
-        # RAG, Docker configuration for RAG PROFILE.
-        RAG_PROFILE: ${RAG_PROFILE:-full}
     container_name: jonex-atomic-rag
     hostname: atomic-rag
     networks:
@@ -706,121 +459,80 @@ services:
     env_file:
       - .env
     environment:
-      # ===== Port configuration for SERVICE PORT =====
+
       SERVICE_PORT: "8000"
-      SERVICE_ENDPOINT: http://atomic-rag:8000  # Configuration note for TZ.
+      SERVICE_ENDPOINT: http://atomic-rag:8000
       TZ: Asia/Shanghai
 
-      # ===== RAG, parser configuration for RAG PARSER =====
-      # Required configuration for RAG PARSER; provide an environment-specific value.
-      RAG_PARSER: ${RAG_PARSER:-mineru}  # parser configuration for PARSE METHOD.
-      PARSE_METHOD: ${PARSE_METHOD:-auto}  # parser configuration for MINERU BACKEND.
-      MINERU_BACKEND: ${MINERU_BACKEND:-}  # Required configuration for MINERU TIMEOUT SECONDS; provide an environment-specific value.
+      RAG_PARSER: ${RAG_PARSER:-mineru}
+      PARSE_METHOD: ${PARSE_METHOD:-auto}
+      MINERU_BACKEND: ${MINERU_BACKEND:-}
       MINERU_TIMEOUT_SECONDS: ${MINERU_TIMEOUT_SECONDS:-1800}
-      MINERU_PARSE_MAX_RETRIES: ${MINERU_PARSE_MAX_RETRIES:-3}  # network, parser configuration for MINERU PARSE RETRY BACKOFF.
-      MINERU_PARSE_RETRY_BACKOFF: ${MINERU_PARSE_RETRY_BACKOFF:-3}  # Configuration note for OUTPUT DIR.
-      OUTPUT_DIR: /app/output  # Path configuration for WORKING DIR.
-      WORKING_DIR: /app/rag_storage  # Path configuration for RAG WORKER NUM.
-      # LightRAG, RAG configuration for RAG WORKER NUM.
-      # LightRAG, RAG configuration for RAG WORKER NUM.
-      RAG_WORKER_NUM: ${RAG_WORKER_NUM:-2}  # parser configuration for MINERU MODEL SOURCE.
-      MINERU_MODEL_SOURCE: ${MINERU_MODEL_SOURCE:-modelscope}  # Proxy and routing configuration for WHISPER MODEL.
-      WHISPER_MODEL: ${WHISPER_MODEL:-base}  # model configuration for RAG TEXT CHUNK CHARS.
+      OUTPUT_DIR: /app/output
+      WORKING_DIR: /app/rag_storage
+      LIGHTRAG_STORAGE_DIR: /app/rag_storage
+      RAG_WORKER_NUM: ${RAG_WORKER_NUM:-2}
+      MINERU_SOURCE: ${MINERU_SOURCE:-modelscope}
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
       RAG_TEXT_CHUNK_CHARS: ${RAG_TEXT_CHUNK_CHARS:-12000}
       RAG_REQUIRE_DOC_IDS: ${RAG_REQUIRE_DOC_IDS:-true}
       RAG_TRACK_STATUS_RETRIES: ${RAG_TRACK_STATUS_RETRIES:-180}
       RAG_TRACK_STATUS_DELAY_SECONDS: ${RAG_TRACK_STATUS_DELAY_SECONDS:-2}
-      RAG_BATCH_ENQUEUE_ENABLED: ${RAG_BATCH_ENQUEUE_ENABLED:-true}
-      RAG_TRACK_POLL_CONCURRENCY: ${RAG_TRACK_POLL_CONCURRENCY:-8}
-      RAG_TRACK_BATCH_TIMEOUT_SECONDS: ${RAG_TRACK_BATCH_TIMEOUT_SECONDS:-1800}
       TORCH_SHOW_CPP_STACKTRACES: ${TORCH_SHOW_CPP_STACKTRACES:-0}
-      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-8}  # Default configuration for MKL NUM THREADS.
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-8}
       MKL_NUM_THREADS: ${MKL_NUM_THREADS:-8}
 
-      # ===== Configuration note for VISION BINDING HOST =====
       VISION_BINDING_HOST: ${VISION_BINDING_HOST:-${LLM_BINDING_HOST:-}}
       VISION_BINDING_API_KEY: ${VISION_BINDING_API_KEY:-${LLM_BINDING_API_KEY:-}}
       LLM_BINDING_HOST: ${LLM_BINDING_HOST:-}
       LLM_BINDING_API_KEY: ${LLM_BINDING_API_KEY:-}
 
-      # ===== LightRAG, RAG configuration for LIGHTRAG API URL =====
       LIGHTRAG_API_URL: http://lightrag:9621
       LIGHTRAG_API_KEY: ${LIGHTRAG_API_KEY}
-      LIGHTRAG_API_TIMEOUT: "300"  # LightRAG, RAG configuration for RAG WEBHOOK URL.
+      LIGHTRAG_API_TIMEOUT: "300"
 
-      # ===== Configuration note for RAG WEBHOOK URL =====
-      RAG_WEBHOOK_URL: ${RAG_WEBHOOK_URL:-}  # Configuration note for ONTOLOGY EXTRACT ENABLED.
+      RAG_WEBHOOK_URL: ${RAG_WEBHOOK_URL:-}
 
-      # ===== ontology configuration for ONTOLOGY EXTRACT ENABLED =====
       ONTOLOGY_EXTRACT_ENABLED: ${ONTOLOGY_EXTRACT_ENABLED:-false}
       ONTOLOGY_SCHEMA_PATH: ${ONTOLOGY_SCHEMA_PATH:-/app/deploy/config/ontology/default.yaml}
       ONTOLOGY_EXTRACT_MAX_RETRIES: ${ONTOLOGY_EXTRACT_MAX_RETRIES:-3}
-      ONTOLOGY_LLM_BINDING_HOST: ${LLM_BINDING_HOST_FOR_ONTOLOGY:-http://llm-gateway:8787/v1}
-      ONTOLOGY_LLM_BINDING_API_KEY: ${LLM_BINDING_API_KEY_FOR_ONTOLOGY:?Set LLM_BINDING_API_KEY_FOR_ONTOLOGY in deploy/.env}
-      ONTOLOGY_LLM_MODEL: ${LLM_MODEL_FOR_ONTOLOGY:-deepseek-v4-flash-202605}
+      ONTOLOGY_LLM_BINDING_HOST: ${LLM_BINDING_HOST_FOR_ONTOLOGY:-https://tokenhub.tencentmaas.com/v1}
+      ONTOLOGY_LLM_BINDING_API_KEY: ${LLM_BINDING_API_KEY_FOR_ONTOLOGY:-${LLM_BINDING_API_KEY:-}}
+      ONTOLOGY_LLM_MODEL: ${LLM_MODEL_FOR_ONTOLOGY:-deepseek-v4-flash}
       ONTOLOGY_LLM_TIMEOUT: ${ONTOLOGY_LLM_TIMEOUT:-60}
       ONTOLOGY_EXTRACT_MAX_ENTITIES: ${ONTOLOGY_EXTRACT_MAX_ENTITIES:-200}
       ONTOLOGY_EXTRACT_MAX_CHUNKS: ${ONTOLOGY_EXTRACT_MAX_CHUNKS:-50}
       ONTOLOGY_EXTRACT_MAX_TOKENS: ${ONTOLOGY_EXTRACT_MAX_TOKENS:-4096}
-      # LLM, ontology configuration for ONTOLOGY EXTRACT CONCURRENCY.
-      # Sensitive configuration for ONTOLOGY EXTRACT CONCURRENCY; use a securely generated environment-specific value.
-      # Default configuration for ONTOLOGY EXTRACT CONCURRENCY.
-      ONTOLOGY_EXTRACT_CONCURRENCY: ${ONTOLOGY_EXTRACT_CONCURRENCY:-8}
-      # Neo4j configuration for ONTOLOGY ENTITY DESC MAXLEN.
-      ONTOLOGY_ENTITY_DESC_MAXLEN: ${ONTOLOGY_ENTITY_DESC_MAXLEN:-1000}
-      # Default configuration for ONTOLOGY KEEP UNTYPED EDGES.
-      ONTOLOGY_KEEP_UNTYPED_EDGES: ${ONTOLOGY_KEEP_UNTYPED_EDGES:-false}
-      # Default configuration for OBJECT STORAGE BACKEND.
-      OBJECT_STORAGE_BACKEND: ${OBJECT_STORAGE_BACKEND:-local}
-      COS_REGION: ${COS_REGION:-}
-      COS_SECRET_ID: ${COS_SECRET_ID:-}
-      COS_SECRET_KEY: ${COS_SECRET_KEY:-}
-      COS_BUCKET: ${COS_BUCKET:-}
-      COS_KEY_PREFIX: ${COS_KEY_PREFIX:-jonex}
-      COS_PRESIGN_EXPIRES: ${COS_PRESIGN_EXPIRES:-900}
-      # object storage, storage configuration for MPS ENABLED.
-      # parser configuration for MPS ENABLED.
-      # object storage, RAG configuration for MPS ENABLED.
-      MPS_ENABLED: ${MPS_ENABLED:-false}
-      MPS_SECRET_ID: ${MPS_SECRET_ID:-}
-      MPS_SECRET_KEY: ${MPS_SECRET_KEY:-}
-      MPS_COS_BUCKET: ${MPS_COS_BUCKET:-}
-      MPS_COS_REGION: ${MPS_COS_REGION:-}
 
     volumes:
-      - jonex-rag-storage:/app/rag_storage  # Path configuration for jonex-rag-inputs.
-      - jonex-rag-inputs:/app/inputs  # Path configuration for jonex-rag-models.
-      - jonex-rag-models:/root/.cache  # Cache configuration for depends on.
-      - ./config/ontology:/app/deploy/config/ontology:ro  # ontology configuration for depends on.
+      - jonex-rag-storage:/app/rag_storage
+      - jonex-rag-inputs:/app/inputs
+      - jonex-rag-models:/root/.cache
+      - ./config/ontology:/app/deploy/config/ontology:ro
     depends_on:
       lightrag:
         condition: service_healthy
       redis:
         condition: service_healthy
-      llm-gateway:
-        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 300s  # model configuration for restart.
+      start_period: 300s
     restart: unless-stopped
-    # GPU-specific configuration for neo4j.
-    # Development-only configuration for neo4j.
 
-  # ============================================================
-  # database, Neo4j, ontology configuration for neo4j.
-  # LightRAG, RAG, ontology configuration for neo4j.
-  # ============================================================
   neo4j:
     image: neo4j:5.26-community
     container_name: jonex-neo4j
     hostname: neo4j
     networks:
       - jonex-network
+    ports:
+      - "7474:7474"
+      - "7687:7687"
     environment:
-      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in deploy/.env}
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-jonex_neo4j_123}
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP:-1G}
       NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE:-512M}

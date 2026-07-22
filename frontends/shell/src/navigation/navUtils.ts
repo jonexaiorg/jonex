@@ -22,7 +22,7 @@ export function findActivePath(
             }
           }
         }
-
+        // Check if the path matches the group itself (e.g. /apps/core-business/domain-management)
         if (item.appId && item.internalPath) {
           const expected = `/apps/${item.appId}/${item.internalPath}`
           if (pathname === expected || pathname.startsWith(expected + '/')) {
@@ -31,7 +31,7 @@ export function findActivePath(
         }
       }
     }
-
+    // Check app root fallback: /apps/<appId> or /apps/<appId>/
     for (const item of section.items) {
       const appId = item.appId || (item.children?.[0]?.appId)
       if (appId) {
@@ -86,7 +86,7 @@ export function getExpandedKeys(pathname: string): string[] {
 
 export function getBreadcrumbItems(pathname: string): BreadcrumbEntry[] {
   const result = findActivePath(pathname)
-  const items: BreadcrumbEntry[] = [{ title: 'navigation.home', path: '/' }]
+  const items: BreadcrumbEntry[] = [{ title: '首页', path: '/' }]
 
   if (!result) return items
 

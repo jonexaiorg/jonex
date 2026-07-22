@@ -24,59 +24,6 @@ export interface AuthBootstrapResult {
   source: 'ticket' | 'local-token' | 'none'
 }
 
-interface ApiEnvelope<T> {
-  success: boolean
-  code?: number
-  message?: string
-  data?: T
-}
-
-interface AuthenticatedPayload {
-  status?: 'authenticated'
-  access_token?: string
-  accessToken?: string
-  refresh_token?: string
-  refreshToken?: string
-  user?: Record<string, unknown>
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
-}
-
-function unwrapEnvelope<T>(payload: unknown): T | null {
-  if (!isRecord(payload)) return null
-  if ('success' in payload && 'data' in payload) {
-    const envelope = payload as unknown as ApiEnvelope<T>
-    return envelope.success && envelope.data ? envelope.data : null
-  }
-  return payload as T
-}
-
-function normalizeUser(raw: Record<string, unknown>): ShellUser | null {
-  const id = raw.user_id || raw.id
-  const username = raw.username
-  if (!id || !username) return null
-
-  const displayName = raw.display_name || raw.displayName || username
-  const tenantId = raw.tenant_id || raw.tenantId
-  const tenantName = raw.tenant_name || raw.tenantName
-  const roles = Array.isArray(raw.roles)
-    ? raw.roles.map(String)
-    : raw.role
-      ? [String(raw.role)]
-      : []
-
-  return {
-    id: String(id),
-    username: String(username),
-    displayName: String(displayName),
-    tenantId: tenantId ? String(tenantId) : undefined,
-    tenantName: tenantName ? String(tenantName) : undefined,
-    roles,
-  }
-}
-
 export async function bootstrapStandaloneAuth(
   options: AuthBootstrapOptions,
 ): Promise<AuthBootstrapResult> {
@@ -90,14 +37,14 @@ export async function bootstrapStandaloneAuth(
     return cleanUrl.toString()
   }
 
-
+  // 1. 清理历史 URL token 参数
   const originalUrl = url.toString()
   stripBlockedAuthQuery(url)
   if (url.toString() !== originalUrl) {
     window.history.replaceState({}, '', url.toString())
   }
 
-
+  // 2. 如果有 ticket/code，尝试交换 token
   if (hasTicketCallback(url) && options.exchangeTicketUrl) {
     try {
       const cb = getTicketCallback(url)
@@ -114,18 +61,16 @@ export async function bootstrapStandaloneAuth(
       })
 
       if (resp.ok) {
-        const payload = await resp.json()
-        const data = unwrapEnvelope<AuthenticatedPayload>(payload)
-        const accessToken = data?.access_token || data?.accessToken
-        const user = data?.user ? normalizeUser(data.user) : null
+        const data = await resp.json()
+        const accessToken = data.access_token || data.accessToken
+        const user = data.user
         if (accessToken) {
           writeAccessToken(accessToken)
-          const refreshToken = data?.refresh_token || data?.refreshToken
-          if (refreshToken) {
-            writeRefreshToken(refreshToken)
+          if (data.refresh_token) {
+            writeRefreshToken(data.refresh_token)
           }
           if (user) writeCachedUser(user)
-
+          // 清理 URL 中的 ticket/code/state
           stripCallbackQuery(url)
           window.history.replaceState({}, '', url.toString())
           return { authenticated: true, token: accessToken, user: user || null, source: 'ticket' }
@@ -136,14 +81,14 @@ export async function bootstrapStandaloneAuth(
     }
   }
 
-
-
+  // URL 中有 ticket/code 但交换失败或未配置 exchange endpoint
+  // 清理 URL 参数避免残留
   if (hasTicketCallback(url)) {
     stripCallbackQuery(url)
     window.history.replaceState({}, '', url.toString())
   }
 
-
+  // 3. 如果本域有 token，验证有效性
   const token = readAccessToken()
   if (token) {
     if (options.authMeUrl) {
@@ -152,31 +97,29 @@ export async function bootstrapStandaloneAuth(
           headers: { Authorization: `Bearer ${token}` },
         })
         if (resp.ok) {
-          const payload = await resp.json()
-          const data = unwrapEnvelope<Record<string, unknown>>(payload)
-          const rawUser = data && isRecord(data.user) ? data.user : data
-          const user = rawUser ? normalizeUser(rawUser) : null
-          if (user) {
+          const data = await resp.json()
+          const user = data.user || data
+          if (user && user.id) {
             writeCachedUser(user)
-            return { authenticated: true, token, user, source: 'local-token' }
+            return { authenticated: true, token, user: user as ShellUser, source: 'local-token' }
           }
         }
-
+        // 401 或其他错误 → 清理并跳转登录
         if (resp.status === 401 || resp.status === 403) {
           clearAuthStorage({ keepLocale: true })
           window.location.href = buildLoginRedirectUrl(options.loginUrl, getCleanCurrentUrl(), options.appId)
           return { authenticated: false, token: null, user: null, source: 'none' }
         }
       } catch {
-
+        // 网络错误，信任本地 token
         return { authenticated: true, token, user: null, source: 'local-token' }
       }
     }
-
+    // 没有配置 authMeUrl，信任本地 token
     return { authenticated: true, token, user: null, source: 'local-token' }
   }
 
-
+  // 4. 无任何登录态 → 跳转登录页
   window.location.href = buildLoginRedirectUrl(options.loginUrl, getCleanCurrentUrl(), options.appId)
   return { authenticated: false, token: null, user: null, source: 'none' }
 }

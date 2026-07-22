@@ -1,21 +1,23 @@
-import { createI18nInstance, normalizeLocale } from '@jonex/i18n-resources'
-import zhBusiness from './zh.json'
-import enBusiness from './en.json'
+import i18n from 'i18next'
+import { initReactI18next } from 'react-i18next'
+import zhLocales from '@/locales/zh.json'
+import enLocales from '@/locales/en.json'
+import { getItem } from '@/utils/storage'
 
-const instance = createI18nInstance({
+i18n.use(initReactI18next).init({
+  fallbackLng: 'zh',
+  lng: (getItem('locale') as string) || 'zh',
   resources: {
-
-
-    zh: { translation: zhBusiness, business: zhBusiness },
-    en: { translation: enBusiness, business: enBusiness },
+    zh: {
+      translation: zhLocales,
+    },
+    en: {
+      translation: enLocales,
+    },
+  },
+  interpolation: {
+    escapeValue: false,
   },
 })
 
-
-if (typeof window !== 'undefined') {
-  window.addEventListener('jonex:locale-change', ((event: CustomEvent<string>) => {
-    void instance.changeLanguage(normalizeLocale(event.detail))
-  }) as EventListener)
-}
-
-export default instance
+export default i18n

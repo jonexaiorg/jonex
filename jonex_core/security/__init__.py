@@ -1,6 +1,10 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+Security module
 
-
+Contains inter-service internal authentication, permission verification and other security-related functionality
+"""
 
 from jonex_core.security.internal_auth import (
     InternalAuth,

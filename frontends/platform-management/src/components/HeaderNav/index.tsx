@@ -10,7 +10,7 @@ import {
 } from 'antd'
 import { MenuOutlined, ArrowLeftOutlined } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
-import i18next from '@/locales/i18n'
+import i18next from 'i18next'
 import { useNavigate, useLocation, useMatches } from 'react-router-dom'
 import { useStore } from '@/store'
 import { findMenuPathKeys, getMenuItemsByRole } from '@/utils/menu'
@@ -75,7 +75,7 @@ export default function HeaderNav({
     } else {
       document.title = i18next.t('site.title')
     }
-  }, [currentTitle, global.locale, t])
+  }, [currentTitle, global.locale])
 
   useEffect(() => {
     const pathname = location.pathname
@@ -193,7 +193,7 @@ export default function HeaderNav({
       <div style={{ borderTop: '1px solid rgba(31, 35, 41, 0.15)' }}>
         <div style={{ padding: '3px' }}>
           <div className={styles.logoutBox} onClick={handleUserMenuClick}>
-            {t('auth.logout')}
+            {t('auth.signOut')}
           </div>
         </div>
       </div>

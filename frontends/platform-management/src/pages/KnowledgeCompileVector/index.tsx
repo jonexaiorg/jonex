@@ -1,6 +1,5 @@
 import React from 'react'
 import { Input, Button, Card, List, Tag, Empty } from 'antd'
-import { useTranslation } from 'react-i18next'
 import { SearchOutlined, FileTextOutlined } from '@ant-design/icons'
 import { colors, radius } from '@jonex/platform-theme/tokens'
 
@@ -12,7 +11,6 @@ const mockVectorResults = [
 ]
 
 export default function KnowledgeCompileVector() {
-  const { t } = useTranslation()
   const [query, setQuery] = React.useState('')
   const [results, setResults] = React.useState<typeof mockVectorResults>([])
   const [searched, setSearched] = React.useState(false)
@@ -26,9 +24,9 @@ export default function KnowledgeCompileVector() {
   return (
     <div>
       <div className="yx-page-title">
-        <h1>{t('knowledgeCompile.vector')}</h1>
+        <h1>向量检索</h1>
         <p style={{ color: colors.textSecondary, margin: '4px 0 0', fontSize: 14 }}>
-          {t('knowledgeCompile.vectorDesc', '基于向量语义相似度进行知识召回测试')}
+          基于向量语义相似度进行知识召回测试
         </p>
       </div>
 
@@ -36,7 +34,7 @@ export default function KnowledgeCompileVector() {
         <div style={{ display: 'flex', gap: 12 }}>
           <Input
             prefix={<SearchOutlined />}
-            placeholder={t('knowledgeCompile.vectorPlaceholder', '输入查询文本，测试向量相似度召回...')}
+            placeholder="输入查询文本，测试向量相似度召回..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onPressEnter={handleSearch}
@@ -44,7 +42,7 @@ export default function KnowledgeCompileVector() {
             size="large"
           />
           <Button type="primary" size="large" onClick={handleSearch}>
-            {t('knowledgeCompile.vector')}
+            向量检索
           </Button>
         </div>
       </Card>
@@ -52,7 +50,7 @@ export default function KnowledgeCompileVector() {
       {searched && (
         <Card style={{ borderRadius: radius.card, border: `1px solid ${colors.border}` }} styles={{ body: { padding: 24 } }}>
           <div style={{ marginBottom: 16, color: colors.textSecondary, fontSize: 13 }}>
-            {t('knowledgeCompile.vectorResults', { dim: 768, count: results.length })}
+            向量维度: <strong>768</strong> | 返回 <strong style={{ color: colors.accent }}>{results.length}</strong> 条结果
           </div>
           {results.length > 0 ? (
             <List
@@ -63,20 +61,20 @@ export default function KnowledgeCompileVector() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <FileTextOutlined style={{ color: colors.accent }} />
                       <span style={{ fontWeight: 600, fontSize: 15, color: colors.textPrimary }}>{item.title}</span>
-                      <Tag color="blue">{t('knowledgeCompile.similarity', '相似度')}: {(item.score * 100).toFixed(0)}%</Tag>
+                      <Tag color="blue">相似度: {(item.score * 100).toFixed(0)}%</Tag>
                     </div>
                     <p style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 1.6, margin: '4px 0' }}>
                       {item.chunk}
                     </p>
                     <div style={{ fontSize: 12, color: colors.textMuted }}>
-                      {t('knowledgeCompile.source', '来源')}: {item.source}
+                      来源: {item.source}
                     </div>
                   </div>
                 </List.Item>
               )}
             />
           ) : (
-            <Empty description={t('knowledgeCompile.noVectorResults', '未找到向量检索结果')} />
+            <Empty description="未找到向量检索结果" />
           )}
         </Card>
       )}

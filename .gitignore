@@ -1,79 +1,66 @@
-# Python bytecode, caches, and packaging artifacts
+# ===== Python =====
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-*.egg
-*.egg-info/
-.eggs/
-build/
-dist/
-site/
-*.whl
-*.tar
-*.tar.gz
-*.tgz
 
-# Python environments and tool caches
-.venv/
-.venv-*/
-venv/
-env/
-.tox/
-.cache/
-.mypy_cache/
+# ===== 测试 / 覆盖率 / 工具缓存 =====
 .pytest_cache/
-.ruff_cache/
-.hypothesis/
-.gradio/
 .coverage
 .coverage.*
 coverage.xml
 htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
 
-# Keep reproducible dependency lock files in version control:
-#   /uv.lock
-#   /frontends/pnpm-lock.yaml
-**/package-lock.json
-**/yarn.lock
+# ===== 打包产物 =====
+build/
+dist/
+data/
+*.egg-info/
+*.egg
+*.tar
+*.tar.gz
+*.whl
+*.zip
 
-# Environment files. Public examples are explicitly allowed.
-**/.env
-**/.env.*
-!**/.env.example
-!**/.env.*.example
-.env.backup.*
+# ===== uv 包管理器 =====
+uv.lock
 
-# Local-only runtime configuration
-*.local.yaml
-*.local.yml
-capability_runtime.local.yaml
+# ===== 虚拟环境 =====
+.venv/
+venv/
+env/
 
-# IDEs and local AI tooling
+# ===== IDE / 编辑器 =====
 .idea/
 .vscode/
 .kiro/
-.claude/
-.agents/
-.jules/
-.planning/
-.worktrees/
-*.code-workspace
-launch.json
-settings.json
 *.sw?
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 
-# Frontend dependencies and build output
-**/node_modules/
+# ===== 系统垃圾 =====
+.DS_Store
+Thumbs.db
+
+# ===== 日志 =====
+logs/
+*.log
+
+# ===== 本地数据 =====
+*.sqlite
+*.sqlite3
+*.db
+
+# ===== 前端 (frontends) =====
+frontends/**/node_modules/
 frontends/**/dist/
 frontends/**/dist-ssr/
-frontends/**/.vite/
-frontends/**/.turbo/
-frontends/**/coverage/
 frontends/**/*.local
 frontends/**/npm-debug.log*
 frontends/**/yarn-debug.log*
@@ -81,56 +68,50 @@ frontends/**/yarn-error.log*
 frontends/**/pnpm-debug.log*
 frontends/**/lerna-debug.log*
 
-# Logs and reports
-logs/
-log/
-.dev-logs/
-frontends/.dev-logs/
-*.log
-*.log.*
-*.logfire
-test-results/
 
-# Runtime data and generated storage
-inputs/
-output/
-data/
-!frontends/*/src/data/
-!frontends/*/src/data/**
-rag_storage/
-.lightrag_data/
-local_neo4jWorkDir/
-neo4jWorkDir/
-*.sqlite
-*.sqlite3
-*.db
-prompts/entity_type/
-lightrag/evaluation/results/
-parse_output/
+# ===== 环境变量（保留 .env.example） =====
+.env
+.env.*
+!.env.example
+!.env.local.example
+deploy/.env
+deploy/.env.*
+!deploy/.env.example
+!deploy/.env.rag.example
 
-# Temporary and scratch files
-.tmp_*/
-tmp/
-temp/
-*.tmp
-.history/
-/test_*
-/dickens*/
-/book.txt
-/ag2_demo_workdir/
-ignore_this.txt
-*.ignore.*
-jonex.ps1.bak
-memory-bank/
+# ===== Reference 引用项目（排除非项目文件） =====
+Reference/Rag-anything/.github/
+Reference/Rag-anything/output/
+Reference/Rag-anything/rag_storage*/
+Reference/Rag-anything/.claude/
+
+# LightRAG 源码集成（保留 lightrag/ 与 lightrag_webui/ 源码及构建元数据，
+# 排除 .git / 虚拟环境 / 生成数据 / 缓存等运行期产物）
+Reference/LightRAG/.git/
+Reference/LightRAG/.github/
+Reference/LightRAG/.venv/
+Reference/LightRAG/venv/
+Reference/LightRAG/data/
+Reference/LightRAG/rag_storage*/
+Reference/LightRAG/inputs/
+Reference/LightRAG/output/
+Reference/LightRAG/output_complete/
+Reference/LightRAG/dickens/
+Reference/LightRAG/reproduce/
+Reference/LightRAG/**/__pycache__/
+Reference/LightRAG/**/*.egg-info/
+Reference/LightRAG/.pytest_cache/
+Reference/LightRAG/.mypy_cache/
+Reference/LightRAG/.ruff_cache/
+Reference/LightRAG/.env
+Reference/LightRAG/lightrag_webui/node_modules/
+Reference/LightRAG/lightrag_webui/dist/
+
+# ===== Git Worktrees =====
+.worktrees/
+
+# ===== Claude / Memory（保留原约定） =====
+/.claude/
 /memory/
+test-results
 .mcp.json
-.playwright-mcp/
-.codegraph/
-
-# Generated local Docker Compose overrides
-docker-compose.local.yml
-docker-compose.generated.yml
-
-# Operating-system files
-.DS_Store
-Thumbs.db

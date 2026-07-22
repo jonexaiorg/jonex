@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, type ChangeEvent } from 'react'
-import { Button, Card, Table, Tag, Input, Space, message, Modal } from 'antd'
+import { Button, Card, Table, Tag, Input, Space, message } from 'antd'
 import {
   ArrowLeftOutlined,
   UploadOutlined,
@@ -17,23 +17,21 @@ import {
 import { useNavigate, useParams } from 'react-router-dom'
 import type { ManualDocItem, DomainKnowledgeDetail as DomainKnowledgeDetailType } from '@/types/domainKnowledge'
 import { getDomainKnowledgeDetail } from '@/api/domainKnowledge'
-import { getManualDocList, uploadManualDocument, deleteManualDocument } from '@/api/domainKnowledge'
-import { useDocumentViewer } from '@/components/DocumentViewer'
-import { useTranslation } from 'react-i18next'
+import { getManualDocList, uploadManualDocument } from '@/api/domainKnowledge'
 
 const PAGE_SIZE = 7
 
-const FORMATS = 'PDF · DOC · DOCX · PPT · PPTX · XLS · XLSX · TXT · MD · JPG · PNG · GIF · BMP · TIFF · WEBP · MP3 · WAV · FLAC · MP4 · AVI · MOV · MKV'
+const FORMATS = 'PDF, DOCX, XLSX, PPTX, 图片'
 
 export default function DomainKnowledgeDatasourceManual() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-
+  // ── header info ──────────────────────────────────────
   const [detail, setDetail] = useState<DomainKnowledgeDetailType | null>(null)
   const [detailLoading, setDetailLoading] = useState(true)
 
-
+  // ── doc list ──────────────────────────────────────────
   const [docs, setDocs] = useState<ManualDocItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -42,24 +40,20 @@ export default function DomainKnowledgeDatasourceManual() {
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
 
-  const [reloadFlag, setReloadFlag] = useState(0)
-
-  const { t } = useTranslation()
-
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-
+  // ── fetch header ──────────────────────────────────────
   useEffect(() => {
     if (!id) return
     setDetailLoading(true)
     getDomainKnowledgeDetail(id)
       .then(setDetail)
-      .catch((err: any) => message.error(err?.message || t('domainKnowledge.loadFailed')))
+      .catch((err: any) => message.error(err?.message || '获取知识库信息失败'))
       .finally(() => setDetailLoading(false))
   }, [id])
 
-
+  // ── fetch doc list ────────────────────────────────────
   const fetchList = useCallback(
     async (p: number, kw: string) => {
       if (!id) return
@@ -74,7 +68,7 @@ export default function DomainKnowledgeDatasourceManual() {
         setDocs(result.list)
         setTotal(result.pagination.total)
       } catch (err: any) {
-        message.error(err?.message || t('common.loadFailed'))
+        message.error(err?.message || '获取文档列表失败')
       } finally {
         setLoading(false)
       }
@@ -82,91 +76,64 @@ export default function DomainKnowledgeDatasourceManual() {
     [id],
   )
 
+  useEffect(() => {
+    fetchList(1, '')
+  }, [fetchList])
 
+  // ── keyword debounce ──────────────────────────────────
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       setKeyword(keywordInput)
-      setPage(1)
     }, 300)
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [keywordInput])
 
-
-
   useEffect(() => {
-    fetchList(page, keyword)
-  }, [page, keyword, reloadFlag, fetchList])
+    fetchList(1, keyword)
+    setPage(1)
+  }, [keyword, fetchList])
 
+  // ── pagination ────────────────────────────────────────
+  useEffect(() => {
+    if (page !== 1) {
+      fetchList(page, keyword)
+    }
+  }, [page])
 
+  // ── upload handler ────────────────────────────────────
   const handleUpload = useCallback(
     async (file: File) => {
       if (!id) return
       setUploading(true)
       try {
         await uploadManualDocument(id, file)
-        message.success(t('dataSource.uploadSuccess', { name: file.name }))
-
+        message.success(`「${file.name}」上传成功`)
+        fetchList(1, keyword)
         setPage(1)
-        setReloadFlag((f) => f + 1)
       } catch (err: any) {
-        message.error(err?.message || t('dataSource.uploadFailed'))
+        message.error(err?.message || '上传失败')
       } finally {
         setUploading(false)
       }
     },
-    [id],
+    [id, keyword, fetchList],
   )
 
   const handleFileChange = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       if (file) handleUpload(file)
-
+      // reset so same file can be re-selected
       e.target.value = ''
     },
     [handleUpload],
   )
 
-
-
-  const { openDocument, viewer } = useDocumentViewer()
-
-  const handleView = useCallback((doc: ManualDocItem) => {
-    openDocument({ docId: doc.id, fileName: doc.name })
-  }, [openDocument])
-
-
-  const handleDelete = useCallback(
-    (doc: ManualDocItem) => {
-      if (!id) return
-      Modal.confirm({
-        title: t('dataSource.deleteDocument'),
-        content: `Delete “${doc.name}”? This removes the document and its parsed data from the knowledge base.`,
-        okText: t('dataSource.delete'),
-        okButtonProps: { danger: true },
-        cancelText: t('dataSource.cancel'),
-        onOk: async () => {
-          try {
-            await deleteManualDocument(id, doc.id)
-            message.success(t('common.deletedSuccess'))
-
-            const nextPage = docs.length === 1 && page > 1 ? page - 1 : page
-            setPage(nextPage)
-            setReloadFlag((f) => f + 1)
-          } catch (err: any) {
-            message.error(err?.message || t('common.deleteFailed'))
-          }
-        },
-      })
-    },
-    [id, docs.length, page],
-  )
-
-
-  const STATUS_STEPS = ['Ingest', 'Parse', 'Compile']
+  // ── status helper ─────────────────────────────────────
+  const STATUS_STEPS = ['入库', '解析', '编译']
   type StepState = 'done' | 'active' | 'pending'
   const stepColors: Record<StepState, { bg: string; text: string }> = {
     done: { bg: '#ecfdf5', text: '#10b981' },
@@ -184,7 +151,7 @@ export default function DomainKnowledgeDatasourceManual() {
   }
 
   const renderStatus = (v: string) => {
-
+    // non-chain status (failed etc.)
     if (!v.includes('·')) {
       const isError = v === 'failed'
       return (
@@ -195,11 +162,11 @@ export default function DomainKnowledgeDatasourceManual() {
             color: isError ? '#ef4444' : '#64748b',
           }}
         >
-          {isError ? 'Parsing Failed' : v}
+          {isError ? '解析失败' : v}
         </Tag>
       )
     }
-
+    // chain status — use plain spans to avoid antd Tag border-radius override
     const states = getStepStates(v)
     return (
       <Space size={4}>
@@ -227,48 +194,48 @@ export default function DomainKnowledgeDatasourceManual() {
     )
   }
 
-
+  // ── columns ───────────────────────────────────────────
   const columns = [
     {
-      title: t('dataSource.documentName'),
+      title: '文档名称',
       dataIndex: 'name',
       key: 'name',
       width: 240,
       render: (v: string) => <a className="yx-table-action">{v}</a>,
     },
-    { title: t('knowledgeSearch.fileType'), dataIndex: 'type', key: 'type', width: 80 },
-    { title: t('knowledgeSearch.fileSize'), dataIndex: 'size', key: 'size', width: 90 },
-    { title: t('dataSource.documentUploader'), dataIndex: 'uploader', key: 'uploader', width: 90 },
+    { title: '类型', dataIndex: 'type', key: 'type', width: 80 },
+    { title: '大小', dataIndex: 'size', key: 'size', width: 90 },
+    { title: '上传人', dataIndex: 'uploader', key: 'uploader', width: 90 },
     {
-      title: t('dataSource.documentTime'),
+      title: '上传时间',
       dataIndex: 'uploadTime',
       key: 'uploadTime',
       width: 150,
     },
     {
-      title: t('dataSource.documentStatus'),
+      title: '状态',
       dataIndex: 'status',
       key: 'status',
       width: 200,
       render: (v: string) => renderStatus(v),
     },
     {
-      title: t('knowledgeSearch.actions'),
+      title: '操作',
       key: 'actions',
       width: 100,
-      render: (_: unknown, record: ManualDocItem) => (
+      render: () => (
         <>
-          <a className="yx-table-action" onClick={() => handleView(record)}>{t('domainKnowledge.roleView')}</a>
-          <a className="yx-table-action" onClick={() => handleDelete(record)}>{t('dataSource.delete')}</a>
+          <a className="yx-table-action">查看</a>
+          <a className="yx-table-action">删除</a>
         </>
       ),
     },
   ]
 
-
+  // ── row selection ──────────────────────────────────────
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
 
-
+  // ── pagination helpers ────────────────────────────────
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const pageNumbers = (): number[] => {
     const pages: number[] = []
@@ -290,7 +257,7 @@ export default function DomainKnowledgeDatasourceManual() {
           cursor: 'pointer',
         }}
       >
-        <ArrowLeftOutlined /> {t('domainKnowledge.detail')}
+        <ArrowLeftOutlined /> 返回知识库详情
       </a>
 
       <Card
@@ -333,10 +300,10 @@ export default function DomainKnowledgeDatasourceManual() {
             }}
           >
             {detailLoading
-              ? t('dataSource.loading')
+              ? '加载中...'
               : detail
-                ? `${detail.name} · ${t('dataSource.manualUpload')}`
-                : t('dataSource.manualUpload')}
+                ? `${detail.name} · 手动上传`
+                : '手动上传数据源'}
           </h2>
           <div
             style={{
@@ -348,18 +315,18 @@ export default function DomainKnowledgeDatasourceManual() {
               flexWrap: 'wrap',
             }}
           >
-            <span><TagOutlined style={{ marginRight: 4 }} />{t('dataSource.manualUpload')}</span>
+            <span><TagOutlined style={{ marginRight: 4 }} />手动上传</span>
             <span><GlobalOutlined style={{ marginRight: 4 }} />{detail?.spaceName || '--'}</span>
-            <span><FileTextOutlined style={{ marginRight: 4 }} />{total} documents</span>
+            <span><FileTextOutlined style={{ marginRight: 4 }} />{total} 文档</span>
             <span><FileOutlined style={{ marginRight: 4 }} />{FORMATS}</span>
           </div>
         </div>
         <Button icon={<SettingOutlined />} style={{ borderRadius: 8, padding: '6px 16px', fontSize: 13, height: 'auto' }}>
-          {t('common.config')}
+          配置
         </Button>
       </Card>
 
-      { }
+      {/* Upload Zone — native input for full-width */}
       <input
         ref={fileInputRef}
         type="file"
@@ -399,7 +366,7 @@ export default function DomainKnowledgeDatasourceManual() {
             <p
               style={{ fontSize: 14, color: '#64748b', margin: 0 }}
             >
-              Uploading...
+              正在上传...
             </p>
           </>
         ) : (
@@ -414,8 +381,8 @@ export default function DomainKnowledgeDatasourceManual() {
             <p
               style={{ fontSize: 14, color: '#64748b', margin: 0 }}
             >
-              Drag files here, or click{' '}
-              <strong style={{ color: '#3b82f6' }}>Choose Files</strong> to upload
+              拖拽文件到此处，或点击{' '}
+              <strong style={{ color: '#3b82f6' }}>选择文件</strong> 上传
             </p>
             <p
               style={{
@@ -424,7 +391,7 @@ export default function DomainKnowledgeDatasourceManual() {
                 margin: '4px 0 0',
               }}
             >
-              Supports PDF, Office documents, images, audio, and video. Formats are detected automatically.
+              支持 PDF、DOCX、XLSX、PPTX、图片等格式，单文件最大 500MB
             </p>
           </>
         )}
@@ -455,21 +422,24 @@ export default function DomainKnowledgeDatasourceManual() {
                 color: '#0b2b5c',
               }}
             >
-              Documents
+              文档列表
             </span>
             <Input
               prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
-              placeholder={t('dataSource.documentName')}
+              placeholder="搜索文档名称..."
               style={{ width: 240 }}
               value={keywordInput}
-              onChange={(e) => setKeywordInput(e.target.value)}
+              onChange={(e) => {
+                setKeywordInput(e.target.value)
+                setPage(1)
+              }}
             />
           </Space>
           <Space>
-            {
-
-}
-            { }
+            {/* <Button type="primary" icon={<PlusOutlined />} style={{ borderRadius: 8, padding: '6px 16px', fontSize: 13, height: 'auto' }}>
+              添加文档
+            </Button> */}
+            <Button icon={<FolderOpenOutlined />} style={{ borderRadius: 8, padding: '6px 16px', fontSize: 13, height: 'auto' }}>批量上传</Button>
           </Space>
         </div>
         <Table
@@ -516,7 +486,7 @@ export default function DomainKnowledgeDatasourceManual() {
             },
           }}
         />
-        { }
+        {/* Custom Pagination */}
         <div
           style={{
             display: 'flex',
@@ -589,13 +559,10 @@ export default function DomainKnowledgeDatasourceManual() {
             <RightOutlined />
           </span>
           <span style={{ fontSize: 13, color: '#94a3b8', marginLeft: 12 }}>
-            {total} items, page {page} of {totalPages}
+            共 {total} 条，{page}/{totalPages} 页
           </span>
         </div>
       </Card>
-
-      { }
-      {viewer}
     </div>
   )
 }

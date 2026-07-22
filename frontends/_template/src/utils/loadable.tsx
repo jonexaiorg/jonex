@@ -70,7 +70,7 @@ if (typeof window !== 'undefined' && !window.__CHUNK_LOAD_HANDLER_INSTALLED) {
         }, 500)
       }
     } catch (e) {
-
+      // ignore
     }
   })
 }

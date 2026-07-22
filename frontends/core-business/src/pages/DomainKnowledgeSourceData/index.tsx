@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { Button, Card, Select, Space } from 'antd'
 import { DownloadOutlined, SyncOutlined } from '@ant-design/icons'
-import { useTranslation } from 'react-i18next'
 
 const stats = [
   { label: '总文档数', value: '1,284' },
@@ -47,14 +46,13 @@ const kbs = ['金融产品知识库', '医学文献知识库', '设备故障知�
 const tabs = ['原始数据', '结构化数据', '元数据']
 
 export default function DomainKnowledgeSourceData() {
-  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState('原始数据')
   const [selectedKb, setSelectedKb] = useState(kbs[0])
 
   return (
     <div>
       <div className="yx-page-title">
-        <h1>{t('knowledgeSearch.sourceData')}</h1>
+        <h1>源数据查看</h1>
         <p style={{ color: '#64748b', margin: '4px 0 0', fontSize: 14 }}>查看各知识库的原始数据内容</p>
       </div>
 
@@ -81,7 +79,7 @@ export default function DomainKnowledgeSourceData() {
         {stats.map((s) => (
           <Card key={s.label} style={{ borderRadius: 8, textAlign: 'center', border: '1px solid #e2e8f0' }} bodyStyle={{ padding: 16 }}>
             <div style={{ fontSize: 24, fontWeight: 700, color: '#3b82f6' }}>{s.value}</div>
-            <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>{s.label === '总文档数' ? t('dataSource.totalDocuments') : s.label}</div>
+            <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>{s.label}</div>
           </Card>
         ))}
       </div>

@@ -79,12 +79,13 @@ const BasicLayout = observer(() => {
     <div className={styles['page-layout']}>
       <aside className="yx-sidebar" style={{ width: sidebarWidth }}>
         <div className={styles['sidebar-brand']}>
-          <Link to="/adapter-management" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center' }}>
-            <img
-              src={sidebarCollapsed ? '/favicon-white.png' : '/logo-white.svg'}
-              alt="Jonex"
-              style={{ height: sidebarCollapsed ? 36 : 32, transition: 'height 0.2s' }}
-            />
+          <Link to="/adapter-management" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span className={styles['brand-icon']}>溪</span>
+            {!sidebarCollapsed && (
+              <span className={styles['brand-text']}>
+                悦<span className={styles['brand-accent']}>溪</span> · 平台
+              </span>
+            )}
           </Link>
         </div>
 
@@ -98,7 +99,7 @@ const BasicLayout = observer(() => {
               style={{ cursor: 'pointer', textDecoration: 'none' }}
             >
               {renderNavIcon(item.icon)}
-              {!sidebarCollapsed && <span>{t(item.label)}</span>}
+              {!sidebarCollapsed && <span>{item.label}</span>}
             </a>
           ))}
         </nav>
@@ -108,7 +109,7 @@ const BasicLayout = observer(() => {
         <header className="yx-topbar">
           <div className="yx-breadcrumb">
             <HomeOutlined style={{ marginRight: 6 }} />
-            <span className="current">{t(currentTitle) || t('site.title')}</span>
+            <span className="current">{currentTitle || t('site.title')}</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -118,7 +119,7 @@ const BasicLayout = observer(() => {
                   items: [{
                     key: 'logout',
                     icon: <LogoutOutlined />,
-                    label: t('auth.logout'),
+                    label: t('auth.signOut'),
                     onClick: handleLogout,
                   }],
                 }}

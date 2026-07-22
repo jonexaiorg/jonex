@@ -38,7 +38,6 @@ export default defineConfig(() => {
       alias: {
         '@': `${pathSrc}`,
         '@jonex/shell-sdk': path.resolve(__dirname, '../shared/shell-sdk/src/index.ts'),
-        '@jonex/platform-theme': path.resolve(__dirname, '../shared/platform-theme/src'),
       },
     },
     build: {

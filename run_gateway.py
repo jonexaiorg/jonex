@@ -1,11 +1,17 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+Jonex platform - API Gateway startup script
 
-
+Usage:
+    python run_gateway.py          # Start gateway
+    python run_gateway.py --port 8080  # Specify port
+"""
 
 import sys
 import argparse
 
-
+# Add project root directory to path
 sys.path.insert(0, '.')
 
 import uvicorn
@@ -16,36 +22,36 @@ logger = get_logger("gateway_launcher")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Jonex平台 API 网关")
+    parser = argparse.ArgumentParser(description="Jonex platform API Gateway")
     parser.add_argument(
         "--host",
         type=str,
         default="0.0.0.0",
-        help="监听地址 (默认: 0.0.0.0)",
+        help="Listen address (default: 0.0.0.0)",
     )
     parser.add_argument(
         "--port",
         type=int,
         default=8000,
-        help="监听端口 (默认: 8000)",
+        help="Listen port (default: 8000)",
     )
     parser.add_argument(
         "--workers",
         type=int,
         default=1,
-        help="工作进程数 (默认: 1)",
+        help="Number of worker processes (default: 1)",
     )
     parser.add_argument(
         "--reload",
         action="store_true",
-        help="开发模式：代码变更自动重载",
+        help="Development mode: auto-reload on code changes",
     )
     parser.add_argument(
         "--env",
         type=str,
         default=None,
         choices=["dev", "test", "prod"],
-        help="运行环境",
+        help="Runtime environment",
     )
 
     args = parser.parse_args()
@@ -53,12 +59,12 @@ def main():
     if args.env:
         import os
         os.environ["ENV"] = args.env
-        logger.info(f"Setting runtime environment: {args.env}")
+        logger.info(f"Set runtime environment: {args.env}")
 
     logger.info("=" * 60)
-    logger.info("Jonex Platform API Gateway is starting...")
-    logger.info(f"Listening address: http://{args.host}:{args.port}")
-    logger.info(f"Worker count: {args.workers}")
+    logger.info("Jonex platform API Gateway starting...")
+    logger.info(f"Listen address: http://{args.host}:{args.port}")
+    logger.info(f"Number of worker processes: {args.workers}")
     logger.info(f"Development mode: {'enabled' if args.reload else 'disabled'}")
     logger.info(f"Runtime environment: {config.ENV}")
     logger.info("=" * 60)
@@ -81,5 +87,5 @@ if __name__ == "__main__":
         logger.info("API Gateway stopped")
         sys.exit(0)
     except Exception as e:
-        logger.exception(f"API Gateway startup failed: {e}")
+        logger.exception(f"API Gateway failed to start: {e}")
         sys.exit(1)

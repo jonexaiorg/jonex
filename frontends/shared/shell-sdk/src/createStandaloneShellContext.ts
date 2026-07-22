@@ -1,6 +1,4 @@
-import type { ShellContext, ShellUser, SupportedLocale } from './types'
-import { isSupportedLocale } from './types'
-import { LANGUAGE_STORAGE_KEY } from './constants'
+import type { ShellContext, ShellUser } from './types'
 import { readAccessToken, readCachedUser, clearAuthStorage } from './authStorage'
 import { buildLoginRedirectUrl } from './authRedirect'
 
@@ -15,26 +13,17 @@ interface StandaloneOptions {
 
 const listeners = new Map<string, Set<(payload?: unknown) => void>>()
 
-function resolveLocale(locale?: string | null): SupportedLocale {
-  return locale && isSupportedLocale(locale) ? locale : 'en'
-}
-
 export function createStandaloneShellContext(options: StandaloneOptions): ShellContext {
   const appId = options.appId
   const basePath = options.basePath
-  const initialLocale = resolveLocale(
-    options.locale ?? (typeof window !== 'undefined'
-      ? window.localStorage.getItem(LANGUAGE_STORAGE_KEY)
-      : null),
-  )
 
-  const context: ShellContext = {
+  return {
     appId,
     basePath,
     mode: 'standalone',
     token: options.token ?? readAccessToken(),
     user: options.user ?? readCachedUser<ShellUser>(),
-    locale: initialLocale,
+    locale: options.locale ?? localStorage.getItem('locale') ?? 'zh',
     theme: {},
 
     navigate: (to: string, opts?: { replace?: boolean }) => {
@@ -55,17 +44,11 @@ export function createStandaloneShellContext(options: StandaloneOptions): ShellC
     getToken: () => options.token ?? readAccessToken(),
     getCurrentUser: () => options.user ?? readCachedUser<ShellUser>(),
 
-    setLocale: (locale: SupportedLocale) => {
-      context.locale = locale
-      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, locale)
-      window.dispatchEvent(new CustomEvent<SupportedLocale>('jonex:locale-change', { detail: locale }))
-    },
-
     emitEvent: (name: string, payload?: unknown) => {
       const handlers = listeners.get(name)
       if (handlers) {
         handlers.forEach((fn) => {
-          try { fn(payload) } catch {   }
+          try { fn(payload) } catch { /* swallow */ }
         })
       }
     },
@@ -88,6 +71,4 @@ export function createStandaloneShellContext(options: StandaloneOptions): ShellC
       console.log('[shell-sdk] Metric:', name, value, tags)
     },
   }
-
-  return context
 }

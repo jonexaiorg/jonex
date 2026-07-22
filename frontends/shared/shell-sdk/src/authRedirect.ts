@@ -57,7 +57,7 @@ export function isAllowedRedirect(url: URL, allowedOrigins: string[]): boolean {
   const origin = url.origin
   return allowedOrigins.some((allowed) => {
     if (allowed === origin) return true
-
+    // 支持 localhost 通配端口
     if (allowed.startsWith('http://localhost:') || allowed.startsWith('http://127.0.0.1:')) {
       return origin.startsWith(allowed.split(':').slice(0, -1).join(':'))
     }

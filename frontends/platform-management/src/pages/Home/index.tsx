@@ -1,28 +1,25 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Row, Col, Card } from 'antd'
-import { useTranslation } from 'react-i18next'
 import { RobotOutlined, TeamOutlined, UserOutlined, SafetyOutlined, ScheduleOutlined, FileTextOutlined, SettingOutlined } from '@ant-design/icons'
+
+const actions = [
+  { label: '模型适配', desc: '管理 AI 模型与适配器', path: '/model-adapter', icon: <RobotOutlined />, color: '#10b981' },
+  { label: '租户管理', desc: '管理平台租户与配额', path: '/tenant-management', icon: <TeamOutlined />, color: '#3b82f6' },
+  { label: '用户管理', desc: '用户账号与权限管理', path: '/user-management', icon: <UserOutlined />, color: '#8b5cf6' },
+  { label: '角色权限', desc: '角色定义与权限配置', path: '/role-permission', icon: <SafetyOutlined />, color: '#f59e0b' },
+  { label: '任务调度', desc: '定时任务与调度管理', path: '/task-schedule', icon: <ScheduleOutlined />, color: '#ec4899' },
+  { label: '系统配置', desc: '平台全局参数配置', path: '/system-config', icon: <SettingOutlined />, color: '#64748b' },
+  { label: '日志管理', desc: '操作日志与审计追踪', path: '/operation-log', icon: <FileTextOutlined />, color: '#ef4444' },
+]
 
 export default function Home() {
   const navigate = useNavigate()
-  const { t } = useTranslation()
-
-  const actions = [
-    { label: t('home.manageUsers'), desc: t('home.manageUsers'), path: '/model-adapter', icon: <RobotOutlined />, color: '#10b981' },
-    { label: t('home.manageTenants'), desc: t('home.manageTenants'), path: '/tenant-management', icon: <TeamOutlined />, color: '#3b82f6' },
-    { label: t('userManagement.title'), desc: t('userManagement.title'), path: '/user-management', icon: <UserOutlined />, color: '#8b5cf6' },
-    { label: t('rolePermission.title'), desc: t('rolePermission.title'), path: '/role-permission', icon: <SafetyOutlined />, color: '#f59e0b' },
-    { label: t('taskSchedule.title'), desc: t('taskSchedule.title'), path: '/task-schedule', icon: <ScheduleOutlined />, color: '#ec4899' },
-    { label: t('systemConfig.title'), desc: t('systemConfig.title'), path: '/system-config', icon: <SettingOutlined />, color: '#64748b' },
-    { label: t('operationLog.title'), desc: t('operationLog.title'), path: '/operation-log', icon: <FileTextOutlined />, color: '#ef4444' },
-  ]
-
   return (
     <div>
       <div className="yx-page-title">
-        <h1>{t('home.title')}</h1>
-        <p style={{ color: '#64748b', margin: '4px 0 0', fontSize: 14 }}>{t('home.welcome')}</p>
+        <h1>平台管理</h1>
+        <p style={{ color: '#64748b', margin: '4px 0 0', fontSize: 14 }}>平台基础配置与管理</p>
       </div>
       <Row gutter={[16, 16]}>
         {actions.map((a) => (

@@ -1,7 +1,7 @@
 import { message } from 'antd'
 import DOMPurify from 'dompurify'
 import { throttle } from 'lodash'
-import i18n from '@/locales/i18n'
+import i18n from 'i18next'
 
 const stripCRLF = (text: unknown): string =>
   String(text)

@@ -1,4 +1,4 @@
-FROM nginx:1.27-alpine
+FROM nginx:1.20.1-alpine
 
 RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && echo "Asia/Shanghai" > /etc/timezone
 

@@ -30,7 +30,7 @@ export async function loadRemoteApp<T = (container: HTMLElement, context: unknow
   if (!loadedRemotes[scope]) {
     try {
       const moduleUrl = entry + '?v=' + Date.now()
-      remote = (await import(  moduleUrl)) as FederationRemote
+      remote = (await import(/* @vite-ignore */ moduleUrl)) as FederationRemote
     } catch (err) {
       throw new Error(`Failed to load remote entry "${entry}": ${(err as Error).message}`)
     }

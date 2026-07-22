@@ -1,14 +1,18 @@
 import axios from 'axios'
 import type { ShellUser } from '@jonex/shell-sdk'
 import {
+  JONEX_ACCESS_TOKEN_KEY,
   JONEX_REFRESH_TOKEN_KEY,
-  LANGUAGE_STORAGE_KEY,
+  JONEX_USER_KEY,
+  LEGACY_USER_INFO_KEY,
   readAccessToken,
   writeAccessToken,
   readCachedUser,
   writeCachedUser,
   clearAuthStorage,
 } from '@jonex/shell-sdk'
+
+const LOCALE_KEY = 'locale'
 
 export const getAccessToken = readAccessToken
 export const getUser = readCachedUser<ShellUser>
@@ -17,21 +21,12 @@ function normalizeUser(raw: Record<string, unknown>): ShellUser {
   const id = String(raw.user_id || raw.id || '')
   const username = String(raw.username || '')
   const displayName = String(raw.display_name || raw.displayName || username)
-  const tenantId = raw.tenant_id || raw.tenantId
-  const tenantName = raw.tenant_name || raw.tenantName
   const roles: string[] = Array.isArray(raw.roles)
     ? raw.roles as string[]
     : raw.role
       ? [raw.role as string]
       : []
-  return {
-    id,
-    username,
-    displayName,
-    tenantId: tenantId ? String(tenantId) : undefined,
-    tenantName: tenantName ? String(tenantName) : undefined,
-    roles,
-  } as ShellUser
+  return { id, username, displayName, roles } as ShellUser
 }
 
 export function setTokens(access: string, refresh: string): void {
@@ -45,21 +40,21 @@ export function setUser(user: Record<string, unknown>): void {
 }
 
 export function setLocale(locale: string): void {
-  localStorage.setItem(LANGUAGE_STORAGE_KEY, locale)
+  localStorage.setItem(LOCALE_KEY, locale)
 }
 
 export function getLocale(): string {
-  return localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'en'
+  return localStorage.getItem(LOCALE_KEY) || 'zh'
 }
 
 export function clearTokens(): void {
   clearAuthStorage()
 }
 
-
-
-
-
+/**
+ * Clean up legacy URL token params (jonex_token, jonex_user, jonex_refresh_token).
+ * Only handles ticket/code/state for future ticket-exchange flow.
+ */
 export function initCrossOriginAuth(): void {
   const params = new URLSearchParams(window.location.search)
   const blockedKeys = ['jonex_token', 'jonex_user', 'jonex_refresh_token']
@@ -94,79 +89,20 @@ apiClient.interceptors.request.use((config) => {
   return config
 })
 
-interface ApiEnvelope<T> {
-  success: boolean
-  code: number
-  message: string
-  data?: T
-}
-
-function unwrapEnvelope<T>(payload: ApiEnvelope<T>): T {
-  if (!payload.success || !payload.data) {
-    throw new Error(payload.message || '请求失败')
-  }
-  return payload.data
-}
-
-export interface TenantOption {
-  tenant_id: string
-  tenant_name: string
-}
-
-export interface AuthenticatedLoginResult {
-  status: 'authenticated'
+interface LoginResult {
   access_token: string
   refresh_token: string
-  token_type?: string
-  expires_in?: number
   user: ShellUser
 }
 
-export interface TenantSelectionLoginResult {
-  status: 'tenant_selection_required'
-  tenant_options: TenantOption[]
-}
-
-export type LoginFlowResult = AuthenticatedLoginResult | TenantSelectionLoginResult
-
-export interface LoginTicketResult {
-  ticket: string
-  expires_in?: number
-}
-
-export async function login(
-  username: string,
-  password: string,
-  tenantId?: string,
-): Promise<LoginFlowResult> {
-  const resp = await apiClient.post<ApiEnvelope<LoginFlowResult>>(
-    '/api/v1/auth/login',
-    { username, password },
-    tenantId ? { headers: { 'X-Tenant-ID': tenantId } } : undefined,
-  )
-  const result = unwrapEnvelope(resp.data)
-  if (result.status === 'authenticated') {
-    return { ...result, user: normalizeUser(result.user as unknown as Record<string, unknown>) }
-  }
-  return result
+export async function login(username: string, password: string): Promise<LoginResult> {
+  const resp = await apiClient.post<LoginResult>('/api/v1/auth/login', { username, password })
+  return resp.data
 }
 
 export async function fetchCurrentUser(): Promise<ShellUser> {
-  const resp = await apiClient.get<ApiEnvelope<Record<string, unknown>>>('/api/v1/auth/me')
-  return normalizeUser(unwrapEnvelope(resp.data))
-}
-
-export async function createLoginTicket(
-  appId: string,
-  redirectUri: string,
-  state: string,
-): Promise<LoginTicketResult> {
-  const resp = await apiClient.post<ApiEnvelope<LoginTicketResult>>('/api/v1/auth/login-ticket', {
-    appId,
-    redirectUri,
-    state,
-  })
-  return unwrapEnvelope(resp.data)
+  const resp = await apiClient.get<ShellUser>('/api/v1/auth/me')
+  return resp.data
 }
 
 export function logout(): void {

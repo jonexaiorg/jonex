@@ -1,6 +1,5 @@
 import axios from 'axios'
 import { readAccessToken } from '@jonex/shell-sdk'
-import i18next from '@/locales/i18n'
 
 export interface ApiResponse<T> {
   code: number
@@ -33,7 +32,7 @@ request.interceptors.response.use(
   (error) => {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       import('antd').then(({ message }) => {
-        message.error(i18next.t('knowledgeSearch.sessionExpired'))
+        message.error('登录已失效，请重新登录')
       })
     }
     return Promise.reject(error)

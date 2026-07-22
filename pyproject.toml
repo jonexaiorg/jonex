@@ -5,61 +5,26 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "jonex-platform"
 version = "0.1.0"
-description = "A modular, multi-tenant platform for governed AI capabilities, RAG, and ontology-backed knowledge workflows"
-readme = "README.md"
-license = { file = "LICENSE" }
-authors = [
-    { name = "Jonex Platform contributors" },
-]
+description = "Jonex平台 - 插件化AI能力平台框架"
 requires-python = ">=3.12.13"
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3.12",
-    "Operating System :: OS Independent",
-]
 dependencies = [
     "fastapi>=0.109.0,<0.110.0",
     "uvicorn>=0.27.0",
     "sqlalchemy>=2.0.25",
-    "asyncpg>=0.29.0",
-    "alembic>=1.13.0",
     "pydantic[dotenv]>=1.10.0,<2.0.0",
     "pyjwt>=2.8.0",
-    "bcrypt>=4.0.0",
     "python-dotenv>=1.0.0",
     "aiohttp>=3.9.0",
-    "httpx>=0.27.0",
     "redis>=5.0.0",
     "python-multipart>=0.0.6",
     "pyyaml>=6.0.1",
-    "neo4j>=5.25.0,<6.0.0",
-    "openai>=1.0.0",
-    "jieba>=0.42.1",
-    "python-dateutil>=2.8.2",
-    "python-json-logger>=2.0.7",
-    "cos-python-sdk-v5>=1.9.0",
-    "boto3>=1.34.0,<2.0.0",
-    "jsonpath-ng>=1.6.0,<2.0.0",
-    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
-    "hypothesis>=6.0.0",
     "black>=24.0.0",
     "isort>=5.13.0",
     "mypy>=1.8.0",
-]
-
-[tool.setuptools.packages.find]
-include = ["api_gateway*", "capabilities*", "jonex_core*"]
-exclude = ["Reference*", "data*", "deploy*", "frontends*", "tests*"]
-
-[dependency-groups]
-dev = [
-    "aiosqlite>=0.22.1",
-    "greenlet>=3.5.0",
 ]

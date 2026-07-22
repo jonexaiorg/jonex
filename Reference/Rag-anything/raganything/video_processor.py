@@ -49,8 +49,6 @@ class VideoModalProcessor(BaseModalProcessor):
         tokenizer=None,
         context_extractor=None,
         image_transport=None,
-        video_analysis_backends=None,
-        default_backend="local",
     ):
         super().__init__(lightrag, modal_caption_func, context_extractor)
         self.vlm_model_func = vlm_model_func
@@ -59,31 +57,6 @@ class VideoModalProcessor(BaseModalProcessor):
         self.image_transport = image_transport
         if tokenizer:
             self.tokenizer = tokenizer
-        self._video_backends = video_analysis_backends or {}
-        self._default_backend = default_backend
-
-    # ── backend selection ─────────────────────────
-
-    def _select_backend(self, modal_content: dict) -> str | None:
-        """Select the video analysis backend for *modal_content*.
-
-        Returns the backend binding name (e.g. ``"local"``, ``"mps"``)
-        or ``None`` to fall back to the built-in local pipeline.
-
-        **Extension point**: Override in subclasses or modify this method
-        to implement per-video routing based on:
-        - ``modal_content`` metadata (e.g. source, file extension)
-        - Tenant-level configuration
-        - Video duration or other heuristics
-        """
-        # If the requested default backend exists, use it.
-        if self._default_backend in self._video_backends:
-            return self._default_backend
-        # Fall back to local if available.
-        if "local" in self._video_backends:
-            return "local"
-        # No backends — caller will use the built-in local pipeline.
-        return None
 
     # ── entry points ─────────────────────────────────
 
@@ -101,89 +74,7 @@ class VideoModalProcessor(BaseModalProcessor):
     async def generate_description_only(
         self, modal_content, content_type, item_info=None, entity_name=None,
     ) -> Tuple[str, Dict[str, Any]]:
-        """Main entry: select backend → delegate or fall back to local pipeline."""
-        video_path = modal_content.get("video_path")
-        if not video_path:
-            raise ValueError(f"No video_path in modal_content: {modal_content}")
-
-        backend_name = self._select_backend(modal_content)
-        if backend_name and backend_name != "local":
-            backend = self._video_backends.get(backend_name)
-            if backend is not None:
-                from pathlib import Path
-                result = await backend.analyze_video(
-                    video_path=video_path,
-                    prompt=None,  # falls back to JSON template default
-                )
-                file_name = Path(video_path).name
-
-                # -- Compute identifiers (needed by downstream chunk conversion) --
-                semantic_video_id = self._semantic_video_fingerprint(video_path)
-                modal_content["_video_quick_hash"] = self._quick_video_hash(video_path)
-                modal_content["_video_source_id"] = semantic_video_id
-
-                # -- Synthesize faux segments from MPS scenes for chunk pipeline --
-                scenes = result.scenes or []
-                if scenes:
-                    synthetic_segments = []
-                    for i, scene in enumerate(scenes):
-                        desc = scene.get("description", "")
-                        synthetic_segments.append({
-                            "text": desc or json.dumps(scene, ensure_ascii=False),
-                            "start_time": scene.get("start_time", 0.0),
-                            "end_time": scene.get("end_time", 0.0),
-                            "segment_index": i,
-                            "relative_position": i / max(len(scenes), 1),
-                            "source_segment_indices": [i],
-                            "speaker_labels": [],
-                            "group_summary": desc or result.summary,
-                            "frames": [],
-                        })
-                else:
-                    synthetic_segments = [{
-                        "text": result.summary or result.raw_json,
-                        "start_time": 0.0,
-                        "end_time": 0.0,
-                        "segment_index": 0,
-                        "relative_position": 0.0,
-                        "source_segment_indices": [],
-                        "speaker_labels": [],
-                        "group_summary": result.summary,
-                        "frames": [],
-                    }]
-
-                modal_content["_audio_segments"] = synthetic_segments
-                modal_content["_asr_result"] = {
-                    "segments": synthetic_segments,
-                    "transcript": result.summary,
-                    "language": "unknown",
-                    "duration": 0,
-                    "audio_sha256": semantic_video_id,
-                }
-                modal_content["_video_keyframes"] = []
-                modal_content["_audio_missing"] = True
-
-                entity_info = {
-                    "entity_name": entity_name or f"{file_name} (video)",
-                    "entity_type": "video",
-                    "summary": result.summary,
-                    "scenes": result.scenes,
-                    "tags": result.tags,
-                    "analysis_method": result.analysis_method,
-                    "video_source_id": semantic_video_id,
-                    "chunk_count": len(synthetic_segments),
-                }
-                return result.summary, entity_info
-
-        # Fall back to built-in local pipeline
-        return await self._analyze_via_local(
-            modal_content, content_type, item_info, entity_name,
-        )
-
-    async def _analyze_via_local(
-        self, modal_content, content_type, item_info=None, entity_name=None,
-    ) -> Tuple[str, Dict[str, Any]]:
-        """Built-in local pipeline: ASR → keyframes → VLM → alignment → MapReduce."""
+        """Main entry: extract audio → ASR → keyframes → VLM → time alignment → MapReduce."""
         video_path = modal_content.get("video_path")
         if not video_path:
             raise ValueError(f"No video_path in modal_content: {modal_content}")

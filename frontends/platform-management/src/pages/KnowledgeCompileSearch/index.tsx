@@ -1,6 +1,5 @@
 import React from 'react'
 import { Input, Button, List, Tag, Card, Empty } from 'antd'
-import { useTranslation } from 'react-i18next'
 import { SearchOutlined, FileTextOutlined } from '@ant-design/icons'
 import { colors, radius } from '@jonex/platform-theme/tokens'
 
@@ -13,7 +12,6 @@ const mockResults = [
 ]
 
 export default function KnowledgeCompileSearch() {
-  const { t } = useTranslation()
   const [query, setQuery] = React.useState('')
   const [results, setResults] = React.useState<typeof mockResults>([])
   const [searched, setSearched] = React.useState(false)
@@ -27,9 +25,9 @@ export default function KnowledgeCompileSearch() {
   return (
     <div>
       <div className="yx-page-title">
-        <h1>{t('knowledgeCompile.search')}</h1>
+        <h1>编译检索</h1>
         <p style={{ color: colors.textSecondary, margin: '4px 0 0', fontSize: 14 }}>
-          {t('knowledgeCompile.searchDesc', '搜索已编译的知识库内容')}
+          搜索已编译的知识库内容
         </p>
       </div>
 
@@ -37,7 +35,7 @@ export default function KnowledgeCompileSearch() {
         <div style={{ display: 'flex', gap: 12 }}>
           <Input
             prefix={<SearchOutlined />}
-            placeholder={t('knowledgeCompile.searchPlaceholder', '输入关键词搜索编译知识...')}
+            placeholder="输入关键词搜索编译知识..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onPressEnter={handleSearch}
@@ -45,7 +43,7 @@ export default function KnowledgeCompileSearch() {
             size="large"
           />
           <Button type="primary" size="large" onClick={handleSearch}>
-            {t('operationLog.search')}
+            搜索
           </Button>
         </div>
       </Card>
@@ -53,7 +51,7 @@ export default function KnowledgeCompileSearch() {
       {searched && (
         <Card style={{ borderRadius: radius.card, border: `1px solid ${colors.border}` }} styles={{ body: { padding: 24 } }}>
           <div style={{ marginBottom: 16, color: colors.textSecondary, fontSize: 13 }}>
-            {t('knowledgeCompile.foundResults', { count: results.length })}
+            找到 <strong style={{ color: colors.accent }}>{results.length}</strong> 条结果
           </div>
           {results.length > 0 ? (
             <List
@@ -67,8 +65,8 @@ export default function KnowledgeCompileSearch() {
                       <Tag color="blue">{item.type}</Tag>
                     </div>
                     <div style={{ fontSize: 12, color: colors.textMuted, display: 'flex', gap: 16 }}>
-                      <span>{t('knowledgeCompile.source', '来源')}: {item.source}</span>
-                      <span>{t('knowledgeCompile.relevance', '相关度')}: {(item.score * 100).toFixed(0)}%</span>
+                      <span>来源: {item.source}</span>
+                      <span>相关度: {(item.score * 100).toFixed(0)}%</span>
                     </div>
                     <div style={{ marginTop: 6, display: 'flex', gap: 4 }}>
                       {item.tags.map((t) => (
@@ -80,7 +78,7 @@ export default function KnowledgeCompileSearch() {
               )}
             />
           ) : (
-            <Empty description={t('knowledgeCompile.noResults', '未找到匹配的编译结果')} />
+            <Empty description="未找到匹配的编译结果" />
           )}
         </Card>
       )}

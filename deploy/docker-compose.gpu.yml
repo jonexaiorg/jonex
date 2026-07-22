@@ -1,9 +1,3 @@
-# ============================================================
-# Configuration note for services.
-# Default configuration for services.
-# parser configuration for services.
-# GPU-specific configuration for services.
-# ============================================================
 
 services:
   atomic-rag:

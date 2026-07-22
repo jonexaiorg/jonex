@@ -1,37 +1,37 @@
-# Frontend Application Manifest
+# 前端子应用清单
 
-This document records the runtime conventions for current frontend applications. The production application manifest is sourced from the platform backend registry, output by `GET /api/v1/platform/frontend/apps`; `frontends/shell/public/app-manifest.json` serves only as a local development fallback when the backend is unavailable.
+> ⚠️ DOCUMENTATION ONLY：本文档仅作记录，当前未被任何脚本自动消费。
+> 子应用 ≥ 3 个时再考虑改为 manifest.yaml 并做 Nginx 配置自动生成。
 
-New frontend sub-applications must follow the root-level [frontend-development-standard.md](../frontend-development-standard.md).
+## Shell 应用（入口）
+- 路径：`/`
+- 职责：唯一登录入口、全局导航、路由守卫、多子应用切换
+- 开发端口：5173
+- 状态：✅ 开发中
 
-## Shell
+## 业务子应用
 
-| Item | Value |
-|---|---|
-| Package name | `@jonex/shell` |
-| Responsibility | Login, global navigation, app manifest loading, permission guard, sub-app mounting |
-| Access path | `/` |
-| Dev port | `5173` |
-| Production container | `shell-frontend` |
 
-## Sub-applications
+### core-business（核心业务）
+- 挂载路径：`/core-business/`
+- API 前缀：`/api/v1/`
+- 状态：✅ 开发中
+- 开发端口：5175
 
-| App | Package name | Hosted path | Standalone path | Remote entry | Scope | Port |
-|---|---|---|---|---|---|---|
-| Core Business | `@jonex/core-business` | `/apps/core-business` | `/core-business/` | `/remotes/core-business/assets/remoteEntry.js` | `coreBusiness` | `5175` |
-| Platform Management | `@jonex/platform-management` | `/apps/platform-management` | `/platform-management/` | `/remotes/platform-management/assets/remoteEntry.js` | `platformManagement` | `5177` |
-| Ecosystem Management | `@jonex/ecosystem-management` | `/apps/ecosystem-management` | `/ecosystem-management/` | `/remotes/ecosystem-management/assets/remoteEntry.js` | `ecosystemManagement` | `5176` |
+### platform-management（平台管理）
+- 挂载路径：`/platform-management/`
+- API 前缀：`/api/v1/`
+- 状态：✅ 开发中
+- 开发端口：5177
 
-## API Convention
+### ecosystem-management（生态管理）
+- 挂载路径：`/ecosystem-management/`
+- API 前缀：`/api/v1/`
+- 状态：✅ 开发中
+- 开发端口：5176
 
-- Frontend may only call `/api/v1/**`.
-- No new business API compatibility prefixes are allowed.
-- Frontend must not directly connect to Sidecar, capability service container names, or host debug ports.
-
-## Change Process
-
-1. Register the application, menus, permissions, and remote metadata in the platform backend.
-2. Update `frontends/shell/public/app-manifest.json` as a local fallback.
-3. Configure standalone paths and remote asset reverse proxy in `deploy/nginx/frontend-gateway.conf`.
-4. Add or adjust the sub-app's own `Dockerfile`, `nginx/default.conf`, and `vite.config.ts`.
-5. Run `pnpm run typecheck` and `pnpm run build` from the `frontends/` root directory, then use `pnpm --filter <package> typecheck` to isolate individual sub-app issues if needed.
+### knowledge-base（知识库）
+- 挂载路径：`/kb/`
+- API 前缀：`/api/v1/knowledge-base/`
+- 状态：⏸️ 规划中
+- 本体能力：知识库管理后台含本体 TBox schema 配置、本体实体 / 关系可视化图谱、本体查询调试等页面（待开发）

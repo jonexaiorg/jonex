@@ -77,8 +77,8 @@
     "invalidEmail": "Please enter a valid email address",
     "verificationCodeDesc": "Enter the verification code shown in the image",
     "password": "Please enter your password",
-    "minLength": "Minimum length is {{min}} characters",
-    "maxLength": "Maximum length is {{max}} characters",
+    "minLength": "Minimum length is {min} characters",
+    "maxLength": "Maximum length is {max} characters",
     "placeholder": "Please enter",
     "selectPlaceholder": "Please select",
     "confirmDelete": "Are you sure to delete this data?"

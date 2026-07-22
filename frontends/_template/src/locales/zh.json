@@ -77,8 +77,8 @@
     "invalidEmail": "请输入有效的邮箱地址",
     "verificationCodeDesc": "输入图像中显示的验证码",
     "password": "请输入密码",
-    "minLength": "最少 {{min}} 个字符",
-    "maxLength": "最多 {{max}} 个字符",
+    "minLength": "最少 {min} 个字符",
+    "maxLength": "最多 {max} 个字符",
     "placeholder": "请输入",
     "selectPlaceholder": "请选择",
     "confirmDelete": "确定要删除此数据吗？"

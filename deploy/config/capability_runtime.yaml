@@ -1,10 +1,4 @@
-# ============================================================
-# knowledge base configuration for atomic.
-# ============================================================
-# parser configuration for atomic.
-# RAG, Sidecar configuration for atomic.
-# ============================================================
+
 atomic:
   rag.lightrag:
     mode: remote
-    # Sidecar configuration for this setting.

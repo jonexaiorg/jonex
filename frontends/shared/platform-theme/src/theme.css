@@ -22,11 +22,11 @@
   --yx-row-border: #f1f5f9;
   --yx-icon-btn-bg: #f1f5f9;
   --yx-icon-btn-hover: #e2e8f0;
-  --yx-sidebar-text: #475569;
-  --yx-sidebar-text-muted: #94a3b8;
-  --yx-sidebar-hover: #f1f5f9;
-  --yx-sidebar-active: #eff6ff;
-  --yx-sidebar-border: #eef2f6;
+  --yx-sidebar-text: rgba(255, 255, 255, 0.7);
+  --yx-sidebar-text-muted: rgba(255, 255, 255, 0.4);
+  --yx-sidebar-hover: rgba(255, 255, 255, 0.08);
+  --yx-sidebar-active: rgba(255, 255, 255, 0.12);
+  --yx-sidebar-border: rgba(255, 255, 255, 0.08);
   --yx-sidebar-width: 240px;
   --yx-topbar-height: 64px;
   --yx-card-radius: 14px;
@@ -36,7 +36,7 @@
   --yx-content-padding-x: 32px;
   --yx-content-padding-y: 28px;
   --yx-card-padding: 24px;
-  --yx-sidebar-shadow: 1px 0 0 rgba(0, 0, 0, 0.04);
+  --yx-sidebar-shadow: 2px 0 12px rgba(11, 43, 92, 0.15);
   --yx-card-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   --yx-header-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
   --yx-search-focus-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);

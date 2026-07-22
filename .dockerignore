@@ -1,98 +1,107 @@
-# Version control and local tooling
-.git/
-.gitignore
-.gitattributes
-.github/
+# ============================================================
+# Docker 忽略文件
+# ============================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+.tox/
+.hypothesis/
+
+# IDE
 .vscode/
 .idea/
-.kiro/
-.claude/
-.agents/
-.worktrees/
+*.swp
+*.swo
 
-# Secrets and local runtime configuration
-**/.env
-**/.env.*
-*.local.yaml
-*.local.yml
-capability_runtime.local.yaml
+# Git
+.git
+.gitignore
+.gitattributes
 
-# Python caches, environments, tests, and build output
-**/__pycache__/
-**/*.py[cod]
-**/*$py.class
-**/*.egg-info/
-*.so
-.venv/
-.venv-*/
-venv/
-env/
-**/.venv/
-**/venv/
-.pytest_cache/
-**/.pytest_cache/
-.mypy_cache/
-**/.mypy_cache/
-.ruff_cache/
-**/.ruff_cache/
-.hypothesis/
-.coverage
-.coverage.*
-coverage.xml
-htmlcov/
-.tox/
-build/
-dist/
-site/
-tests/
-test-results/
+# 环境配置
+.env
+.env.rag
+.env.local
+.env.*.local
 
-# Frontend dependencies and output
-**/node_modules/
-frontends/**/dist/
-frontends/**/dist-ssr/
-frontends/**/.vite/
-frontends/**/.turbo/
-frontends/**/coverage/
-frontends/**/package-lock.json
-frontends/**/yarn.lock
-frontends/**/_legacy/
-
-# Logs, runtime data, and generated storage
+# 日志
 logs/
-log/
-.dev-logs/
-frontends/.dev-logs/
 *.log
-*.log.*
-data/
-inputs/
-output/
-rag_storage/
-.lightrag_data/
-local_neo4jWorkDir/
-neo4jWorkDir/
-parse_output/
 
-# Documentation and private preparation records are not needed in images
-docs/
-**/docs/
-*.md
-**/*.md
-!Reference/LightRAG/README.md
-!Reference/Rag-anything/README.md
-OPEN_SOURCE_CLEANUP_LOG.md
-todolist.md
-checklist.md
-
-# Temporary files
-.tmp_*/
+# 临时文件
 tmp/
 temp/
 *.tmp
-.cache/
-.history/
 
-# Operating-system files
-.DS_Store
-Thumbs.db
+# 测试
+tests/
+pytest.ini
+
+# RAG数据
+data/
+
+# 文档
+docs/
+*.md
+
+# Reference 引用项目 — 放行必要文件
+!Reference/**/*.md
+!Reference/**/docs/
+
+# Reference 引用项目 — 排除生成文件/大目录
+Reference/**/.venv/
+Reference/**/.pytest_cache/
+Reference/**/.worktrees/
+Reference/**/.claude/
+Reference/**/rag_storage*/
+Reference/**/output/
+Reference/**/reproduce/
+Reference/**/.github/
+Reference/**/assets/
+Reference/**/*.egg-info/
+
+# LightRAG 源码集成 — 构建只需 lightrag/ + lightrag_webui/ + 依赖元数据，
+# 排除其余生成物 / 数据 / 前端依赖与构建产物
+Reference/LightRAG/data/
+Reference/LightRAG/inputs/
+Reference/LightRAG/output_complete/
+Reference/LightRAG/dickens/
+Reference/LightRAG/k8s-deploy/
+Reference/LightRAG/lightrag_webui/node_modules/
+Reference/LightRAG/lightrag_webui/dist/
+
+# 部署相关（构建时不需要
+deploy/*.md
+deploy/*.txt
+
+# 前端构建产物和依赖
+frontends/**/node_modules
+frontends/**/dist
+frontends/**/.vite
+frontends/**/.turbo
+frontends/**/coverage
+frontends/**/package-lock.json
+frontends/**/yarn.lock
+frontends/**/_legacy

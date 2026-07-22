@@ -8,16 +8,11 @@ export type {
   AppManifestV1,
   AppManifestV2,
   AppManifest,
-  SupportedLocale,
-  LocaleChangeEvent,
 } from './types'
 
-export { isManifestV2, isSupportedLocale } from './types'
+export { isManifestV2 } from './types'
 
 export { createStandaloneShellContext } from './createStandaloneShellContext'
-export { EMBED_QUERY_PARAM, isEmbedded } from './embed'
-export { LANGUAGE_STORAGE_KEY } from './constants'
-export * from './spaceContext'
 export * from './authStorage'
 export * from './authRedirect'
 export { bootstrapStandaloneAuth } from './authBootstrap'

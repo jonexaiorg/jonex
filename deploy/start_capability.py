@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
+"""
+Capability service startup script
 
+Dynamically start the specified capability service based on environment variables, providing:
+- Service registration and heartbeat
+- Capability invocation endpoint
+- Health check
+"""
 
 import os
 import importlib
@@ -9,10 +16,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 
 from jonex_core.capability import get_capability_registry
-from jonex_core.common.exception_handler import register_exception_handlers
 from jonex_core.discovery import get_service_registry, HeartbeatManager, ServiceInstance
 from jonex_core.security import verify_internal_service
-
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -21,33 +26,30 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-
 CAPABILITY_NAME = os.getenv("CAPABILITY_NAME", "knowledge_base")
 CAPABILITY_KIND = os.getenv("CAPABILITY_KIND", "business")
 SERVICE_PORT = int(os.getenv("SERVICE_PORT", "8000"))
 SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
 
-
 SERVICE_ENDPOINT = os.getenv("SERVICE_ENDPOINT", f"http://{CAPABILITY_KIND}-{CAPABILITY_NAME.replace('_', '-')}:{SERVICE_PORT}")
-
-
 
 CAPABILITY_ID = f"{CAPABILITY_KIND}.{CAPABILITY_NAME}.v1"
 
-logger.info(f"Starting capability service: {CAPABILITY_NAME}")
+logger.info(f"Start capability service: {CAPABILITY_NAME}")
 logger.info(f"Service endpoint: {SERVICE_ENDPOINT}")
 logger.info(f"Capability ID: {CAPABILITY_ID}")
 
-
-
 heartbeat_manager: HeartbeatManager = None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    Service lifecycle management
 
+    On startup: register capability to local registry + register to service discovery center
+    On shutdown: stop heartbeat, deregister from service discovery center
+    """
     global heartbeat_manager
-
 
     registry = get_capability_registry()
     capability = None
@@ -74,8 +76,7 @@ async def lifespan(app: FastAPI):
                 word.title() for word in CAPABILITY_NAME.replace(".", "_").split("_")
             ) + "Capability"
         else:
-            raise ValueError(f"不支持的能力类型: {CAPABILITY_KIND}")
-
+            raise ValueError(f"Unsupported capability type: {CAPABILITY_KIND}")
 
         module = importlib.import_module(module_path)
         capability_class = getattr(module, class_name)
@@ -87,12 +88,11 @@ async def lifespan(app: FastAPI):
             try:
                 capability.register_routes(app)
             except Exception:
-                logger.exception("Custom capability route registration failed")
-        logger.info(f"Capability {CAPABILITY_KIND}.{CAPABILITY_NAME} registered locally")
+                logger.exception("Capability custom route registration failed")
+        logger.info(f"Capability {CAPABILITY_KIND}.{CAPABILITY_NAME} local registration succeeded")
     except Exception as e:
-        logger.exception(f"Local capability registration failed: {e}")
+        logger.exception(f"Capability local registration failed: {e}")
         raise
-
 
     try:
         service_registry = get_service_registry()
@@ -113,13 +113,11 @@ async def lifespan(app: FastAPI):
             interval=30,
         )
         await heartbeat_manager.start()
-        logger.info(f"Capability service {CAPABILITY_NAME} registered with service discovery")
+        logger.info(f"Capability service {CAPABILITY_NAME} registered to service discovery center")
     except Exception as e:
         logger.exception(f"Service registration failed: {e}")
 
-
     yield
-
 
     if capability:
         try:
@@ -129,25 +127,20 @@ async def lifespan(app: FastAPI):
     if heartbeat_manager:
         try:
             await heartbeat_manager.stop()
-            logger.info(f"Capability service {CAPABILITY_NAME} deregistered from service discovery")
+            logger.info(f"Capability service {CAPABILITY_NAME} deregistered from service discovery center")
         except Exception as e:
             logger.exception(f"Service deregistration failed: {e}")
 
-
-
 app = FastAPI(
     title=f"Jonex Capability: {CAPABILITY_NAME}",
-    description=f"Jonex平台能力服务: {CAPABILITY_NAME}",
+    description=f"Jonex platform capability service: {CAPABILITY_NAME}",
     version="1.0.0",
     lifespan=lifespan,
 )
-register_exception_handlers(app)
-
-
 
 @app.get("/health")
 async def health_check():
-
+    """Health check"""
     registry = get_capability_registry()
     return {
         "status": "healthy",
@@ -157,14 +150,25 @@ async def health_check():
         "capabilities": registry.list_capabilities(),
     }
 
-
-
 @app.post("/invoke")
 async def invoke_capability(
     request: dict,
     service_name: str = Depends(verify_internal_service)
 ):
+    """
+    Invoke capability service
 
+    Args:
+        request: Invocation request, including:
+            - capability_id: Capability ID
+            - payload: Invocation parameters
+            - tenant_id: Tenant ID
+            - user_id: User ID (optional)
+            - request_id: Request ID (optional)
+
+    Returns:
+        Capability execution result
+    """
     capability_id = request.get("capability_id")
     payload = request.get("payload", {})
     tenant_id = request.get("tenant_id", "default")
@@ -174,15 +178,8 @@ async def invoke_capability(
         tenant_id=tenant_id,
         capability_id=capability_id,
         payload=payload,
-        user_id=request.get("user_id"),
-        username=request.get("username"),
-        ip=request.get("ip"),
+        user_id=request.get("user_id")
     )
-
-
-    incoming_request_id = request.get("request_id")
-    if incoming_request_id:
-        req.request_id = incoming_request_id
 
     registry = get_capability_registry()
     result = await registry.invoke(capability_id, req)
@@ -194,7 +191,6 @@ async def invoke_capability(
         "message": result.message,
         "data": result.data
     }
-
 
 if __name__ == "__main__":
     import uvicorn

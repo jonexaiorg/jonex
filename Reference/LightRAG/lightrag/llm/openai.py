@@ -221,7 +221,6 @@ async def openai_complete_if_cache(
     use_azure: bool = False,
     azure_deployment: str | None = None,
     api_version: str | None = None,
-    _jonex_file_source: str | None = None,                # [yuexi]
     **kwargs: Any,
 ) -> str:
     """Complete a prompt using OpenAI's API with caching support and Chain of Thought (COT) integration.
@@ -337,16 +336,6 @@ async def openai_complete_if_cache(
     # For Azure OpenAI, we must use the deployment name instead of the model name
     api_model = azure_deployment if use_azure and azure_deployment else model
 
-    # ── [yuexi] 计量上下文 → extra_headers ───────────────────────────
-    # 入库抽取走 file_source（scene=lightrag_extract）；在线查询走 contextvar
-    # （scene 取请求头透传值，缺省 lightrag_query）。详见 lightrag/yuexi_metering.py
-    from lightrag.jonex_metering import build_metering_headers
-
-    extra_headers = build_metering_headers(
-        file_source=_jonex_file_source, default_scene="lightrag_query"
-    )
-    # ── [yuexi] end ───────────────────────────────────────────────────
-
     try:
         # Don't use async with context manager, use client directly
         if "response_format" in kwargs:
@@ -356,13 +345,11 @@ async def openai_complete_if_cache(
             # OpenAI-compatible providers (e.g. DeepSeek) set stream in their kwargs.
             parse_kwargs = {k: v for k, v in kwargs.items() if k != "stream"}
             response = await openai_async_client.chat.completions.parse(
-                model=api_model, messages=messages, **parse_kwargs,
-                extra_headers=extra_headers or None,             # [yuexi]
+                model=api_model, messages=messages, **parse_kwargs
             )
         else:
             response = await openai_async_client.chat.completions.create(
-                model=api_model, messages=messages, **kwargs,
-                extra_headers=extra_headers or None,             # [yuexi]
+                model=api_model, messages=messages, **kwargs
             )
     except APITimeoutError as e:
         logger.error(f"OpenAI API Timeout Error: {e}")
@@ -887,25 +874,8 @@ async def openai_embed(
         if embedding_dim is not None:
             api_params["dimensions"] = embedding_dim
 
-        # ── [yuexi] 计量上下文 → extra_headers ───────────────────────
-        # 在线查询与入库 embedding 均走 contextvar，可带 tenant/kb/doc/trace：入库路径
-        # 由 process_document 入口 set_yuexi_context_from_file_source 写入 contextvar，
-        # 子 task 在 create_task 时复制父 context，故不再"只兜底 scene"（见 YUEXI_CHANGES §A2）。
-        # scene 用 embedding 专属值覆盖，便于与 chat 调用区分。
-        from lightrag.jonex_metering import build_metering_headers
-
-        _jonex_scene = (
-            "lightrag_embed_query" if context == "query" else "lightrag_embed"
-        )
-        _jonex_headers = build_metering_headers(default_scene=_jonex_scene) or {}
-        _jonex_headers["X-Jonex-Scene"] = _jonex_scene
-        # ── [yuexi] end ───────────────────────────────────────────────
-
         # Make API call
-        response = await openai_async_client.embeddings.create(
-            **api_params,
-            extra_headers=_jonex_headers or None,             # [yuexi]
-        )
+        response = await openai_async_client.embeddings.create(**api_params)
 
         if token_tracker and hasattr(response, "usage"):
             token_counts = {

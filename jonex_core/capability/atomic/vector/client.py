@@ -1,6 +1,10 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+Vector Client Abstract + Factory
 
-
+Business and domain code obtains clients through `get_vector_client()` instead of instantiating concrete adapters directly.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +12,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 from jonex_core.capability.locator import CapabilityMode, get_locator
-from jonex_core.common import get_config, get_logger, require_tenant
+from jonex_core.common import get_config, get_logger
 
 logger = get_logger("capability.client.vector")
 
@@ -16,7 +20,7 @@ VECTOR_CAPABILITY_ID = "atomic.vector.milvus.v1"
 
 
 class VectorClient(ABC):
-
+    """Interface for vector retrieval clients."""
 
     @abstractmethod
     async def insert(
@@ -41,9 +45,9 @@ class VectorClient(ABC):
         ...
 
 
-
-
-
+# ============================================================
+# Local
+# ============================================================
 class LocalVectorClient(VectorClient):
     def __init__(self, options: Optional[Dict[str, Any]] = None) -> None:
         from jonex_core.capability.atomic.vector.milvus_adapter import (
@@ -73,20 +77,20 @@ class LocalVectorClient(VectorClient):
         return await self._adapter.delete(collection_name, ids)
 
 
-
-
-
+# ============================================================
+# Remote
+# ============================================================
 class RemoteVectorClient(VectorClient):
     def __init__(
         self,
         endpoint: str,
-        tenant_id: str,
         capability_id: str = VECTOR_CAPABILITY_ID,
+        tenant_id: str = "system",
         options: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._endpoint = endpoint.rstrip("/")
         self._capability_id = capability_id
-        self._tenant_id = require_tenant(tenant_id)
+        self._tenant_id = tenant_id
         self._timeout = (options or {}).get("timeout", 30.0)
 
     async def insert(
@@ -133,8 +137,6 @@ class RemoteVectorClient(VectorClient):
             UpstreamServiceError,
         )
 
-        payload = dict(payload)
-        payload["tenant_id"] = self._tenant_id
         body = {
             "capability_id": self._capability_id,
             "tenant_id": self._tenant_id,
@@ -142,22 +144,18 @@ class RemoteVectorClient(VectorClient):
         }
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.post(
-                    f"{self._endpoint}/invoke",
-                    json=body,
-                    headers={"X-Tenant-ID": self._tenant_id},
-                )
+                resp = await client.post(f"{self._endpoint}/invoke", json=body)
                 resp.raise_for_status()
                 return resp.json()
         except httpx.TimeoutException as e:
             raise CapabilityTimeoutError(
-                message=f"向量检索远程调用超时: {self._capability_id}",
+                message=f"Remote vector retrieval timed out: {self._capability_id}",
                 details={"endpoint": self._endpoint},
                 cause=e,
             )
         except httpx.HTTPStatusError as e:
             raise UpstreamServiceError(
-                message=f"向量检索远程调用失败: HTTP {e.response.status_code}",
+                message=f"Remote vector retrieval failed: HTTP {e.response.status_code}",
                 details={
                     "capability_id": self._capability_id,
                     "upstream_status": e.response.status_code,
@@ -167,9 +165,9 @@ class RemoteVectorClient(VectorClient):
             )
 
 
-
-
-
+# ============================================================
+# Mock: in-memory implementation for unit tests
+# ============================================================
 class MockVectorClient(VectorClient):
     def __init__(self, options: Optional[Dict[str, Any]] = None) -> None:
         self._store: Dict[str, List[Dict[str, Any]]] = {}
@@ -197,7 +195,7 @@ class MockVectorClient(VectorClient):
         top_k: int = 10,
     ) -> List[Dict[str, Any]]:
         bucket = self._store.get(collection_name, [])
-
+        # Return the first top_k items with decreasing simulated scores.
         return [
             {"id": item["id"], "score": max(0.0, 1.0 - i * 0.1), "metadata": item["metadata"]}
             for i, item in enumerate(bucket[:top_k])
@@ -211,13 +209,13 @@ class MockVectorClient(VectorClient):
         return True
 
 
-
-
-
+# ============================================================
+# Factory
+# ============================================================
 def get_vector_client(
     *,
     capability_id: str = VECTOR_CAPABILITY_ID,
-    tenant_id: Optional[str] = None,
+    tenant_id: str = "system",
 ) -> VectorClient:
     spec = get_locator().get_spec(capability_id)
 
@@ -226,13 +224,12 @@ def get_vector_client(
         return MockVectorClient(spec.options)
 
     if spec.mode == CapabilityMode.REMOTE:
-        tenant_id = require_tenant(tenant_id)
         endpoint = spec.endpoint or get_config().SIDECAR_URL
         logger.debug(f"Vector client = REMOTE ({capability_id}, endpoint={endpoint})")
         return RemoteVectorClient(
             endpoint=endpoint,
-            tenant_id=tenant_id,
             capability_id=capability_id,
+            tenant_id=tenant_id,
             options=spec.options,
         )
 

@@ -1,6 +1,9 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""Milvus vector database adapter.
 
-
+Provides vector storage and retrieval through Milvus.
+"""
 
 from typing import Any, Dict, List, Optional
 
@@ -13,46 +16,46 @@ logger = get_logger("atomic.vector.milvus")
 
 
 class MilvusVectorCapability(BaseVectorCapability):
-
+    """Milvus vector retrieval capability adapter."""
 
     def _build_metadata(self) -> CapabilityMetadata:
-
+        """Build capabilityMetadata"""
         return CapabilityMetadata(
             capability_id="vector.milvus",
-            capability_name="Milvus 向量检索",
+            capability_name="Milvus Vector Retrieval",
             capability_type=CapabilityType.ATOMIC,
             version="v1",
-            description="Milvus 向量数据库，支持向量存储和相似度检索",
+            description="Milvus vector database with vector storage and similarity search",
             tags=["vector", "milvus"],
         )
 
     async def validate_input(self, request: CapabilityRequest) -> bool:
-
+        """Validate input parameters"""
         if not request.payload:
-            raise InvalidParameterError(message="向量检索请求 payload 不能为空")
+            raise InvalidParameterError(message="Vector retrieval request payload cannot be empty")
 
         action = request.payload.get("action", "search")
         collection_name = request.payload.get("collection_name")
 
         if not collection_name:
-            raise InvalidParameterError(message="必须提供 collection_name 参数")
+            raise InvalidParameterError(message="collection_name parameter is required")
 
         if action == "insert":
             if "vectors" not in request.payload:
-                raise InvalidParameterError(message="insert 模式必须提供 vectors 参数")
+                raise InvalidParameterError(message="Insert mode requires the vectors parameter")
         elif action == "search":
             if "query_vector" not in request.payload:
-                raise InvalidParameterError(message="search 模式必须提供 query_vector 参数")
+                raise InvalidParameterError(message="Search mode requires the query_vector parameter")
         elif action == "delete":
             if "ids" not in request.payload:
-                raise InvalidParameterError(message="delete 模式必须提供 ids 参数")
+                raise InvalidParameterError(message="delete Mode must provide ids parameter")
         else:
-            raise InvalidParameterError(message=f"不支持的 action: {action}")
+            raise InvalidParameterError(message=f"Unsupported action: {action}")
 
         return True
 
     async def execute(self, request: CapabilityRequest) -> CapabilityResponse:
-
+        """Execute a vector retrieval capability request."""
         await self.validate_input(request)
 
         action = request.payload.get("action", "search")
@@ -66,7 +69,7 @@ class MilvusVectorCapability(BaseVectorCapability):
                 return CapabilityResponse.ok(
                     request_id=request.request_id,
                     data={"success": result},
-                    message="向量插入成功",
+                    message="Vector insertion succeeded",
                 )
             elif action == "search":
                 query_vector = request.payload["query_vector"]
@@ -75,7 +78,7 @@ class MilvusVectorCapability(BaseVectorCapability):
                 return CapabilityResponse.ok(
                     request_id=request.request_id,
                     data={"results": results},
-                    message=f"向量检索成功，返回 {len(results)} 条结果",
+                    message=f"Vector retrieval succeeded; returned {len(results)} results",
                 )
             elif action == "delete":
                 ids = request.payload["ids"]
@@ -83,12 +86,12 @@ class MilvusVectorCapability(BaseVectorCapability):
                 return CapabilityResponse.ok(
                     request_id=request.request_id,
                     data={"success": result},
-                    message="向量删除成功",
+                    message="Vector deletion succeeded",
                 )
         except Exception as e:
-            logger.error(f"Milvus invocation failed: {e}")
+            logger.error(f"Milvus Invocation failed: {e}")
             raise CapabilityInvokeError(
-                message=f"Milvus 调用失败: {str(e)}",
+                message=f"Milvus Invocation failed: {str(e)}",
                 details={"action": action, "collection": collection_name},
                 cause=e,
             )
@@ -99,25 +102,29 @@ class MilvusVectorCapability(BaseVectorCapability):
         vectors: List[List[float]],
         metadatas: Optional[List[Dict[str, Any]]] = None,
     ) -> bool:
+        """
+        Insert vector data
 
+        Note: This is currently a mock implementation. Production requires a real Milvus integration.
+        """
         config = get_config()
 
         if config.ENV == "dev":
             logger.warning(f"[Mock] Inserting {len(vectors)} vectors into {collection_name}")
             return True
 
+        # TODO: Connect to real Milvus client
+        # from pymilvus import connections, Collection
+        # connections.connect(
+        #     alias="default",
+        #     host=config.MILVUS_HOST,
+        #     port=config.MILVUS_PORT,
+        # )
+        # collection = Collection(collection_name)
+        # mr = collection.insert(data)
+        # return mr.succ_count == len(vectors)
 
-
-
-
-
-
-
-
-
-
-
-        raise CapabilityInvokeError(message="Milvus 未配置")
+        raise CapabilityInvokeError(message="Milvus not configured")
 
     async def search(
         self,
@@ -125,27 +132,35 @@ class MilvusVectorCapability(BaseVectorCapability):
         query_vector: List[float],
         top_k: int = 10,
     ) -> List[Dict[str, Any]]:
+        """
+        Search for similar vectors.
 
+        Note: This is currently a mock implementation. Production requires a real Milvus integration.
+        """
         config = get_config()
 
         if config.ENV == "dev":
-
-            logger.warning(f"[Mock] Searching {collection_name} for the Top-{top_k} similar vectors")
+            # Mock implementation: return simulated search results.
+            logger.warning(f"[Mock] Searching {collection_name} for top-{top_k} similar vectors")
             return [
                 {"id": f"mock_id_{i}", "score": 0.9 - i * 0.05, "metadata": {"source": "mock"}}
                 for i in range(min(top_k, 5))
             ]
 
-
-        raise CapabilityInvokeError(message="Milvus 未配置")
+        # TODO: Connect to real Milvus client
+        raise CapabilityInvokeError(message="Milvus not configured")
 
     async def delete(self, collection_name: str, ids: List[str]) -> bool:
+        """
+        Delete vector data.
 
+        Note: This is currently a mock implementation. Production requires a real Milvus integration.
+        """
         config = get_config()
 
         if config.ENV == "dev":
-            logger.warning(f"[Mock] Deleting vectors from {collection_name}: count={len(ids)}")
+            logger.warning(f"[Mock] Deleting {len(ids)} vectors from {collection_name}")
             return True
 
-
-        raise CapabilityInvokeError(message="Milvus 未配置")
+        # TODO: Connect to real Milvus client
+        raise CapabilityInvokeError(message="Milvus not configured")

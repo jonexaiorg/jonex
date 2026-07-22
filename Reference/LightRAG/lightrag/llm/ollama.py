@@ -99,7 +99,7 @@ async def _ollama_model_if_cache(
         messages.extend(history_messages)
         messages.append({"role": "user", "content": prompt})
 
-        # [yuexi] 通过 OLLAMA_LLM_ENABLE_THINK 控制思考模式（默认关闭，加速实体抽取）
+        # [jonex] 通过 OLLAMA_LLM_ENABLE_THINK 控制思考模式（默认关闭，加速实体抽取）
         response = await ollama_client.chat(
             model=model,
             messages=messages,

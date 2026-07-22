@@ -4,8 +4,8 @@ const KB_ID = 'kb-test-001'
 
 test.describe('DomainKnowledge Result Tab', () => {
   test.beforeEach(async ({ page }) => {
-
-    await page.route('**/knowledge-base/parse-results/summary**', async (route) => {
+    // Intercept parse-result APIs with mock data
+    await page.route('**/knowledge-base/bases/*/parse-result/summary', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -39,7 +39,7 @@ test.describe('DomainKnowledge Result Tab', () => {
       })
     })
 
-    await page.route('**/knowledge-base/parse-results/graph-summary**', async (route) => {
+    await page.route('**/knowledge-base/bases/*/parse-result/graph-summary', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -67,7 +67,7 @@ test.describe('DomainKnowledge Result Tab', () => {
       })
     })
 
-    await page.route('**/knowledge-base/parse-results/entities**', async (route) => {
+    await page.route('**/knowledge-base/bases/*/parse-result/entities**', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -112,13 +112,13 @@ test.describe('DomainKnowledge Result Tab', () => {
   test('result tab displays real stats from parse-result API', async ({ page }) => {
     await page.goto(`/domain-knowledge/${KB_ID}`)
 
-
+    // Click "领域知识结果" tab
     await page.click('text=领域知识结果')
 
-
+    // Wait for stats to load
     await expect(page.locator('text=155')).toHaveCount(1, { timeout: 5000 })
 
-
+    // Verify stat cards
     await expect(page.locator('text=知识实体')).toBeVisible()
     await expect(page.locator('text=知识关系')).toBeVisible()
   })
@@ -127,7 +127,7 @@ test.describe('DomainKnowledge Result Tab', () => {
     await page.goto(`/domain-knowledge/${KB_ID}`)
     await page.click('text=领域知识结果')
 
-
+    // Entity table should show entities
     await expect(page.locator('text=Apple Inc.')).toBeVisible({ timeout: 5000 })
     await expect(page.locator('text=Tim Cook')).toBeVisible()
     await expect(page.locator('text=Cupertino')).toBeVisible()
@@ -137,11 +137,11 @@ test.describe('DomainKnowledge Result Tab', () => {
     await page.goto(`/domain-knowledge/${KB_ID}`)
     await page.click('text=领域知识结果')
 
-
+    // Click entity type select
     const select = page.locator('.ant-select').filter({ hasText: '全部类型' })
     await select.click()
 
-
+    // Should show entity types from API
     await expect(page.locator('.ant-select-dropdown')).toContainText('organization')
     await expect(page.locator('.ant-select-dropdown')).toContainText('person')
     await expect(page.locator('.ant-select-dropdown')).toContainText('location')
@@ -154,10 +154,10 @@ test.describe('DomainKnowledge Result Tab', () => {
     const searchInput = page.locator('input[placeholder="搜索实体..."]')
     await searchInput.fill('Apple')
 
-
+    // Debounce wait
     await page.waitForTimeout(400)
 
-
+    // Only Apple entity should show
     await expect(page.locator('text=Apple Inc.')).toBeVisible()
   })
 
@@ -165,15 +165,15 @@ test.describe('DomainKnowledge Result Tab', () => {
     await page.goto(`/domain-knowledge/${KB_ID}`)
     await page.click('text=领域知识结果')
 
-
+    // Graph summary section
     await expect(page.locator('text=知识图谱')).toBeVisible({ timeout: 5000 })
-    await expect(page.locator('text=4')).toBeVisible()
-    await expect(page.locator('text=1.73')).toBeVisible()
+    await expect(page.locator('text=4')).toBeVisible() // entity_type_count
+    await expect(page.locator('text=1.73')).toBeVisible() // avg_degree
   })
 
   test('empty state when no data', async ({ page }) => {
-
-    await page.route('**/knowledge-base/parse-results/summary**', async (route) => {
+    // Override: return empty storage
+    await page.route('**/knowledge-base/bases/*/parse-result/summary', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -194,12 +194,12 @@ test.describe('DomainKnowledge Result Tab', () => {
     await page.goto('/domain-knowledge/kb-empty')
     await page.click('text=领域知识结果')
 
-
+    // Should show zeros / dashes
     await expect(page.locator('text=0')).toHaveCount(1, { timeout: 5000 })
   })
 
   test('scope warning shows when present', async ({ page }) => {
-    await page.route('**/knowledge-base/parse-results/summary**', async (route) => {
+    await page.route('**/knowledge-base/bases/*/parse-result/summary', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -221,7 +221,7 @@ test.describe('DomainKnowledge Result Tab', () => {
     await page.goto('/domain-knowledge/kb-scope')
     await page.click('text=领域知识结果')
 
-
+    // Should show scope warning
     await expect(page.locator('text=全局存储数据')).toBeVisible({ timeout: 5000 })
   })
 })

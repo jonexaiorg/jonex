@@ -1,9 +1,3 @@
-# ============================================================
-# Default configuration for version.
-# ============================================================
-# Configuration note for version.
-# Configuration note for version.
-# LLM configuration for version.
 
 version: 1
 domain: default

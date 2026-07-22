@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useLocation, matchRoutes } from 'react-router-dom'
-import i18next from '@/locales/i18n'
+import i18next from 'i18next'
 import { getRoutes } from '@/router/routes.config'
 
 export default function useDocumentTitle() {

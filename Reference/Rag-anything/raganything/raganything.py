@@ -38,12 +38,6 @@ from raganything.callbacks import CallbackManager
 from raganything.asr import get_asr_backend
 from raganything.asr.backends.legacy import LegacyFunctionBackend
 from raganything.asr.backends import *  # noqa: F401, F403 -- trigger registration
-from raganything.video_analysis.backends import *  # noqa: F401, F403 -- trigger registration
-from raganything.video_analysis import (
-    get_video_analysis_backend,
-    VideoAnalysisBackend,
-    VideoAnalysisResult,
-)
 
 # Import specialized processors
 from raganything.modalprocessors import (
@@ -407,35 +401,6 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                     self.logger.warning(
                         f"CosImageHost init failed, using base64: {e}")
 
-            # Initialise all available video analysis backends (multi-backend coexistence)
-            self._video_analysis_backends: Dict[str, VideoAnalysisBackend] = {}
-
-            # Local backend — always available, wraps existing local pipeline
-            try:
-                local_cls = get_video_analysis_backend("local")
-                self._video_analysis_backends["local"] = local_cls(
-                    self.config,
-                    local_analyze_func=None,  # will be wired after VideoModalProcessor creation
-                )
-                self.logger.info("Video analysis backend 'local' initialised")
-            except Exception as e:
-                self.logger.warning(f"Failed to initialise local video backend: {e}")
-
-            # MPS backend — only when credentials are present
-            if self.config.mps_secret_id and self.config.mps_secret_key:
-                try:
-                    mps_cls = get_video_analysis_backend("mps")
-                    mps_issues = mps_cls.validate_config(self.config)
-                    if not mps_issues:
-                        self._video_analysis_backends["mps"] = mps_cls(self.config)
-                        self.logger.info("Video analysis backend 'mps' initialised")
-                    else:
-                        msgs = [f"[{i.level}] {i.field}: {i.message}" for i in mps_issues]
-                        self.logger.warning(
-                            f"MPS backend config incomplete, skipping: {'; '.join(msgs)}")
-                except Exception as e:
-                    self.logger.warning(f"Failed to initialise MPS backend: {e}")
-
             self.modal_processors["video"] = VideoModalProcessor(
                 lightrag=self.lightrag,
                 modal_caption_func=self.llm_model_func,
@@ -445,16 +410,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 tokenizer=self.lightrag.tokenizer,
                 context_extractor=self.context_extractor,
                 image_transport=image_transport,
-                video_analysis_backends=self._video_analysis_backends,
-                default_backend=self.config.video_analysis_binding,
             )
-
-            # Wire local backend's analyze_func to the processor's method
-            local_backend = self._video_analysis_backends.get("local")
-            if local_backend is not None:
-                local_backend._analyze_func = (
-                    self.modal_processors["video"]._analyze_via_local
-                )
 
         # Always include generic processor as fallback
         self.modal_processors["generic"] = GenericModalProcessor(

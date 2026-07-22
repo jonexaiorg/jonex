@@ -1,13 +1,12 @@
 import React from 'react'
 import { Card, Row, Col, Tag, Table } from 'antd'
-import { useTranslation } from 'react-i18next'
 import { ApartmentOutlined, NodeIndexOutlined, LinkOutlined } from '@ant-design/icons'
 import { colors, radius } from '@jonex/platform-theme/tokens'
 
 const graphStats = [
-  { title: 'knowledgeCompile.totalEntities', value: '17,100', icon: <NodeIndexOutlined />, color: colors.accent },
-  { title: 'knowledgeCompile.totalRelations', value: '47,900', icon: <ApartmentOutlined />, color: '#10b981' },
-  { title: 'knowledgeCompile.relationTypes', value: '24', icon: <LinkOutlined />, color: '#8b5cf6' },
+  { title: '实体节点总数', value: '17,100', icon: <NodeIndexOutlined />, color: colors.accent },
+  { title: '关系边总数', value: '47,900', icon: <ApartmentOutlined />, color: '#10b981' },
+  { title: '关系类型数', value: '24', icon: <LinkOutlined />, color: '#8b5cf6' },
 ]
 
 const mockEntities = [
@@ -19,21 +18,19 @@ const mockEntities = [
 ]
 
 export default function KnowledgeCompileGraph() {
-  const { t } = useTranslation()
-
   const columns = [
-    { title: t('knowledgeCompile.entityName', '实体名称'), dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontWeight: 500, color: colors.textPrimary }}>{v}</span> },
-    { title: t('knowledgeCompile.entityType', '类型'), dataIndex: 'type', key: 'type', render: (v: string) => <Tag>{v}</Tag> },
-    { title: t('knowledgeCompile.relationCount'), dataIndex: 'relationCount', key: 'relationCount' },
-    { title: t('operationLog.createdAt'), dataIndex: 'updatedAt', key: 'updatedAt' },
+    { title: '实体名称', dataIndex: 'name', key: 'name', render: (v: string) => <span style={{ fontWeight: 500, color: colors.textPrimary }}>{v}</span> },
+    { title: '类型', dataIndex: 'type', key: 'type', render: (v: string) => <Tag>{v}</Tag> },
+    { title: '关联关系数', dataIndex: 'relationCount', key: 'relationCount' },
+    { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt' },
   ]
 
   return (
     <div>
       <div className="yx-page-title">
-        <h1>{t('knowledgeCompile.graph')}</h1>
+        <h1>知识图谱</h1>
         <p style={{ color: colors.textSecondary, margin: '4px 0 0', fontSize: 14 }}>
-          {t('knowledgeCompile.graphDesc', '查看和管理编译生成的知识图谱')}
+          查看和管理编译生成的知识图谱
         </p>
       </div>
 
@@ -59,7 +56,7 @@ export default function KnowledgeCompileGraph() {
                 </div>
                 <div>
                   <div style={{ fontSize: 22, fontWeight: 700, color: colors.textPrimary }}>{s.value}</div>
-                  <div style={{ fontSize: 12, color: colors.textMuted }}>{t(s.title)}</div>
+                  <div style={{ fontSize: 12, color: colors.textMuted }}>{s.title}</div>
                 </div>
               </div>
             </Card>
@@ -82,14 +79,14 @@ export default function KnowledgeCompileGraph() {
           gap: 12,
         }}>
           <ApartmentOutlined style={{ fontSize: 64, color: colors.textMuted }} />
-          <div style={{ fontSize: 15, color: colors.textSecondary }}>{t('knowledgeCompile.graphVisualArea', '知识图谱可视化区域')}</div>
-          <div style={{ fontSize: 12, color: colors.textMuted }}>{t('knowledgeCompile.graphVisualDesc', '将在此区域展示知识图谱的可视化渲染')}</div>
+          <div style={{ fontSize: 15, color: colors.textSecondary }}>知识图谱可视化区域</div>
+          <div style={{ fontSize: 12, color: colors.textMuted }}>将在此区域展示知识图谱的可视化渲染</div>
         </div>
       </Card>
 
       <Card style={{ borderRadius: radius.card, border: `1px solid ${colors.border}` }} styles={{ body: { padding: 24 } }}>
         <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600, color: colors.textPrimary, paddingBottom: 12, borderBottom: `1px solid ${colors.border}` }}>
-          {t('knowledgeCompile.entityList', '实体列表')}
+          实体列表
         </h3>
         <Table columns={columns} dataSource={mockEntities} rowKey="id" pagination={false} size="middle" />
       </Card>

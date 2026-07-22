@@ -1,9 +1,14 @@
-
+/* ===== 平台级通用布局原语 ===== */
 
 .yx-sidebar {
   width: var(--yx-sidebar-width);
-  background: #ffffff;
-  border-right: 1px solid var(--yx-sidebar-border);
+  background: linear-gradient(
+    180deg,
+    var(--yx-brand-dark) 0%,
+    var(--yx-brand-mid) 40%,
+    var(--yx-brand-blue) 100%
+  );
+  color: #fff;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -234,7 +239,7 @@
   margin-top: 8px;
 }
 
-
+/* ===== Sidebar Navigation ===== */
 
 .yx-nav-section {
   padding: 16px 20px 6px;
@@ -260,12 +265,12 @@
 }
 .yx-nav-item:hover {
   background: var(--yx-sidebar-hover);
-  color: var(--yx-text-primary);
+  color: #fff;
 }
 .yx-nav-item.active {
   background: var(--yx-sidebar-active);
-  color: var(--yx-accent);
-  border-left-color: var(--yx-accent);
+  color: #fff;
+  border-left-color: var(--yx-accent-soft);
 }
 .yx-nav-item .yx-nav-icon {
   width: 20px;
@@ -290,12 +295,12 @@
 }
 .yx-nav-group-header:hover {
   background: var(--yx-sidebar-hover);
-  color: var(--yx-text-primary);
+  color: #fff;
 }
 .yx-nav-group-header.active {
   background: var(--yx-sidebar-active);
-  color: var(--yx-accent);
-  border-left-color: var(--yx-accent);
+  color: #fff;
+  border-left-color: var(--yx-accent-soft);
 }
 .yx-nav-group-header .yx-nav-icon {
   width: 20px;
@@ -330,7 +335,7 @@
   align-items: center;
   gap: 10px;
   padding: 9px 20px 9px 55px;
-  color: var(--yx-text-secondary);
+  color: rgba(255, 255, 255, 0.55);
   text-decoration: none;
   font-size: 13px;
   transition: all 0.2s ease;
@@ -338,38 +343,38 @@
   cursor: pointer;
 }
 .yx-sub-item:hover {
-  background: var(--yx-row-hover);
-  color: var(--yx-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
 }
 .yx-sub-item.active {
-  color: var(--yx-accent);
-  border-left-color: var(--yx-accent);
-  background: var(--yx-sidebar-active);
+  color: var(--yx-accent-light);
+  border-left-color: var(--yx-accent-soft);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .yx-sub-dot {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: var(--yx-text-muted);
+  background: rgba(255, 255, 255, 0.3);
   flex-shrink: 0;
   transition: background 0.2s;
 }
 .yx-sub-item:hover .yx-sub-dot,
 .yx-sub-item.active .yx-sub-dot {
-  background: var(--yx-accent);
+  background: var(--yx-accent-soft);
 }
 
 .yx-tag-future {
   margin-left: auto;
   font-size: 10px;
-  background: var(--yx-row-border);
+  background: rgba(255, 255, 255, 0.1);
   padding: 1px 6px;
   border-radius: 4px;
-  color: var(--yx-text-muted);
+  color: rgba(255, 255, 255, 0.4);
 }
 
-
+/* ===== Breadcrumb ===== */
 .yx-breadcrumb {
   font-size: 14px;
   color: var(--yx-text-secondary);
@@ -386,7 +391,7 @@
   font-weight: 600;
 }
 
-
+/* ===== Page Title ===== */
 .yx-page-title {
   margin-bottom: 24px;
 }
@@ -402,7 +407,7 @@
   margin-top: 6px;
 }
 
-
+/* ===== Section Header ===== */
 .yx-section-header {
   display: flex;
   align-items: center;
@@ -425,7 +430,7 @@
   color: var(--yx-accent-hover);
 }
 
-
+/* ===== Data Table ===== */
 .yx-data-table {
   width: 100%;
   border-collapse: collapse;
@@ -460,7 +465,7 @@
   font-family: var(--yx-font-mono);
 }
 
-
+/* ===== Buttons ===== */
 .yx-btn {
   display: inline-flex;
   align-items: center;
@@ -515,7 +520,7 @@
   background: #fee2e2;
 }
 
-
+/* ===== Pagination ===== */
 .yx-pagination {
   display: flex;
   align-items: center;
@@ -552,7 +557,7 @@
   pointer-events: none;
 }
 
-
+/* ===== Config/Module Cards ===== */
 .yx-config-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
@@ -605,7 +610,7 @@
   margin-bottom: 12px;
 }
 
-
+/* ===== Form Rows ===== */
 .yx-form-row {
   margin-bottom: 14px;
 }
@@ -657,7 +662,7 @@
   box-shadow: var(--yx-search-focus-shadow);
 }
 
-
+/* ===== Detail Row ===== */
 .yx-detail-row {
   display: flex;
   padding: 10px 0;
@@ -677,7 +682,7 @@
   color: var(--yx-text-body);
 }
 
-
+/* ===== Empty Card ===== */
 .yx-empty-card {
   background: #fff;
   border-radius: var(--yx-card-radius);
@@ -697,7 +702,7 @@
   margin-bottom: 6px;
 }
 
-
+/* ===== antd Button Overrides — match prototype .btn styles ===== */
 .ant-btn {
   display: inline-flex;
   align-items: center;
@@ -764,7 +769,7 @@
   justify-content: center;
 }
 
-
+/* ===== antd Input Overrides ===== */
 .ant-input-affix-wrapper {
   border-radius: var(--yx-input-radius);
   border-color: var(--yx-border);
@@ -797,7 +802,7 @@
   box-shadow: var(--yx-search-focus-shadow);
 }
 
-
+/* ===== antd Select Overrides — match .filter-select ===== */
 .ant-select-selector {
   border-radius: var(--yx-input-radius) !important;
   border-color: var(--yx-border) !important;
@@ -812,7 +817,7 @@
   box-shadow: var(--yx-search-focus-shadow) !important;
 }
 
-
+/* ===== antd Card Overrides ===== */
 .ant-card {
   border-radius: var(--yx-card-radius);
   box-shadow: var(--yx-card-shadow);
@@ -822,7 +827,7 @@
   padding: var(--yx-card-padding);
 }
 
-
+/* ===== antd Table Overrides ===== */
 .ant-table-wrapper .ant-table-thead > tr > th {
   font-size: 13px;
   font-weight: 600;
@@ -843,7 +848,7 @@
   border-bottom: none;
 }
 
-
+/* ===== antd Tabs Overrides ===== */
 .ant-tabs-nav::before {
   border-bottom: 2px solid var(--yx-border-table);
 }
@@ -859,7 +864,7 @@
   color: var(--yx-accent);
 }
 
-
+/* ===== antd Tag Overrides ===== */
 .ant-tag {
   font-size: 12px;
   padding: 2px 10px;
@@ -867,7 +872,7 @@
   border: none;
 }
 
-
+/* ===== antd Modal Overrides ===== */
 .ant-modal-content {
   border-radius: 16px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.2);
@@ -889,7 +894,7 @@
   padding: 16px 24px;
 }
 
-
+/* ===== antd Pagination Overrides ===== */
 .ant-pagination-item {
   width: var(--yx-page-btn-size, 34px);
   height: var(--yx-page-btn-size, 34px);
@@ -918,7 +923,7 @@
   color: #fff;
 }
 
-
+/* ===== antd Breadcrumb Overrides ===== */
 .ant-breadcrumb {
   font-size: 14px;
 }
@@ -929,11 +934,11 @@
   color: var(--yx-accent);
 }
 
-
-.ant-menu-light.ant-menu-root {
-  border-inline-end: none;
+/* ===== antd Menu Overrides (for standalone sub-app menus) ===== */
+.ant-menu-dark {
+  background: transparent;
 }
-.ant-menu-light .ant-menu-item {
+.ant-menu-dark .ant-menu-item {
   border-radius: 0;
   margin: 0;
   width: 100%;
@@ -941,16 +946,11 @@
   padding: 11px 20px;
   font-size: 14px;
 }
-.ant-menu-light .ant-menu-item:hover {
+.ant-menu-dark .ant-menu-item:hover {
   background: var(--yx-sidebar-hover);
 }
-.ant-menu-light .ant-menu-item-selected {
-  background: var(--yx-sidebar-active);
-  color: var(--yx-accent);
-  font-weight: 500;
-}
 
-
+/* ===== Responsive ===== */
 @media (max-width: 1200px) {
   .yx-config-grid {
     grid-template-columns: repeat(2, 1fr);

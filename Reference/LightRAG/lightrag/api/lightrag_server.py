@@ -55,10 +55,6 @@ from lightrag.api.routers.document_routes import (
 from lightrag.api.routers.query_routes import create_query_routes
 from lightrag.api.routers.graph_routes import create_graph_routes
 from lightrag.api.routers.ollama_api import OllamaAPI
-from lightrag.api.workspace_manager import (
-    WorkspaceRAGManager,
-    get_workspace_from_request,  # [yuexi] extracted from create_application()
-)
 
 from lightrag.utils import logger, set_verbose_debug
 from lightrag.kg.shared_storage import (
@@ -366,18 +362,20 @@ def create_app(args):
         app.state.background_tasks = set()
 
         try:
-            # [yuexi] Initialize default workspace instance via manager.
-            # init_default() creates and inits the default LightRAG,
-            # runs check_and_migrate_data, and pins it against eviction.
-            await manager.init_default()
+            # Initialize database connections
+            # Note: initialize_storages() now auto-initializes pipeline_status for rag.workspace
+            await rag.initialize_storages()
+
+            # Data migration regardless of storage implementation
+            await rag.check_and_migrate_data()
 
             ASCIIColors.green("\nServer is ready to accept connections! 🚀\n")
 
             yield
 
         finally:
-            # [yuexi] Clean up all workspace instances through manager
-            await manager.finalize_all()
+            # Clean up database connections
+            await rag.finalize_storages()
 
             if "LIGHTRAG_GUNICORN_MODE" not in os.environ:
                 # Only perform cleanup in Uvicorn single-process mode
@@ -485,26 +483,38 @@ def create_app(args):
         ],  # Expose token renewal header for cross-origin requests
     )
 
-    # ── [yuexi] 计量上下文中间件 ───────────────────────────────────────
-    # 从入站 X-Yuexi-* 头提取 tenant/kb/scene/trace 存入 contextvar，
-    # 供同步查询路径（/query 等）内部的 LLM/embedding 调用注入到 llm-gateway。
-    # 入库为异步后台 pipeline，contextvar 跨 task 失效，那条链路另走 file_source。
-    @app.middleware("http")
-    async def _jonex_metering_middleware(request: Request, call_next):
-        from lightrag.jonex_metering import (
-            set_jonex_context_from_headers,
-            clear_jonex_context,
-        )
-
-        token = set_jonex_context_from_headers(request.headers)
-        try:
-            return await call_next(request)
-        finally:
-            clear_jonex_context(token)
-    # ── [yuexi] end ───────────────────────────────────────────────────
-
     # Create combined auth dependency for all endpoints
     combined_auth = get_combined_auth_dependency(api_key)
+
+    def get_workspace_from_request(request: Request) -> str | None:
+        """
+        Extract workspace from HTTP request header or use default.
+
+        This enables multi-workspace API support by checking the custom
+        'LIGHTRAG-WORKSPACE' header. If not present, falls back to the
+        server's default workspace configuration.
+
+        Args:
+            request: FastAPI Request object
+
+        Returns:
+            Workspace identifier (may be empty string for global namespace)
+        """
+        # Check custom header first
+        workspace = request.headers.get("LIGHTRAG-WORKSPACE", "").strip()
+
+        if not workspace:
+            workspace = None
+        else:
+            sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", workspace)
+            if sanitized != workspace:
+                logger.warning(
+                    f"Workspace header '{workspace}' contains invalid characters. "
+                    f"Sanitized to '{sanitized}'."
+                )
+                workspace = sanitized
+
+        return workspace
 
     # Create working directory if it doesn't exist
     Path(args.working_dir).mkdir(parents=True, exist_ok=True)
@@ -1153,15 +1163,11 @@ def create_app(args):
         name=args.simulated_model_name, tag=args.simulated_model_tag
     )
 
-    # ── [yuexi] Build factory for WorkspaceRAGManager ─────────────────
-    # Instead of a single LightRAG singleton, we register a factory that
-    # creates instances on demand per LIGHTRAG-WORKSPACE header value.
-    # The factory captures ALL the same constructor arguments so every
-    # workspace instance shares the same LLM/embedding/storage config.
-    def build_rag(workspace: str):
-        return LightRAG(
+    # Initialize RAG with unified configuration
+    try:
+        rag = LightRAG(
             working_dir=args.working_dir,
-            workspace=workspace,
+            workspace=args.workspace,
             llm_model_func=create_llm_model_func(args.llm_binding),
             llm_model_name=args.llm_model,
             llm_model_max_async=args.max_async,
@@ -1193,32 +1199,19 @@ def create_app(args):
             },
             ollama_server_infos=ollama_server_infos,
         )
-
-    isolation_enabled = (
-        os.getenv("RAG_WORKSPACE_ISOLATION", "false").strip().lower() == "true"
-    )
-    max_cache = int(os.getenv("RAG_WORKSPACE_CACHE_MAX", "64"))
-    manager = WorkspaceRAGManager(
-        build_rag,
-        default_workspace=args.workspace,
-        max_size=max_cache,
-        isolation_enabled=isolation_enabled,
-    )
-    logger.info(
-        f"[jonex] Workspace isolation: {'ON' if isolation_enabled else 'OFF'} "
-        f"(cache max: {max_cache}, default ws: '{args.workspace or '<empty>'}')"
-    )
-    # ── [yuexi] end ──────────────────────────────────────────────────
+    except Exception as e:
+        logger.error(f"Failed to initialize LightRAG: {e}")
+        raise
 
     # Add routes
     # root_path is set on the app for reverse proxy support;
     # routes stay at their natural paths and are prefixed by the proxy or uvicorn --root-path
-    app.include_router(create_document_routes(manager, doc_manager, api_key))
-    app.include_router(create_query_routes(manager, api_key, args.top_k))
-    app.include_router(create_graph_routes(manager, api_key))
+    app.include_router(create_document_routes(rag, doc_manager, api_key))
+    app.include_router(create_query_routes(rag, api_key, args.top_k))
+    app.include_router(create_graph_routes(rag, api_key))
 
     # Add Ollama API routes
-    ollama_api = OllamaAPI(manager, top_k=args.top_k, api_key=api_key)
+    ollama_api = OllamaAPI(rag, top_k=args.top_k, api_key=api_key)
     app.include_router(ollama_api.router, prefix="/api")
 
     # Custom Swagger UI endpoint for offline support
@@ -1442,38 +1435,6 @@ def create_app(args):
     runtime_config_script = (
         f"<script>window.__LIGHTRAG_CONFIG__ = {_runtime_config_payload};</script>"
     )
-
-    # ── [yuexi] WebUI workspace 切换器（调试用，默认关闭）────────────────
-    # 注入一段脚本：页面右下角输入框写 `lightrag_workspace` cookie 并刷新，
-    # 浏览器随后把该 cookie 带到 9621 所有请求；服务端 get_workspace_from_request
-    # 读 cookie 兜底（见 workspace_manager.py）。⚠️ 跨租户数据暴露，仅本地调试，
-    # 生产严禁开启 + 严禁暴露 9621。
-    if os.getenv("WEBUI_WORKSPACE_SWITCHER", "false").strip().lower() == "true":
-        _ws_switcher_script = (
-            "<script>(function(){var K='lightrag_workspace';"
-            "function gc(n){var m=document.cookie.match('(?:^|; )'+n+'=([^;]*)');"
-            "return m?decodeURIComponent(m[1]):'';}"
-            "function sc(n,v){document.cookie=n+'='+encodeURIComponent(v)+';path=/;SameSite=Lax';}"
-            "document.addEventListener('DOMContentLoaded',function(){"
-            "var cur=gc(K);var bar=document.createElement('div');"
-            "bar.style.cssText='position:fixed;z-index:2147483647;right:10px;bottom:10px;"
-            "background:#b91c1c;color:#fff;padding:6px 10px;border-radius:8px;"
-            "font:12px/1.5 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)';"
-            "var tip=document.createElement('div');"
-            "tip.textContent='[\\u8c03\\u8bd5] LightRAG Workspace \\uff08\\u8de8\\u79df\\u6237\\uff0c\\u4ec5\\u8c03\\u8bd5\\u7528\\uff09';"
-            "tip.style.marginBottom='4px';"
-            "var inp=document.createElement('input');inp.value=cur;inp.placeholder='tenant__kb';"
-            "inp.style.cssText='width:200px;color:#000;padding:2px 4px';"
-            "var ap=document.createElement('button');ap.textContent='\\u5e94\\u7528';ap.style.margin='0 4px';"
-            "var cl=document.createElement('button');cl.textContent='\\u6e05\\u9664';"
-            "ap.onclick=function(){sc(K,inp.value.trim());location.reload();};"
-            "cl.onclick=function(){sc(K,'');location.reload();};"
-            "var row=document.createElement('div');row.appendChild(inp);row.appendChild(ap);row.appendChild(cl);"
-            "bar.appendChild(tip);bar.appendChild(row);document.body.appendChild(bar);"
-            "});})();</script>"
-        )
-        runtime_config_script += _ws_switcher_script
-    # ── [yuexi] end ────────────────────────────────────────────────────
 
     # Custom StaticFiles class for smart caching + runtime config injection
     class SmartStaticFiles(StaticFiles):  # Renamed from NoCacheStaticFiles

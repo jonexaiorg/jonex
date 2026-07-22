@@ -50,7 +50,7 @@ body {
   opacity: 1;
 }
 
-
+/* Login */
 .login-page {
   height: 100vh;
   display: flex;
@@ -76,7 +76,7 @@ body {
   margin-bottom: 16px;
 }
 
-
+/* App layout */
 .app-header {
   display: flex;
   align-items: center;
@@ -110,7 +110,7 @@ body {
   background: #f5f7fa;
 }
 
-
+/* responsiveness */
 @media (max-width: 768px) {
   .app-header .left .ant-menu {
     display: none;

@@ -1,18 +1,9 @@
-export type SupportedLocale = 'zh' | 'en'
-export type LocaleChangeEvent = CustomEvent<SupportedLocale>
-
-export function isSupportedLocale(value: string): value is SupportedLocale {
-  return value === 'zh' || value === 'en'
-}
-
 export interface ShellUser {
   id: string
   username: string
   displayName?: string
   realName?: string
   email?: string
-  tenantId?: string
-  tenantName?: string
   roles: string[]
 }
 
@@ -27,14 +18,12 @@ export interface ShellContext {
   mode: 'hosted' | 'standalone'
   token: string | null
   user: ShellUser | null
-  locale: SupportedLocale
+  locale: string
   theme: Record<string, unknown>
   navigate: (to: string, options?: ShellNavigateOptions) => void
   logout: () => void
   getToken: () => string | null
   getCurrentUser: () => ShellUser | null
-
-  setLocale: (locale: SupportedLocale) => void
   emitEvent: (name: string, payload?: unknown) => void
   onEvent: (name: string, handler: (payload?: unknown) => void) => () => void
   reportError: (error: unknown, extra?: Record<string, unknown>) => void

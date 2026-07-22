@@ -1,6 +1,15 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+RAG Client Abstract + Factory
 
+Business/domain code unified through `get_rag_client()` to get RAGClient, no longer new specific adapter.
+- LOCAL: In-process direct call to local LightRAG adapter
+- REMOTE: Invoke independent atomic-rag service via Sidecar reverse proxy
+- MOCK: Offline/test stub, no external dependencies
 
+Replace implementation (LightRAG -> Milvus + FAISS) only need to extend LocalRAGClient.factory or modify manifest endpoint.
+"""
 
 from __future__ import annotations
 
@@ -10,120 +19,100 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
 from jonex_core.capability.locator import CapabilityMode, get_locator
-from jonex_core.common import (
-    CapabilityInvokeError,
-    InvalidParameterError,
-    get_config,
-    get_logger,
-    require_tenant,
-)
+from jonex_core.common import get_config, get_logger
 
 logger = get_logger("capability.client.rag")
 
-
+# Currently used capability_id (can be overridden in manifest)
 RAG_CAPABILITY_ID = "atomic.rag.lightrag.v1"
 
 
-def require_knowledge_base(knowledge_base_id: Optional[str]) -> str:
-    return (knowledge_base_id or "").strip()
-
-
 class RAGClient(ABC):
-
+    """RAG Client contract: domain/business code only depends on this interface"""
 
     @abstractmethod
     async def insert(
         self,
         file_path: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         output_dir: Optional[str] = None,
-        *,
-        knowledge_base_id: str,
+        knowledge_base_id: Optional[str] = None,
         document_id: Optional[str] = None,
-        ontology_schema: Optional[dict] = None,
-        storage_backend: str = "local",
-        storage_key: Optional[str] = None,
     ) -> dict:
+        """Insert document into RAG index, immediately return task_id
 
+        Returns:
+            {"task_id": str, "status": "pending", "file_path": str}
+        """
         pass
 
     @abstractmethod
     async def query(
         self,
         query: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         mode: str = "hybrid",
         top_k: int = 5,
-        *,
-        knowledge_base_id: str,
-        trace_id: str = "",
     ) -> str:
-
-        pass
-
-    @abstractmethod
-    async def query_detailed(
-        self,
-        query: str,
-        tenant_id: str,
-        mode: str = "hybrid",
-        top_k: int = 5,
-        *,
-        knowledge_base_id: str,
-        trace_id: str = "",
-    ) -> dict:
-
+        """RAG query, returns answer string"""
         pass
 
     @abstractmethod
     async def delete(
         self,
         doc_id: str,
-        tenant_id: str,
-        *,
-        knowledge_base_id: str = "",
+        tenant_id: str = "default",
     ) -> bool:
-
+        """Delete document, returns whether success"""
         pass
 
     @abstractmethod
     async def get_task_status(
         self,
         task_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
+        """Query async task status
 
+        Returns:
+            {
+                "task_id": str,
+                "status": "pending" | "processing" | "completed" | "failed",
+                "progress": float,
+                "error": str | None
+            }
+        """
         pass
 
-
+    # ── storage reader methods ──────────────────────────────────
 
     @abstractmethod
     async def get_storage_summary(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
-
+        """Get knowledge base storage summary statistics"""
         pass
 
     @abstractmethod
     async def get_storage_documents(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
         status: Optional[str] = None,
     ) -> dict:
-
+        """Get knowledge base document list (paginated)"""
         pass
 
     @abstractmethod
     async def get_storage_entities(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
@@ -131,14 +120,14 @@ class RAGClient(ABC):
         file_path: Optional[str] = None,
         document_id: Optional[str] = None,
     ) -> dict:
-
+        """Get knowledge base entity list (paginated)"""
         pass
 
     @abstractmethod
     async def get_storage_relationships(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
@@ -147,39 +136,38 @@ class RAGClient(ABC):
         source_entity: Optional[str] = None,
         target_entity: Optional[str] = None,
     ) -> dict:
-
+        """Get knowledge base relation list (paginated)"""
         pass
 
     @abstractmethod
     async def get_storage_graph_summary(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
-
+        """Get knowledge graph summary statistics"""
         pass
 
     @abstractmethod
     async def get_storage_graph(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         limit: int = 200,
         keyword: Optional[str] = None,
         file_path: Optional[str] = None,
         document_id: Optional[str] = None,
     ) -> dict:
-
+        """Get knowledge graph nodes and edges data"""
         pass
 
     @abstractmethod
     async def get_document_parse_result(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
-        document_id: Optional[str] = None,
+        tenant_id: str = "default",
     ) -> dict:
-
+        """Get document parse result (aggregated summary + documents + entities + relationships)"""
         pass
 
     @abstractmethod
@@ -190,125 +178,72 @@ class RAGClient(ABC):
         tenant_id: str = "default",
         file_path: str = "",
     ) -> dict:
-
+        """Re-trigger document ontology extraction (force_ontology_only mode)"""
         pass
 
 
-
-
-
+# ============================================================
+# Local: Direct in-process adapter
+# ============================================================
 class LocalRAGClient(RAGClient):
-
+    """Direct connection to local LightRAG adapter (only available inside atomic-rag container)"""
 
     def __init__(self, options: Optional[Dict[str, Any]] = None) -> None:
-
+        # Lazy import to avoid loading heavy dependencies in REMOTE/MOCK mode
         from jonex_core.capability.atomic.rag.lightrag_adapter import LightRAGAdapter
 
         self._adapter = LightRAGAdapter()
         self._options = options or {}
-        logger.info("RAG Client initialized in LOCAL mode")
+        logger.info("RAG Client initialization: LOCAL mode")
 
     async def _ensure_initialized(self):
-
+        """Lazy initialize adapter (_task_queue / parser / HTTP client / workers)"""
         if not self._adapter._initialized:
             await self._adapter.initialize()
 
     async def insert(
         self,
         file_path: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         output_dir: Optional[str] = None,
-        *,
-        knowledge_base_id: str,
+        knowledge_base_id: Optional[str] = None,
         document_id: Optional[str] = None,
-        ontology_schema: Optional[dict] = None,
-        storage_backend: str = "local",
-        storage_key: Optional[str] = None,
     ) -> dict:
-        tenant_id = require_tenant(tenant_id)
-        knowledge_base_id = require_knowledge_base(knowledge_base_id)
         await self._ensure_initialized()
         return await self._adapter.insert(
-            file_path=file_path,
-            tenant_id=tenant_id,
+            file_path, tenant_id, output_dir,
             knowledge_base_id=knowledge_base_id,
-            output_dir=output_dir,
             document_id=document_id,
-            ontology_schema=ontology_schema,
-            storage_backend=storage_backend,
-            storage_key=storage_key or file_path,
         )
 
     async def query(
         self,
         query: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         mode: str = "hybrid",
         top_k: int = 5,
-        *,
-        knowledge_base_id: str,
-        trace_id: str = "",
     ) -> str:
-        tenant_id = require_tenant(tenant_id)
-        knowledge_base_id = require_knowledge_base(knowledge_base_id)
         await self._ensure_initialized()
-        return await self._adapter.query(
-            query,
-            tenant_id,
-            mode,
-            top_k,
-            knowledge_base_id=knowledge_base_id,
-            trace_id=trace_id,
-        )
-
-    async def query_detailed(
-        self,
-        query: str,
-        tenant_id: str,
-        mode: str = "hybrid",
-        top_k: int = 5,
-        *,
-        knowledge_base_id: str,
-        trace_id: str = "",
-    ) -> dict:
-        tenant_id = require_tenant(tenant_id)
-        knowledge_base_id = require_knowledge_base(knowledge_base_id)
-        await self._ensure_initialized()
-        return await self._adapter.query_detailed(
-            query,
-            tenant_id,
-            mode,
-            top_k,
-            knowledge_base_id=knowledge_base_id,
-            trace_id=trace_id,
-        )
+        return await self._adapter.query(query, tenant_id, mode, top_k)
 
     async def delete(
         self,
         doc_id: str,
-        tenant_id: str,
-        *,
-        knowledge_base_id: str = "",
+        tenant_id: str = "default",
     ) -> bool:
-        tenant_id = require_tenant(tenant_id)
         await self._ensure_initialized()
-        return await self._adapter.delete(
-            doc_id, tenant_id, knowledge_base_id=knowledge_base_id
-        )
+        return await self._adapter.delete(doc_id, tenant_id)
 
     async def get_task_status(
         self,
         task_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
-        tenant_id = require_tenant(tenant_id)
         return await self._adapter.get_task_status(task_id, tenant_id)
 
-
+    # ── storage reader delegations ──────────────────────────
 
     def _build_scope(self, knowledge_base_id: str, tenant_id: str) -> dict:
-        tenant_id = require_tenant(tenant_id)
-        knowledge_base_id = require_knowledge_base(knowledge_base_id)
         return {
             "knowledge_base_id": knowledge_base_id,
             "tenant_id": tenant_id,
@@ -318,24 +253,24 @@ class LocalRAGClient(RAGClient):
     async def get_storage_summary(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
         await self._ensure_initialized()
-        return await self._adapter._reader().get_summary(
+        return self._adapter._storage_reader.get_summary(
             self._build_scope(knowledge_base_id, tenant_id)
         )
 
     async def get_storage_documents(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
         status: Optional[str] = None,
     ) -> dict:
         await self._ensure_initialized()
-        return await self._adapter._reader().get_documents(
+        return self._adapter._storage_reader.get_documents(
             self._build_scope(knowledge_base_id, tenant_id),
             page=page, page_size=page_size, keyword=keyword, status=status,
         )
@@ -343,7 +278,7 @@ class LocalRAGClient(RAGClient):
     async def get_storage_entities(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
@@ -352,7 +287,7 @@ class LocalRAGClient(RAGClient):
         document_id: Optional[str] = None,
     ) -> dict:
         await self._ensure_initialized()
-        return await self._adapter._reader().get_entities(
+        return self._adapter._storage_reader.get_entities(
             self._build_scope(knowledge_base_id, tenant_id),
             page=page, page_size=page_size, keyword=keyword,
             entity_type=entity_type, file_path=file_path, document_id=document_id,
@@ -361,7 +296,7 @@ class LocalRAGClient(RAGClient):
     async def get_storage_relationships(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
@@ -371,7 +306,7 @@ class LocalRAGClient(RAGClient):
         target_entity: Optional[str] = None,
     ) -> dict:
         await self._ensure_initialized()
-        return await self._adapter._reader().get_relationships(
+        return self._adapter._storage_reader.get_relationships(
             self._build_scope(knowledge_base_id, tenant_id),
             page=page, page_size=page_size, keyword=keyword,
             file_path=file_path, document_id=document_id,
@@ -381,24 +316,24 @@ class LocalRAGClient(RAGClient):
     async def get_storage_graph_summary(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
         await self._ensure_initialized()
-        return await self._adapter._reader().get_graph_summary(
+        return self._adapter._storage_reader.get_graph_summary(
             self._build_scope(knowledge_base_id, tenant_id)
         )
 
     async def get_storage_graph(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         limit: int = 200,
         keyword: Optional[str] = None,
         file_path: Optional[str] = None,
         document_id: Optional[str] = None,
     ) -> dict:
         await self._ensure_initialized()
-        return await self._adapter._reader().get_graph(
+        return self._adapter._storage_reader.get_graph(
             self._build_scope(knowledge_base_id, tenant_id),
             limit=limit, keyword=keyword, file_path=file_path, document_id=document_id,
         )
@@ -406,15 +341,11 @@ class LocalRAGClient(RAGClient):
     async def get_document_parse_result(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
-        document_id: Optional[str] = None,
+        tenant_id: str = "default",
     ) -> dict:
         await self._ensure_initialized()
-        scope = self._build_scope(knowledge_base_id, tenant_id)
-        if document_id:
-            scope["document_ids"] = [document_id]
-        return await self._adapter._reader().get_document_parse_result(
-            scope
+        return self._adapter._storage_reader.get_document_parse_result(
+            self._build_scope(knowledge_base_id, tenant_id)
         )
 
     async def retry_ontology_extract(
@@ -430,16 +361,17 @@ class LocalRAGClient(RAGClient):
         )
 
 
-
-
-
+# ============================================================
+# Remote: Via Sidecar reverse proxy
+# ============================================================
 class RemoteRAGClient(RAGClient):
-
+    """Invoke atomic-rag service via Sidecar reverse proxy (business layer uses this)"""
 
     def __init__(
         self,
         endpoint: str,
         capability_id: str = RAG_CAPABILITY_ID,
+        tenant_id: str = "system",
         options: Optional[Dict[str, Any]] = None,
     ) -> None:
         import httpx
@@ -447,102 +379,57 @@ class RemoteRAGClient(RAGClient):
         timeout = float(os.getenv("RAG_CLIENT_TIMEOUT", "120"))
         self._client = httpx.AsyncClient(
             base_url=endpoint.rstrip("/"),
-            headers={"X-API-Key": get_config().SIDECAR_API_KEY},
+            headers={"X-API-Key": "jonex_test_gateway"},
             timeout=(options or {}).get("timeout", timeout),
         )
         self._capability_id = capability_id
-        logger.info(f"RAG Client initialized in REMOTE mode, endpoint={endpoint}")
-
-    def _build_scope(self, knowledge_base_id: str, tenant_id: str) -> dict:
-        tenant_id = require_tenant(tenant_id)
-        knowledge_base_id = require_knowledge_base(knowledge_base_id)
-        return {
-            "knowledge_base_id": knowledge_base_id,
-            "tenant_id": tenant_id,
-            "scope_mode": "knowledge_base",
-        }
+        self._tenant_id = tenant_id
+        logger.info(f"RAG Client initialization: REMOTE mode, endpoint={endpoint}")
 
     async def insert(
         self,
         file_path: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         output_dir: Optional[str] = None,
-        *,
-        knowledge_base_id: str,
+        knowledge_base_id: Optional[str] = None,
         document_id: Optional[str] = None,
-        ontology_schema: Optional[dict] = None,
-        storage_backend: str = "local",
-        storage_key: Optional[str] = None,
     ) -> dict:
-        knowledge_base_id = require_knowledge_base(knowledge_base_id)
         payload: dict = {
             "action": "insert",
             "file_path": file_path,
             "output_dir": output_dir,
-            "knowledge_base_id": knowledge_base_id,
-            "storage_backend": storage_backend,
-            "storage_key": storage_key or file_path,
         }
+        if knowledge_base_id:
+            payload["knowledge_base_id"] = knowledge_base_id
         if document_id:
             payload["document_id"] = document_id
-        if ontology_schema:
-            payload["ontology_schema"] = ontology_schema
         resp = await self._invoke(payload, tenant_id)
         return resp["data"]
 
     async def query(
         self,
         query: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         mode: str = "hybrid",
         top_k: int = 5,
-        *,
-        knowledge_base_id: str,
-        trace_id: str = "",
     ) -> str:
-        result = await self.query_detailed(
-            query=query, tenant_id=tenant_id, mode=mode, top_k=top_k,
-            knowledge_base_id=knowledge_base_id, trace_id=trace_id,
-        )
-        return result["answer"]
-
-    async def query_detailed(
-        self,
-        query: str,
-        tenant_id: str,
-        mode: str = "hybrid",
-        top_k: int = 5,
-        *,
-        knowledge_base_id: str,
-        trace_id: str = "",
-    ) -> dict:
-        knowledge_base_id = require_knowledge_base(knowledge_base_id)
-        payload: dict = {
+        payload = {
             "action": "query",
             "query": query,
             "mode": mode,
             "top_k": top_k,
-            "knowledge_base_id": knowledge_base_id,
-            "trace_id": trace_id,
         }
         resp = await self._invoke(payload, tenant_id)
-        data = resp["data"]
-        return {
-            "answer": data.get("answer", ""),
-            "references": data.get("references", []),
-        }
+        return resp["data"]["answer"]
 
     async def delete(
         self,
         doc_id: str,
-        tenant_id: str,
-        *,
-        knowledge_base_id: str = "",
+        tenant_id: str = "default",
     ) -> bool:
         payload = {
             "action": "delete",
             "doc_id": doc_id,
-            "knowledge_base_id": knowledge_base_id,
         }
         resp = await self._invoke(payload, tenant_id)
         return resp["data"]["success"]
@@ -550,7 +437,7 @@ class RemoteRAGClient(RAGClient):
     async def get_task_status(
         self,
         task_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
         payload = {
             "action": "get_task_status",
@@ -559,17 +446,16 @@ class RemoteRAGClient(RAGClient):
         resp = await self._invoke(payload, tenant_id)
         return resp["data"]
 
-
+    # ── storage reader (via sidecar → atomic-rag) ──────────
 
     async def get_storage_summary(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
         payload = {
             "action": "get_storage_summary",
             "knowledge_base_id": knowledge_base_id,
-            "scope": self._build_scope(knowledge_base_id, tenant_id),
         }
         resp = await self._invoke(payload, tenant_id)
         return resp["data"]
@@ -577,7 +463,7 @@ class RemoteRAGClient(RAGClient):
     async def get_storage_documents(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
@@ -586,7 +472,6 @@ class RemoteRAGClient(RAGClient):
         payload: dict = {
             "action": "get_storage_documents",
             "knowledge_base_id": knowledge_base_id,
-            "scope": self._build_scope(knowledge_base_id, tenant_id),
             "page": page,
             "page_size": page_size,
         }
@@ -600,7 +485,7 @@ class RemoteRAGClient(RAGClient):
     async def get_storage_entities(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
@@ -611,7 +496,6 @@ class RemoteRAGClient(RAGClient):
         payload: dict = {
             "action": "get_storage_entities",
             "knowledge_base_id": knowledge_base_id,
-            "scope": self._build_scope(knowledge_base_id, tenant_id),
             "page": page,
             "page_size": page_size,
         }
@@ -629,7 +513,7 @@ class RemoteRAGClient(RAGClient):
     async def get_storage_relationships(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
@@ -641,7 +525,6 @@ class RemoteRAGClient(RAGClient):
         payload: dict = {
             "action": "get_storage_relationships",
             "knowledge_base_id": knowledge_base_id,
-            "scope": self._build_scope(knowledge_base_id, tenant_id),
             "page": page,
             "page_size": page_size,
         }
@@ -661,12 +544,11 @@ class RemoteRAGClient(RAGClient):
     async def get_storage_graph_summary(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
         payload = {
             "action": "get_storage_graph_summary",
             "knowledge_base_id": knowledge_base_id,
-            "scope": self._build_scope(knowledge_base_id, tenant_id),
         }
         resp = await self._invoke(payload, tenant_id)
         return resp["data"]
@@ -674,7 +556,7 @@ class RemoteRAGClient(RAGClient):
     async def get_storage_graph(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         limit: int = 200,
         keyword: Optional[str] = None,
         file_path: Optional[str] = None,
@@ -683,7 +565,6 @@ class RemoteRAGClient(RAGClient):
         payload: dict = {
             "action": "get_storage_graph",
             "knowledge_base_id": knowledge_base_id,
-            "scope": self._build_scope(knowledge_base_id, tenant_id),
             "limit": limit,
         }
         if keyword:
@@ -698,17 +579,12 @@ class RemoteRAGClient(RAGClient):
     async def get_document_parse_result(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
-        document_id: Optional[str] = None,
+        tenant_id: str = "default",
     ) -> dict:
         payload = {
             "action": "get_document_parse_result",
             "knowledge_base_id": knowledge_base_id,
-            "scope": self._build_scope(knowledge_base_id, tenant_id),
         }
-        if document_id:
-            payload["document_id"] = document_id
-            payload["scope"]["document_ids"] = [document_id]
         resp = await self._invoke(payload, tenant_id)
         return resp["data"]
 
@@ -729,72 +605,39 @@ class RemoteRAGClient(RAGClient):
         return resp["data"]
 
     async def _invoke(self, payload: dict, tenant_id: str) -> dict:
-
-        tenant_id = require_tenant(tenant_id)
-        payload = dict(payload)
-        payload["tenant_id"] = tenant_id
+        """Unified invoke Sidecar /invoke interface"""
         body = {
             "capability_id": self._capability_id,
             "payload": payload,
-            "tenant_id": tenant_id,
+            "tenant_id": tenant_id or self._tenant_id,
         }
-        resp = await self._client.post(
-            "/invoke",
-            json=body,
-            headers={"X-Tenant-ID": tenant_id},
-        )
+        resp = await self._client.post("/invoke", json=body)
         resp.raise_for_status()
-        result = resp.json()
+        return resp.json()
 
 
-
-        action = payload.get("action", "unknown")
-        if not isinstance(result, dict) or not result.get("success", False):
-            message = (
-                result.get("message") if isinstance(result, dict) else None
-            ) or "RAG 能力调用失败"
-            raise CapabilityInvokeError(
-                message=f"RAG[{action}] 调用失败: {message}",
-                details={"action": action},
-            )
-        if result.get("data") is None:
-            raise CapabilityInvokeError(
-                message=f"RAG[{action}] 返回空数据（data=null）",
-                details={"action": action},
-            )
-        return result
-
-
-
-
-
+# ============================================================
+# Mock: Test / offline stub
+# ============================================================
 class MockRAGClient(RAGClient):
-
+    """In-memory stub implementation, for unit tests and offline development"""
 
     def __init__(self, options: Optional[Dict[str, Any]] = None) -> None:
         self._tasks: Dict[str, dict] = {}
         self._docs: set[str] = set()
-        logger.info("RAG Client initialized in MOCK mode")
+        logger.info("RAG Client initialization: MOCK mode")
 
     async def insert(
         self,
         file_path: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         output_dir: Optional[str] = None,
-        *,
-        knowledge_base_id: str,
+        knowledge_base_id: Optional[str] = None,
         document_id: Optional[str] = None,
-        ontology_schema: Optional[dict] = None,
-        storage_backend: str = "local",
-        storage_key: Optional[str] = None,
     ) -> dict:
-        tenant_id = require_tenant(tenant_id)
-        knowledge_base_id = require_knowledge_base(knowledge_base_id)
         task_id = str(uuid.uuid4())
         self._tasks[task_id] = {
             "task_id": task_id,
-            "tenant_id": tenant_id,
-            "knowledge_base_id": knowledge_base_id,
             "status": "completed",
             "progress": 1.0,
             "error": None,
@@ -809,42 +652,17 @@ class MockRAGClient(RAGClient):
     async def query(
         self,
         query: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         mode: str = "hybrid",
         top_k: int = 5,
-        *,
-        knowledge_base_id: str,
-        trace_id: str = "",
     ) -> str:
-        require_tenant(tenant_id)
-        require_knowledge_base(knowledge_base_id)
-        return f"[MOCK RAG 回答] 关于'{query}'的回答：这是来自 Mock 的测试回复。"
-
-    async def query_detailed(
-        self,
-        query: str,
-        tenant_id: str,
-        mode: str = "hybrid",
-        top_k: int = 5,
-        *,
-        knowledge_base_id: str,
-        trace_id: str = "",
-    ) -> dict:
-        require_tenant(tenant_id)
-        require_knowledge_base(knowledge_base_id)
-        return {
-            "answer": f"[MOCK RAG 回答] 关于'{query}'的回答：这是来自 Mock 的测试回复。",
-            "references": [],
-        }
+        return f"[MOCK RAG answer] Answer about '{query}': This is a test reply from Mock."
 
     async def delete(
         self,
         doc_id: str,
-        tenant_id: str,
-        *,
-        knowledge_base_id: str = "",
+        tenant_id: str = "default",
     ) -> bool:
-        tenant_id = require_tenant(tenant_id)
         key = f"{tenant_id}:{doc_id}"
         if key in self._docs:
             self._docs.remove(key)
@@ -854,33 +672,22 @@ class MockRAGClient(RAGClient):
     async def get_task_status(
         self,
         task_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
-        tenant_id = require_tenant(tenant_id)
-        task = self._tasks.get(task_id)
-        if task and task.get("tenant_id") != tenant_id:
-            return {
-                "task_id": task_id,
-                "status": "not_found",
-                "progress": 0.0,
-                "error": "task not found",
-            }
-        return task or {
+        return self._tasks.get(task_id, {
             "task_id": task_id,
             "status": "not_found",
             "progress": 0.0,
             "error": "task not found",
-        }
+        })
 
-
+    # ── storage reader (mock: empty data) ──────────────────
 
     async def get_storage_summary(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
-        tenant_id = require_tenant(tenant_id)
-        knowledge_base_id = require_knowledge_base(knowledge_base_id)
         return {
             "knowledge_base_id": knowledge_base_id,
             "tenant_id": tenant_id,
@@ -901,20 +708,18 @@ class MockRAGClient(RAGClient):
     async def get_storage_documents(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
         status: Optional[str] = None,
     ) -> dict:
-        require_tenant(tenant_id)
-        require_knowledge_base(knowledge_base_id)
         return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
     async def get_storage_entities(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
@@ -922,14 +727,12 @@ class MockRAGClient(RAGClient):
         file_path: Optional[str] = None,
         document_id: Optional[str] = None,
     ) -> dict:
-        require_tenant(tenant_id)
-        require_knowledge_base(knowledge_base_id)
         return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
     async def get_storage_relationships(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         page: int = 1,
         page_size: int = 20,
         keyword: Optional[str] = None,
@@ -938,17 +741,13 @@ class MockRAGClient(RAGClient):
         source_entity: Optional[str] = None,
         target_entity: Optional[str] = None,
     ) -> dict:
-        require_tenant(tenant_id)
-        require_knowledge_base(knowledge_base_id)
         return {"items": [], "total": 0, "page": page, "page_size": page_size}
 
     async def get_storage_graph_summary(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
     ) -> dict:
-        require_tenant(tenant_id)
-        require_knowledge_base(knowledge_base_id)
         return {
             "nodes_count": 0, "edges_count": 0,
             "entity_type_count": 0, "relation_type_count": 0,
@@ -958,31 +757,20 @@ class MockRAGClient(RAGClient):
     async def get_storage_graph(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
+        tenant_id: str = "default",
         limit: int = 200,
         keyword: Optional[str] = None,
         file_path: Optional[str] = None,
         document_id: Optional[str] = None,
     ) -> dict:
-        require_tenant(tenant_id)
-        require_knowledge_base(knowledge_base_id)
         return {"nodes": [], "edges": []}
 
     async def get_document_parse_result(
         self,
         knowledge_base_id: str,
-        tenant_id: str,
-        document_id: Optional[str] = None,
+        tenant_id: str = "default",
     ) -> dict:
-        require_tenant(tenant_id)
-        require_knowledge_base(knowledge_base_id)
-        return {
-            "document_id": document_id,
-            "summary": {},
-            "documents": [],
-            "entities": [],
-            "relationships": [],
-        }
+        return {"summary": {}, "documents": [], "entities": [], "relationships": []}
 
     async def retry_ontology_extract(
         self,
@@ -991,18 +779,17 @@ class MockRAGClient(RAGClient):
         tenant_id: str = "default",
         file_path: str = "",
     ) -> dict:
-        require_tenant(tenant_id)
-        require_knowledge_base(knowledge_base_id)
         return {"status": "completed", "task_id": str(uuid.uuid4())}
 
 
-
-
-
+# ============================================================
+# Factory: returns corresponding client based on runtime manifest
+# ============================================================
 def get_rag_client(
     capability_id: str = RAG_CAPABILITY_ID,
+    tenant_id: str = "default",
 ) -> RAGClient:
-
+    """Get RAG Client (business/domain code unified invoke this entry point)"""
     spec = get_locator().get_spec(capability_id)
 
     if spec.mode == CapabilityMode.MOCK:
@@ -1016,6 +803,7 @@ def get_rag_client(
         return RemoteRAGClient(
             endpoint=spec.endpoint or cfg.SIDECAR_URL or "http://sidecar:8000",
             capability_id=capability_id,
+            tenant_id=tenant_id,
         )
 
-    raise ValueError(f"不支持的 RAG 能力模式：{spec.mode}")
+    raise ValueError(f"Unsupported RAG capability mode: {spec.mode}")

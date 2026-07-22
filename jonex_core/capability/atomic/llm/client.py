@@ -1,6 +1,15 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+LLM Client Abstract + Factory
 
+Business/domain code unified through `get_llm_client()` to get LLMClient, no longer new specific adapter.
+- LOCAL: Directly invoke local adapter in-process (Default uses QwenLLMCapability)
+- REMOTE: Invoke independent LLM capability service via Sidecar reverse proxy
+- MOCK: Offline/test stub, no external dependencies
 
+Replace provider (Qwen -> DeepSeek, etc.) only need to extend LocalLLMClient.factory or modify manifest endpoint.
+"""
 
 from __future__ import annotations
 
@@ -9,16 +18,16 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 from jonex_core.capability.locator import CapabilityMode, get_locator
-from jonex_core.common import get_config, get_logger, require_tenant
+from jonex_core.common import get_config, get_logger
 
 logger = get_logger("capability.client.llm")
 
-
+# Currently used capability_id (can be overridden in manifest)
 LLM_CAPABILITY_ID = "atomic.llm.qwen.v1"
 
 
 class LLMClient(ABC):
-
+    """LLM Client contract: domain/business code only depends on this interface"""
 
     @abstractmethod
     async def chat_completion(
@@ -27,21 +36,21 @@ class LLMClient(ABC):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
     ) -> str:
-        ""
+        """Chat completion"""
 
     @abstractmethod
     async def embedding(self, text: str) -> List[float]:
-        ""
+        """Text vectorization"""
 
 
-
-
-
+# ============================================================
+# Local: Direct in-process adapter
+# ============================================================
 class LocalLLMClient(LLMClient):
-
+    """Direct connection to local adapter"""
 
     def __init__(self, options: Optional[Dict[str, Any]] = None) -> None:
-
+        # Lazy import to avoid loading heavy dependencies in REMOTE/MOCK mode
         from jonex_core.capability.atomic.llm.qwen_adapter import QwenLLMCapability
 
         self._adapter = QwenLLMCapability()
@@ -59,22 +68,22 @@ class LocalLLMClient(LLMClient):
         return await self._adapter.embedding(text)
 
 
-
-
-
+# ============================================================
+# Remote: Via Sidecar reverse proxy
+# ============================================================
 class RemoteLLMClient(LLMClient):
-
+    """Invoke remote LLM service via Sidecar reverse proxy"""
 
     def __init__(
         self,
         endpoint: str,
-        tenant_id: str,
         capability_id: str = LLM_CAPABILITY_ID,
+        tenant_id: str = "system",
         options: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._endpoint = endpoint.rstrip("/")
         self._capability_id = capability_id
-        self._tenant_id = require_tenant(tenant_id)
+        self._tenant_id = tenant_id
         self._timeout = (options or {}).get("timeout", 30.0)
 
     async def chat_completion(
@@ -108,8 +117,6 @@ class RemoteLLMClient(LLMClient):
             UpstreamServiceError,
         )
 
-        payload = dict(payload)
-        payload["tenant_id"] = self._tenant_id
         request_body = {
             "capability_id": self._capability_id,
             "tenant_id": self._tenant_id,
@@ -118,22 +125,18 @@ class RemoteLLMClient(LLMClient):
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.post(
-                    f"{self._endpoint}/invoke",
-                    json=request_body,
-                    headers={"X-Tenant-ID": self._tenant_id},
-                )
+                resp = await client.post(f"{self._endpoint}/invoke", json=request_body)
                 resp.raise_for_status()
                 return resp.json()
         except httpx.TimeoutException as e:
             raise CapabilityTimeoutError(
-                message=f"LLM 远程调用超时: {self._capability_id}",
+                message=f"LLM remote invocation timed out: {self._capability_id}",
                 details={"endpoint": self._endpoint},
                 cause=e,
             )
         except httpx.HTTPStatusError as e:
             raise UpstreamServiceError(
-                message=f"LLM 远程调用失败: HTTP {e.response.status_code}",
+                message=f"LLM remote invocation failed: HTTP {e.response.status_code}",
                 details={
                     "capability_id": self._capability_id,
                     "upstream_status": e.response.status_code,
@@ -143,11 +146,11 @@ class RemoteLLMClient(LLMClient):
             )
 
 
-
-
-
+# ============================================================
+# Mock: Test stub
+# ============================================================
 class MockLLMClient(LLMClient):
-
+    """Stub implementation with no external dependencies"""
 
     def __init__(self, options: Optional[Dict[str, Any]] = None) -> None:
         self._embedding_dim = (options or {}).get("embedding_dim", 1536)
@@ -166,15 +169,20 @@ class MockLLMClient(LLMClient):
         return [rng.uniform(-1, 1) for _ in range(self._embedding_dim)]
 
 
-
-
-
+# ============================================================
+# Factory
+# ============================================================
 def get_llm_client(
     *,
     capability_id: str = LLM_CAPABILITY_ID,
-    tenant_id: Optional[str] = None,
+    tenant_id: str = "system",
 ) -> LLMClient:
+    """Returns the corresponding client based on the capability_runtime manifest.
 
+    Usage for business/domain code:
+        client = get_llm_client()
+        text = await client.chat_completion([...])
+    """
     spec = get_locator().get_spec(capability_id)
 
     if spec.mode == CapabilityMode.MOCK:
@@ -182,13 +190,12 @@ def get_llm_client(
         return MockLLMClient(spec.options)
 
     if spec.mode == CapabilityMode.REMOTE:
-        tenant_id = require_tenant(tenant_id)
         endpoint = spec.endpoint or get_config().SIDECAR_URL
         logger.debug(f"LLM client = REMOTE ({capability_id}, endpoint={endpoint})")
         return RemoteLLMClient(
             endpoint=endpoint,
-            tenant_id=tenant_id,
             capability_id=capability_id,
+            tenant_id=tenant_id,
             options=spec.options,
         )
 

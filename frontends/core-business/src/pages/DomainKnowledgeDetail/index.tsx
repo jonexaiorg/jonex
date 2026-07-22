@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Input, Button, Table, Tag, Space, message, Modal, Form, InputNumber, Select, Alert } from 'antd'
+import { Input, Button, Table, Tag, Select, Space, message } from 'antd'
 import {
   PlusOutlined,
+  SearchOutlined,
   ArrowLeftOutlined,
   DatabaseOutlined,
   ApiOutlined,
@@ -17,53 +17,64 @@ import {
   CloudOutlined,
   UploadOutlined,
   FolderOpenOutlined,
+  FilePdfOutlined,
+  FileWordOutlined,
+  FileExcelOutlined,
+  FileImageOutlined,
+  AudioOutlined,
   VideoCameraOutlined,
-  EditOutlined,
+  FileOutlined,
   BellOutlined,
   PictureOutlined,
   SoundOutlined,
   TeamOutlined,
   BugOutlined,
+  CheckCircleOutlined,
+  MessageOutlined,
   EyeOutlined,
-  SwapOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import type {
   DomainKnowledgeDetail as DomainKnowledgeDetailType,
   DataSourceConfig,
+  ParserFileConfig,
+  OntologyTemplate,
+  ValidationRule,
+  PromptTemplate,
+  CompileEntity,
+  EntityDistribution,
+  RelationDistribution,
+  LogicRule,
   ActionRule,
+  DomainKnowledgeResultStats,
+  GraphSummary,
   RuleTextSegment,
-  OntologyInstanceSummary,
-  RelationInstanceSummary,
-  OntologyStatistics,
-  DomainKnowledgePermissionMember,
 } from '@/types/domainKnowledge'
-import { statusTextMap } from '@/types/domainKnowledge'
+import { statusTextMap, severityColorMap } from '@/types/domainKnowledge'
 import {
   getDomainKnowledgeDetail,
   getDomainKnowledgeDataSources,
+  getDomainKnowledgeParserConfigs,
+  getDomainKnowledgeOntologyTemplates,
+  getDomainKnowledgeValidationRules,
+  getDomainKnowledgePrompts,
+  getDomainKnowledgeEntities,
+  getDomainKnowledgeEntityDistribution,
+  getDomainKnowledgeRelationDistribution,
+  getDomainKnowledgeLogicRules,
   getDomainKnowledgeActionRules,
-  getOntologyEntityTypes,
-  getOntologyRelationTypes,
-  getOntologyStatistics,
-  getParserConfigs,
-  getDomainKnowledgePermissions,
-  saveDomainKnowledgePermissions,
-  type ParserConfigItem,
+  getDomainKnowledgeResultStats,
+  getDomainKnowledgeGraphSummary,
 } from '@/api/domainKnowledge'
-import CompileTab from './compile/CompileTab'
-import SynonymTab from './synonym/SynonymTab'
-import AddDataSourceModal from '@/components/datasource/AddDataSourceModal'
-import { deleteDataSource, updateDataSource } from '@/api/dataSource'
-import { ParserConfigContent } from '@/pages/DomainKnowledgeParser'
+
+const ENTITY_PAGE_SIZE = 6
 
 const tabs = [
-  { key: 'datasource', tKey: 'domainKnowledge.dataSourceSettings', icon: ApiOutlined },
-  { key: 'parse', tKey: 'domainKnowledge.parserSettings', icon: ControlOutlined },
-  { key: 'compile', tKey: 'domainKnowledge.compileSettings', icon: CodeOutlined },
-  { key: 'result', tKey: 'domainKnowledge.results', icon: BarChartOutlined },
-  { key: 'synonym', tKey: 'domainKnowledge.synonymSettings', icon: SwapOutlined },
-  { key: 'permission', tKey: 'domainKnowledge.permissionSettings', icon: TeamOutlined },
+  { key: 'datasource', label: '数据源设置', icon: ApiOutlined },
+  { key: 'parse', label: '解析引擎设置', icon: ControlOutlined },
+  { key: 'compile', label: '编译引擎设置', icon: CodeOutlined },
+  { key: 'result', label: '领域知识结果', icon: BarChartOutlined },
+  // { key: 'action', label: 'Action', icon: ThunderboltOutlined },
 ]
 
 const dataSourceIconMap: Record<string, React.ComponentType<any>> = {
@@ -72,10 +83,14 @@ const dataSourceIconMap: Record<string, React.ComponentType<any>> = {
   storage: FolderOpenOutlined,
 }
 
-const dataSourceStatusView: Record<DataSourceConfig['status'], { color: string; tKey: string }> = {
-  running: { color: 'success', tKey: 'dataSource.running' },
-  paused: { color: 'warning', tKey: 'dataSource.paused' },
-  error: { color: 'error', tKey: 'dataSource.error' },
+const parserFileIconMap: Record<string, React.ComponentType<any>> = {
+  pdf: FilePdfOutlined,
+  word: FileWordOutlined,
+  excel: FileExcelOutlined,
+  ppt: FileOutlined,
+  image: FileImageOutlined,
+  audio: AudioOutlined,
+  video: VideoCameraOutlined,
 }
 
 const actionIconMap: Record<string, React.ComponentType<any>> = {
@@ -101,163 +116,62 @@ function renderRuleText(segments: RuleTextSegment[]): React.ReactNode {
 }
 
 export default function DomainKnowledgeDetail() {
-  const { t } = useTranslation()
-  const describeDataSource = (ds: DataSourceConfig): string => {
-    const config = ds.configJson || {}
-    if (ds.accessType === 'api') return `${t('dataSource.endpoint')}: ${config.endpoint || '-'}`
-    if (ds.accessType === 'storage') {
-      return `${config.backend || ''} | ${t('dataSource.bucket')}: ${config.bucket || '-'}${config.prefix ? ` / ${config.prefix}` : ''}`
-    }
-    if (ds.accessType === 'api_push') {
-      return `${t('dataSource.apiPush')} | ${t('dataSource.documentType')}: ${(config.allowed_ext || []).join('/') || '-'}`
-    }
-    return t('dataSource.fileUpload')
-  }
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('datasource')
 
-
+  // ── detail header ────────────────────────────────────
   const [detail, setDetail] = useState<DomainKnowledgeDetailType | null>(null)
   const [detailLoading, setDetailLoading] = useState(true)
 
-
+  // ── datasource tab ────────────────────────────────────
   const [dataSources, setDataSources] = useState<DataSourceConfig[]>([])
   const [dataSourcesLoading, setDataSourcesLoading] = useState(false)
-  const [addDsOpen, setAddDsOpen] = useState(false)
 
+  // ── parse tab ─────────────────────────────────────────
+  const [parserConfigs, setParserConfigs] = useState<ParserFileConfig[]>([])
+  const [parserConfigsLoading, setParserConfigsLoading] = useState(false)
 
-const [editingDs, setEditingDs] = useState<DataSourceConfig | null>(null)
-const [editingName, setEditingName] = useState('')
-const [editingExtStr, setEditingExtStr] = useState('')
-const [submittingEdit, setSubmittingEdit] = useState(false)
+  // ── compile tab ───────────────────────────────────────
+  const [ontologyTemplates, setOntologyTemplates] = useState<OntologyTemplate[]>([])
+  const [validationRules, setValidationRules] = useState<ValidationRule[]>([])
+  const [prompts, setPrompts] = useState<PromptTemplate[]>([])
+  const [compileLoading, setCompileLoading] = useState(false)
 
-const getEditField = (key: string): any => {
-  const cfg = editingDs?.configJson || {}
-  if (key in cfg) return cfg[key]
-  return ''
-}
-const setEditField = (key: string, value: any) => {
-  if (!editingDs) return
-  setEditingDs({ ...editingDs, configJson: { ...(editingDs.configJson || {}), [key]: value } })
-}
-const buildEditConfig = (): Record<string, any> => {
-  const cfg = { ...(editingDs?.configJson || {}) }
-  const at = editingDs?.accessType
-  if (at === 'api') {
-    const auth = cfg.auth || {}
+  // ── result tab ────────────────────────────────────────
+  const [entities, setEntities] = useState<CompileEntity[]>([])
+  const [entityTotal, setEntityTotal] = useState(0)
+  const [entityPage, setEntityPage] = useState(1)
+  const [entityKeywordInput, setEntityKeywordInput] = useState('')
+  const [entityKeyword, setEntityKeyword] = useState('')
+  const [entityType, setEntityType] = useState('全部类型')
+  const [entityLoading, setEntityLoading] = useState(false)
 
-    if (!auth.token) delete auth.token
-    cfg.auth = auth
-  }
-  if (at === 'api_push') {
-    cfg.allowed_ext = (editingExtStr || '').split(',').map((s: string) => s.trim()).filter(Boolean)
-    cfg.max_file_mb = cfg.max_file_mb || 50
-  }
-  if (at === 'storage') {
-
-    if (!cfg.credential) delete cfg.credential
-    cfg.include_ext = (editingExtStr || '').split(',').map((s: string) => s.trim()).filter(Boolean)
-  }
-  return cfg
-}
-
-const openEditModal = (ds: DataSourceConfig) => {
-  setEditingDs(ds)
-  setEditingName(ds.name)
-  const extArr = ds.accessType === 'api_push'
-    ? (ds.configJson?.allowed_ext || [])
-    : ds.accessType === 'storage'
-      ? (ds.configJson?.include_ext || [])
-      : []
-  setEditingExtStr(Array.isArray(extArr) ? extArr.join(',') : String(extArr || ''))
-}
-
-  const reloadDataSources = useCallback(() => {
-    if (!id) return
-    setDataSourcesLoading(true)
-    getDomainKnowledgeDataSources(id)
-      .then(setDataSources)
-      .catch((err: any) => message.error(err?.message || t('common.loadFailed')))
-      .finally(() => setDataSourcesLoading(false))
-  }, [id])
-
-
-  const [ontologySummaries, setOntologySummaries] = useState<OntologyInstanceSummary[]>([])
-  const [relationSummaries, setRelationSummaries] = useState<RelationInstanceSummary[]>([])
-  const [resultStats, setResultStats] = useState<OntologyStatistics | null>(null)
+  const [entityDistribution, setEntityDistribution] = useState<EntityDistribution[]>([])
+  const [relationDistribution, setRelationDistribution] = useState<RelationDistribution[]>([])
+  const [logicRules, setLogicRules] = useState<LogicRule[]>([])
+  const [resultStats, setResultStats] = useState<DomainKnowledgeResultStats | null>(null)
+  const [graphSummary, setGraphSummary] = useState<GraphSummary | null>(null)
   const [resultLoading, setResultLoading] = useState(false)
 
-
+  // ── action tab ────────────────────────────────────────
   const [actionRules, setActionRules] = useState<ActionRule[]>([])
   const [actionLoading, setActionLoading] = useState(false)
 
-
-  const [permissionMembers, setPermissionMembers] = useState<DomainKnowledgePermissionMember[]>([])
-  const [permissionLoading, setPermissionLoading] = useState(false)
-  const [permissionSaving, setPermissionSaving] = useState(false)
-  const [permissionKeyword, setPermissionKeyword] = useState('')
-  const permDebounceRef = useRef<ReturnType<typeof setTimeout>>()
-
-  const reloadPermissions = useCallback(() => {
-    if (!id) return
-    setPermissionLoading(true)
-    getDomainKnowledgePermissions(id, permissionKeyword || undefined)
-      .then((data) => setPermissionMembers(data.members))
-      .catch((err: any) => message.error(err?.message || t('common.loadFailed')))
-      .finally(() => setPermissionLoading(false))
-  }, [id, permissionKeyword])
-
-  const handlePermKeywordChange = (val: string) => {
-    setPermissionKeyword(val)
-    if (permDebounceRef.current) clearTimeout(permDebounceRef.current)
-    permDebounceRef.current = setTimeout(() => {
-      if (!id) return
-      setPermissionLoading(true)
-      getDomainKnowledgePermissions(id, val || undefined)
-        .then((data) => setPermissionMembers(data.members))
-        .catch(() => {   })
-        .finally(() => setPermissionLoading(false))
-    }, 300)
-  }
-
-  const handlePermRoleChange = (userId: string, role: 'view' | 'manage') => {
-    setPermissionMembers((prev) =>
-      prev.map((m) => (m.userId === userId ? { ...m, role } : m)),
-    )
-  }
-
-  const handleSavePermissions = async () => {
-    if (!id) return
-    setPermissionSaving(true)
-    try {
-      await saveDomainKnowledgePermissions(id, {
-        members: permissionMembers.map((m) => ({
-          userId: m.userId,
-          role: m.role,
-        })),
-      })
-      message.success(t('domainKnowledge.permissionSaveSuccess'))
-    } catch (err: any) {
-      message.error(err?.message || t('domainKnowledge.permissionSaveFailed'))
-    } finally {
-      setPermissionSaving(false)
-    }
-  }
-
   const loadedTabsRef = useRef<Set<string>>(new Set())
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
 
-
+  // ── fetch detail ──────────────────────────────────────
   useEffect(() => {
     if (!id) return
     setDetailLoading(true)
     getDomainKnowledgeDetail(id)
       .then(setDetail)
-      .catch((err: any) => message.error(err?.message || t('common.loadFailed')))
+      .catch((err: any) => message.error(err?.message || '获取知识库详情失败'))
       .finally(() => setDetailLoading(false))
   }, [id])
 
-
+  // ── load tab data lazily ──────────────────────────────
   const loadTabData = useCallback(
     (tabKey: string) => {
       if (!id || loadedTabsRef.current.has(tabKey)) return
@@ -268,40 +182,61 @@ const openEditModal = (ds: DataSourceConfig) => {
           setDataSourcesLoading(true)
           getDomainKnowledgeDataSources(id)
             .then(setDataSources)
-            .catch((err: any) => message.error(err?.message || t('common.loadFailed')))
+            .catch((err: any) => message.error(err?.message || '获取数据源失败'))
             .finally(() => setDataSourcesLoading(false))
+          break
+
+        case 'parse':
+          setParserConfigsLoading(true)
+          getDomainKnowledgeParserConfigs(id)
+            .then(setParserConfigs)
+            .catch((err: any) => message.error(err?.message || '获取解析配置失败'))
+            .finally(() => setParserConfigsLoading(false))
+          break
+
+        case 'compile':
+          setCompileLoading(true)
+          Promise.all([
+            getDomainKnowledgeOntologyTemplates(id),
+            getDomainKnowledgeValidationRules(id),
+            getDomainKnowledgePrompts(id),
+          ])
+            .then(([templates, rules, promptsData]) => {
+              setOntologyTemplates(templates)
+              setValidationRules(rules)
+              setPrompts(promptsData)
+            })
+            .catch((err: any) => message.error(err?.message || '获取编译配置失败'))
+            .finally(() => setCompileLoading(false))
           break
 
         case 'result':
           setResultLoading(true)
           Promise.all([
-            getOntologyStatistics(id),
-            getOntologyEntityTypes(id),
-            getOntologyRelationTypes(id),
+            getDomainKnowledgeResultStats(id),
+            getDomainKnowledgeGraphSummary(id),
+            getDomainKnowledgeLogicRules(id),
           ])
-            .then(([stats, entityTypes, relationTypes]) => {
+            .then(([stats, graph, rulesData]) => {
               setResultStats(stats)
-              setOntologySummaries(entityTypes.items)
-              setRelationSummaries(relationTypes.items)
+              setGraphSummary(graph)
+              setLogicRules(rulesData)
+              // derive distributions from graph summary
+              getDomainKnowledgeEntityDistribution().then(setEntityDistribution)
+              getDomainKnowledgeRelationDistribution().then(setRelationDistribution)
             })
-            .catch((err: any) => message.error(err?.message || t('common.loadFailed')))
+            .catch((err: any) => message.error(err?.message || '获取结果数据失败'))
             .finally(() => setResultLoading(false))
+          // entities are fetched separately with pagination
+          fetchEntities(1, '', '全部类型')
           break
 
         case 'action':
           setActionLoading(true)
           getDomainKnowledgeActionRules(id)
             .then(setActionRules)
-            .catch((err: any) => message.error(err?.message || t('common.loadFailed')))
+            .catch((err: any) => message.error(err?.message || '获取触发规则失败'))
             .finally(() => setActionLoading(false))
-          break
-
-        case 'permission':
-          setPermissionLoading(true)
-          getDomainKnowledgePermissions(id)
-            .then((data) => setPermissionMembers(data.members))
-            .catch((err: any) => message.error(err?.message || t('common.loadFailed')))
-            .finally(() => setPermissionLoading(false))
           break
       }
     },
@@ -312,7 +247,57 @@ const openEditModal = (ds: DataSourceConfig) => {
     loadTabData(activeTab)
   }, [activeTab, loadTabData])
 
+  // ── entity fetch with pagination ──────────────────────
+  const fetchEntities = useCallback(
+    async (page: number, keyword: string, type: string) => {
+      if (!id) return
+      setEntityLoading(true)
+      try {
+        const result = await getDomainKnowledgeEntities({
+          knowledgeBaseId: id,
+          page,
+          pageSize: ENTITY_PAGE_SIZE,
+          keyword: keyword || undefined,
+          entityType: type !== '全部类型' ? type : undefined,
+        })
+        setEntities(result.list)
+        setEntityTotal(result.pagination.total)
+      } catch (err: any) {
+        message.error(err?.message || '获取实体列表失败')
+      } finally {
+        setEntityLoading(false)
+      }
+    },
+    [id],
+  )
 
+  // entity keyword debounce
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setEntityKeyword(entityKeywordInput)
+    }, 300)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [entityKeywordInput])
+
+  // entity filters change → reload page 1
+  useEffect(() => {
+    if (activeTab === 'result') {
+      fetchEntities(1, entityKeyword, entityType)
+      setEntityPage(1)
+    }
+  }, [entityKeyword, entityType, activeTab, fetchEntities])
+
+  // entity pagination change
+  useEffect(() => {
+    if (activeTab === 'result' && entityPage !== 1) {
+      fetchEntities(entityPage, entityKeyword, entityType)
+    }
+  }, [entityPage])
+
+  // ── render helpers ────────────────────────────────────
   const renderSectionHeader = (title: string, icon: React.ReactNode, showAdd = true) => (
     <div
       style={{
@@ -341,13 +326,21 @@ const openEditModal = (ds: DataSourceConfig) => {
           style={{ padding: '6px 16px', fontSize: 13, height: 'auto' }}
           icon={<PlusOutlined />}
         >
-          New {title.replace('Settings', '').replace('Management', '').replace('设置', '').replace('管理', '')}
+          新建{title.replace('设置', '').replace('管理', '')}
         </Button>
       )}
     </div>
   )
 
+  const entityTotalPages = Math.max(1, Math.ceil(entityTotal / ENTITY_PAGE_SIZE))
 
+  const entityPageNumbers = (): number[] => {
+    const pages: number[] = []
+    for (let i = 1; i <= entityTotalPages; i++) pages.push(i)
+    return pages
+  }
+
+  // ── render tab content ────────────────────────────────
   const renderTabContent = () => {
     switch (activeTab) {
       case 'datasource':
@@ -381,20 +374,19 @@ const openEditModal = (ds: DataSourceConfig) => {
                   gap: 8,
                 }}
               >
-                <ApiOutlined style={{ color: '#3b82f6' }} /> {t('domainKnowledge.configuredDataSources')}
+                <ApiOutlined style={{ color: '#3b82f6' }} /> 已配置数据源
               </h3>
               <Button
                 type="primary"
                 style={{ padding: '6px 16px', fontSize: 13, height: 'auto' }}
                 icon={<PlusOutlined />}
-                onClick={() => setAddDsOpen(true)}
               >
-                {t('dataSource.addDataSource')}
+                添加数据源
               </Button>
             </div>
             {dataSourcesLoading ? (
               <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
-                {t('dataSource.loading')}
+                加载中...
               </div>
             ) : (
               dataSources.map((ds) => {
@@ -447,24 +439,24 @@ const openEditModal = (ds: DataSourceConfig) => {
                         <span
                           style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400 }}
                         >
-                          · {t(ds.type)}
+                          · {ds.type}
                         </span>
                       </div>
                       <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
-                        {describeDataSource(ds)}
+                        {ds.desc}
                       </div>
                     </div>
                     <span
                       style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}
                     >
                       <FileTextOutlined style={{ marginRight: 4 }} />
-                      {t('domainKnowledge.documentsCount', { count: ds.docs })}
+                      {ds.docs} 文档
                     </span>
                     <Tag
-                      color={dataSourceStatusView[ds.status].color}
+                      color={ds.status === '运行中' ? 'success' : 'warning'}
                       style={{ fontSize: 11 }}
                     >
-                      {t(dataSourceStatusView[ds.status].tKey)}
+                      {ds.status}
                     </Tag>
                     <span
                       style={{
@@ -474,12 +466,9 @@ const openEditModal = (ds: DataSourceConfig) => {
                         padding: '4px 12px',
                         borderRadius: 6,
                       }}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openEditModal(ds)
-                      }}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      {t('dataSource.edit')}
+                      编辑
                     </span>
                     <span
                       style={{
@@ -489,23 +478,9 @@ const openEditModal = (ds: DataSourceConfig) => {
                         padding: '4px 12px',
                         borderRadius: 6,
                       }}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        Modal.confirm({
-                          title: t('dataSource.deleteDocument'),
-                          content: t('dataSource.deleteDataSourceConfirm', { name: ds.name }),
-                          okText: t('dataSource.delete'),
-                          cancelText: t('dataSource.cancel'),
-                          okButtonProps: { danger: true },
-                          onOk: async () => {
-                            await deleteDataSource(ds.id)
-                            message.success(t('common.deletedSuccess'))
-                            reloadDataSources()
-                          },
-                        })
-                      }}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      {t('dataSource.delete')}
+                      删除
                     </span>
                     <RightOutlined style={{ fontSize: 12, color: '#94a3b8' }} />
                   </div>
@@ -516,22 +491,306 @@ const openEditModal = (ds: DataSourceConfig) => {
         )
 
       case 'parse':
-        return <ParserConfigContent kbId={id} />
+        return (
+          <div
+            className="config-section"
+            style={{
+              background: '#fff',
+              borderRadius: 14,
+              border: '1px solid #eef2f6',
+              padding: 24,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+            }}
+          >
+            <h3
+              style={{
+                fontSize: 15,
+                fontWeight: 600,
+                color: '#0b2b5c',
+                marginBottom: 16,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <ControlOutlined style={{ color: '#8b5cf6' }} /> 文件类解析配置
+            </h3>
+            <Table
+              columns={[
+                {
+                  title: '文件类型',
+                  dataIndex: 'type',
+                  key: 'type',
+                  render: (v: string, r: ParserFileConfig) => {
+                    const PIcon = parserFileIconMap[r.iconType] || FileOutlined
+                    return (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <PIcon style={{ color: r.iconColor, width: 18 }} /> {v}
+                      </span>
+                    )
+                  },
+                },
+                { title: '解析器', dataIndex: 'parser', key: 'parser' },
+                {
+                  title: '状态',
+                  dataIndex: 'status',
+                  key: 'status',
+                  render: (v: string) => (
+                    <Tag color={v === '启用' ? 'success' : 'warning'}>{v}</Tag>
+                  ),
+                },
+                {
+                  title: '操作',
+                  key: 'actions',
+                  render: () => <a className="yx-table-action">配置</a>,
+                },
+              ]}
+              dataSource={parserConfigs}
+              rowKey="type"
+              pagination={false}
+              size="middle"
+              loading={parserConfigsLoading}
+            />
+          </div>
+        )
 
       case 'compile':
-        return <CompileTab kbId={id!} />
+        return (
+          <div>
+            {false && (
+            <div
+              className="config-section"
+              style={{
+                background: '#fff',
+                borderRadius: 14,
+                border: '1px solid #eef2f6',
+                padding: 24,
+                marginBottom: 20,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+              }}
+            >
+              {renderSectionHeader(
+                '本体模板设置',
+                <ShareAltOutlined style={{ color: '#8b5cf6' }} />,
+              )}
+              <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>
+                定义知识库中实体类型、属性及关系的本体结构模板
+              </p>
+              <Table
+                columns={[
+                  {
+                    title: '实体类型',
+                    dataIndex: 'type',
+                    key: 'type',
+                    render: (v: string) => (
+                      <span style={{ fontWeight: 500, color: '#0b2b5c' }}>{v}</span>
+                    ),
+                  },
+                  {
+                    title: '属性定义',
+                    dataIndex: 'attrs',
+                    key: 'attrs',
+                    render: (v: string) => (
+                      <span style={{ fontSize: 12, color: '#64748b' }}>{v}</span>
+                    ),
+                  },
+                  {
+                    title: '关系类型',
+                    dataIndex: 'relations',
+                    key: 'relations',
+                    render: (v: string) => (
+                      <span style={{ fontSize: 12, color: '#64748b' }}>{v}</span>
+                    ),
+                  },
+                  { title: '版本', dataIndex: 'version', key: 'version' },
+                  {
+                    title: '状态',
+                    dataIndex: 'status',
+                    key: 'status',
+                    render: (v: string) => (
+                      <Tag color={v === '已发布' ? 'success' : 'warning'}>{v}</Tag>
+                    ),
+                  },
+                  {
+                    title: '操作',
+                    key: 'actions',
+                    render: () => (
+                      <Space>
+                        <a className="yx-table-action">编辑</a>
+                        <a className="yx-table-action">配置</a>
+                      </Space>
+                    ),
+                  },
+                ]}
+                dataSource={ontologyTemplates}
+                rowKey="id"
+                pagination={false}
+                size="middle"
+                loading={compileLoading}
+              />
+            </div>
+            )}
 
-      case 'synonym':
-        return <SynonymTab kbId={id!} />
+            {false && (
+            <div
+              className="config-section"
+              style={{
+                background: '#fff',
+                borderRadius: 14,
+                border: '1px solid #eef2f6',
+                padding: 24,
+                marginBottom: 20,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+              }}
+            >
+              {renderSectionHeader(
+                '本体验证规则设置',
+                <CheckCircleOutlined style={{ color: '#10b981' }} />,
+              )}
+              <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>
+                配置实体和关系的校验规则，确保知识抽取质量符合标准
+              </p>
+              <Table
+                columns={[
+                  {
+                    title: '规则名称',
+                    dataIndex: 'name',
+                    key: 'name',
+                    render: (v: string) => (
+                      <span style={{ fontWeight: 500, color: '#0b2b5c' }}>{v}</span>
+                    ),
+                  },
+                  { title: '适用实体', dataIndex: 'entity', key: 'entity' },
+                  {
+                    title: '验证条件',
+                    dataIndex: 'condition',
+                    key: 'condition',
+                    render: (v: string) => (
+                      <span style={{ fontSize: 12, color: '#64748b' }}>{v}</span>
+                    ),
+                  },
+                  {
+                    title: '严重级别',
+                    dataIndex: 'severity',
+                    key: 'severity',
+                    render: (v: string) => (
+                      <Tag color={severityColorMap[v as keyof typeof severityColorMap]}>
+                        {v}
+                      </Tag>
+                    ),
+                  },
+                  {
+                    title: '状态',
+                    dataIndex: 'status',
+                    key: 'status',
+                    render: (v: string) => (
+                      <Tag color={v === '启用' ? 'success' : 'warning'}>{v}</Tag>
+                    ),
+                  },
+                  {
+                    title: '操作',
+                    key: 'actions',
+                    render: () => <a className="yx-table-action">编辑</a>,
+                  },
+                ]}
+                dataSource={validationRules}
+                rowKey="id"
+                pagination={false}
+                size="middle"
+                loading={compileLoading}
+              />
+            </div>
+            )}
+
+            <div
+              className="config-section"
+              style={{
+                background: '#fff',
+                borderRadius: 14,
+                border: '1px solid #eef2f6',
+                padding: 24,
+                marginBottom: 20,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+              }}
+            >
+              {renderSectionHeader(
+                '提示词管理',
+                <MessageOutlined style={{ color: '#3b82f6' }} />,
+              )}
+              <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>
+                管理知识编译过程中各环节使用的 LLM 提示词模板
+              </p>
+              <Table
+                columns={[
+                  {
+                    title: '提示词名称',
+                    dataIndex: 'name',
+                    key: 'name',
+                    render: (v: string) => (
+                      <span
+                        style={{
+                          fontWeight: 500,
+                          color: '#0b2b5c',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <MessageOutlined
+                          style={{ color: '#8b5cf6', fontSize: 11 }}
+                        />
+                        {v}
+                      </span>
+                    ),
+                  },
+                  {
+                    title: '使用环节',
+                    dataIndex: 'stage',
+                    key: 'stage',
+                    render: (v: string) => (
+                      <span style={{ fontSize: 12, color: '#64748b' }}>{v}</span>
+                    ),
+                  },
+                  { title: '模型', dataIndex: 'model', key: 'model' },
+                  { title: '更新人', dataIndex: 'author', key: 'author' },
+                  { title: '更新时间', dataIndex: 'date', key: 'date' },
+                  {
+                    title: '状态',
+                    dataIndex: 'status',
+                    key: 'status',
+                    render: (v: string) => (
+                      <Tag color={v === '已发布' ? 'success' : 'warning'}>{v}</Tag>
+                    ),
+                  },
+                  {
+                    title: '操作',
+                    key: 'actions',
+                    render: () => (
+                      <Space>
+                        <a className="yx-table-action">编辑</a>
+                        <a className="yx-table-action">预览</a>
+                      </Space>
+                    ),
+                  },
+                ]}
+                dataSource={prompts}
+                rowKey="id"
+                pagination={false}
+                size="middle"
+                loading={compileLoading}
+              />
+            </div>
+          </div>
+        )
 
       case 'result':
         return (
           <div>
-            { }
+            {/* Stat Grid */}
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(3,1fr)',
+                gridTemplateColumns: 'repeat(4,1fr)',
                 gap: 16,
                 marginBottom: 20,
               }}
@@ -539,307 +798,42 @@ const openEditModal = (ds: DataSourceConfig) => {
               {((): Array<{ label: string; value: string; color: string }> => {
                 if (resultStats) {
                   return [
-                    { label: 'Source Files', value: resultStats.source_file_count.toLocaleString(), color: '#f97316' },
-                    { label: 'Ontology Instances', value: resultStats.ontology_instance_count.toLocaleString(), color: '#3b82f6' },
-                    { label: 'Ontology Relations', value: resultStats.ontology_relation_count.toLocaleString(), color: '#10b981' },
+                    { label: '知识实体', value: resultStats.entityCount.toLocaleString(), color: '#3b82f6' },
+                    { label: '知识关系', value: resultStats.relationCount.toLocaleString(), color: '#10b981' },
+                    { label: '编译版本', value: String(resultStats.compileVersionCount), color: '#8b5cf6' },
+                    { label: '源文件数', value: resultStats.sourceFileCount.toLocaleString(), color: '#f97316' },
                   ]
                 }
                 return [
-                  { label: 'Source Files', value: '--', color: '#f97316' },
-                  { label: 'Ontology Instances', value: '--', color: '#3b82f6' },
-                  { label: 'Ontology Relations', value: '--', color: '#10b981' },
+                  { label: '知识实体', value: '--', color: '#3b82f6' },
+                  { label: '知识关系', value: '--', color: '#10b981' },
+                  { label: '编译版本', value: '--', color: '#8b5cf6' },
+                  { label: '源文件数', value: '--', color: '#f97316' },
                 ]
               })().map((s) => (
-                <div
-                  key={s.label}
-                  style={{
-                    textAlign: 'center',
-                    padding: 20,
-                    background: '#f8fafc',
-                    borderRadius: 10,
-                    border: '1px solid #eef2f6',
-                  }}
-                >
-                  <div style={{ fontSize: 28, fontWeight: 700, color: s.color }}>
-                    {s.value}
-                  </div>
-                  <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>
-                    {s.label}
-                  </div>
-                </div>
-              ))}
+                    <div
+                      key={s.label}
+                      style={{
+                        textAlign: 'center',
+                        padding: 20,
+                        background: '#f8fafc',
+                        borderRadius: 10,
+                        border: '1px solid #eef2f6',
+                      }}
+                    >
+                      <div
+                        style={{ fontSize: 28, fontWeight: 700, color: s.color }}
+                      >
+                        {s.value}
+                      </div>
+                      <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>
+                        {s.label}
+                      </div>
+                    </div>
+                  ))}
             </div>
 
-            { }
-            <div
-              className="config-section"
-              style={{
-                background: '#fff',
-                borderRadius: 14,
-                border: '1px solid #eef2f6',
-                padding: 24,
-                marginBottom: 20,
-                boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-              }}
-            >
-              <h3
-                style={{
-                  margin: '0 0 4px',
-                  fontSize: 15,
-                  fontWeight: 600,
-                  color: '#0b2b5c',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <ShareAltOutlined style={{ color: '#3b82f6' }} /> Ontology Instances{' '}
-                <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>
-                  (Entity instances extracted by AI)
-                </span>
-              </h3>
-              <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>
-                Displays ontology instances extracted by AI. View details to inspect all instances and attributes for an ontology type.
-              </p>
-              <Table
-                columns={[
-                  {
-                    title: 'Name',
-                    dataIndex: 'display_name',
-                    key: 'display_name',
-                    render: (v: string, r: OntologyInstanceSummary) => (
-                      <span style={{ fontWeight: 600, color: '#0b2b5c' }}>{v || r.name}</span>
-                    ),
-                  },
-                  { title: 'Description', dataIndex: 'description', key: 'description', render: (v: string) => <span style={{ color: '#64748b' }}>{v || '—'}</span> },
-                  {
-                    title: 'Build Status',
-                    dataIndex: 'build_status',
-                    key: 'build_status',
-                    render: (v: string) => (
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          padding: '2px 10px',
-                          borderRadius: 12,
-                          fontSize: 12,
-                          fontWeight: 500,
-                          background: v === 'built' ? '#ecfdf5' : '#fef3c7',
-                          color: v === 'built' ? '#059669' : '#d97706',
-                        }}
-                      >
-                        {v === 'built' ? 'Built' : v === 'empty' ? 'Not Built' : v}
-                      </span>
-                    ),
-                  },
-                  {
-                    title: 'Instances',
-                    dataIndex: 'instance_count',
-                    key: 'instance_count',
-                    render: (v: number) => (
-                      <span style={{ fontWeight: 600, color: '#3b82f6' }}>
-                        {(v ?? 0).toLocaleString()}
-                      </span>
-                    ),
-                  },
-                  {
-                    title: 'Actions',
-                    key: 'actions',
-                    width: 120,
-                    render: (_: unknown, record: OntologyInstanceSummary) => (
-                      <a
-                        className="yx-table-action"
-                        onClick={() =>
-                          navigate(`/domain-knowledge/${id}/result/instances/${encodeURIComponent(record.name)}`)
-                        }
-                      >
-                        View Details
-                      </a>
-                    ),
-                  },
-                ]}
-                dataSource={ontologySummaries}
-                rowKey="name"
-                pagination={false}
-                size="middle"
-                loading={resultLoading}
-              />
-            </div>
-
-            { }
-            <div
-              className="config-section"
-              style={{
-                background: '#fff',
-                borderRadius: 14,
-                border: '1px solid #eef2f6',
-                padding: 24,
-                marginBottom: 20,
-                boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-              }}
-            >
-              <h3
-                style={{
-                  margin: '0 0 4px',
-                  fontSize: 15,
-                  fontWeight: 600,
-                  color: '#0b2b5c',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <ShareAltOutlined style={{ color: '#8b5cf6' }} /> Relation Instances{' '}
-                <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>
-                  (Relation instances extracted by AI)
-                </span>
-              </h3>
-              <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>
-                Displays relation instances extracted by AI. View details to inspect all instances for a relation type.
-              </p>
-              <Table
-                columns={[
-                  {
-                    title: 'Source Object',
-                    dataIndex: 'source_display_name',
-                    key: 'source_display_name',
-                    render: (v: string, r: RelationInstanceSummary) => (
-                      <span
-                        style={{
-                          padding: '2px 8px',
-                          borderRadius: 6,
-                          background: '#eff6ff',
-                          color: '#3b82f6',
-                          fontSize: 12,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {v || r.source || '—'}
-                      </span>
-                    ),
-                  },
-                  {
-                    title: 'Relation Name',
-                    dataIndex: 'display_name',
-                    key: 'display_name',
-                    render: (v: string, r: RelationInstanceSummary) => (
-                      <strong style={{ color: '#0b2b5c' }}>{v || r.name}</strong>
-                    ),
-                  },
-                  {
-                    title: 'Target Object',
-                    dataIndex: 'target_display_name',
-                    key: 'target_display_name',
-                    render: (v: string, r: RelationInstanceSummary) => (
-                      <span
-                        style={{
-                          padding: '2px 8px',
-                          borderRadius: 6,
-                          background: '#ecfdf5',
-                          color: '#059669',
-                          fontSize: 12,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {v || r.target || '—'}
-                      </span>
-                    ),
-                  },
-                  {
-                    title: 'Description',
-                    dataIndex: 'description',
-                    key: 'description',
-                    render: (v: string) => (
-                      <span style={{ fontSize: 13, color: '#64748b' }}>{v || '—'}</span>
-                    ),
-                  },
-                  {
-                    title: 'Cardinality',
-                    dataIndex: 'cardinality',
-                    key: 'cardinality',
-                    render: (v: string) => {
-                      const colorMap: Record<string, { bg: string; color: string }> = {
-                        'many_to_one': { bg: '#eff6ff', color: '#3b82f6' },
-                        'many_to_many': { bg: '#fef3c7', color: '#d97706' },
-                        'one_to_one': { bg: '#ecfdf5', color: '#059669' },
-                        'one_to_many': { bg: '#eff6ff', color: '#3b82f6' },
-                      }
-                      const labelMap: Record<string, string> = {
-                        'many_to_one': 'Many-to-One', 'many_to_many': 'Many-to-Many',
-                        'one_to_one': 'One-to-One', 'one_to_many': 'One-to-Many',
-                      }
-                      const c = colorMap[v] || { bg: '#f1f5f9', color: '#64748b' }
-                      return (
-                        <span
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: 6,
-                            background: c.bg,
-                            color: c.color,
-                            fontSize: 12,
-                            fontWeight: 500,
-                          }}
-                        >
-                          {labelMap[v] || v}
-                        </span>
-                      )
-                    },
-                  },
-                  {
-                    title: 'Build Status',
-                    dataIndex: 'build_status',
-                    key: 'build_status',
-                    render: (v: string) => (
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          padding: '2px 10px',
-                          borderRadius: 12,
-                          fontSize: 12,
-                          fontWeight: 500,
-                          background: v === 'built' ? '#ecfdf5' : '#fef3c7',
-                          color: v === 'built' ? '#059669' : '#d97706',
-                        }}
-                      >
-                        {v === 'built' ? 'Built' : v === 'empty' ? 'Not Built' : v}
-                      </span>
-                    ),
-                  },
-                  {
-                    title: 'Instances',
-                    dataIndex: 'instance_count',
-                    key: 'instance_count',
-                    render: (v: number) => (
-                      <span style={{ fontWeight: 600, color: '#3b82f6' }}>
-                        {(v ?? 0).toLocaleString()}
-                      </span>
-                    ),
-                  },
-                  {
-                    title: 'Actions',
-                    key: 'actions',
-                    width: 120,
-                    render: (_: unknown, record: RelationInstanceSummary) => (
-                      <a
-                        className="yx-table-action"
-                        onClick={() =>
-                          navigate(`/domain-knowledge/${id}/result/relations/${encodeURIComponent(record.name)}`)
-                        }
-                      >
-                        View Details
-                      </a>
-                    ),
-                  },
-                ]}
-                dataSource={relationSummaries}
-                rowKey="name"
-                pagination={false}
-                size="middle"
-                loading={resultLoading}
-              />
-            </div>
-
-            { }
+            {/* Entities */}
             <div
               className="config-section"
               style={{
@@ -856,6 +850,7 @@ const openEditModal = (ds: DataSourceConfig) => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  marginBottom: 16,
                 }}
               >
                 <h3
@@ -869,20 +864,553 @@ const openEditModal = (ds: DataSourceConfig) => {
                     gap: 8,
                   }}
                 >
-                  <ShareAltOutlined style={{ color: '#8b5cf6' }} /> Ontology Graph
+                  <ShareAltOutlined style={{ color: '#3b82f6' }} /> 实体
+                </h3>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Input
+                    prefix={<SearchOutlined />}
+                    placeholder="搜索实体..."
+                    style={{ width: 200 }}
+                    value={entityKeywordInput}
+                    onChange={(e) => {
+                      setEntityKeywordInput(e.target.value)
+                      setEntityPage(1)
+                    }}
+                  />
+                  <Select
+                    value={entityType}
+                    onChange={(val) => {
+                      setEntityType(val)
+                      setEntityPage(1)
+                    }}
+                    style={{ width: 120 }}
+                    options={[
+                      { value: '全部类型', label: '全部类型' },
+                      ...entityDistribution.map((e) => ({ value: e.label, label: e.label })),
+                    ]}
+                  />
+                </div>
+              </div>
+              <Table
+                columns={[
+                  {
+                    title: '实体名称',
+                    dataIndex: 'name',
+                    key: 'name',
+                    render: (v: string) => (
+                      <span style={{ fontWeight: 500, color: '#0b2b5c' }}>{v}</span>
+                    ),
+                  },
+                  {
+                    title: '实体类型',
+                    dataIndex: 'type',
+                    key: 'type',
+                    render: (v: string) => (
+                      <Tag color="processing" style={{ fontSize: 11 }}>
+                        {v}
+                      </Tag>
+                    ),
+                  },
+                  { title: '属性数', dataIndex: 'attrs', key: 'attrs' },
+                  {
+                    title: '关系数',
+                    dataIndex: 'relations',
+                    key: 'relations',
+                  },
+                  {
+                    title: '创建时间',
+                    dataIndex: 'createdAt',
+                    key: 'createdAt',
+                  },
+                  {
+                    title: '操作',
+                    key: 'actions',
+                    render: () => (
+                      <Space>
+                        <a className="yx-table-action">查看</a>
+                        <a className="yx-table-action">详情</a>
+                      </Space>
+                    ),
+                  },
+                ]}
+                dataSource={entities}
+                rowKey="id"
+                pagination={false}
+                size="middle"
+                loading={entityLoading}
+              />
+              {/* Entity Pagination */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: 6,
+                  padding: '12px 0 0',
+                  borderTop: '1px solid #eef2f6',
+                  marginTop: 12,
+                }}
+              >
+                <span
+                  className={`yx-page-btn${entityPage <= 1 ? ' disabled' : ''}`}
+                  onClick={() => entityPage > 1 && setEntityPage((p) => p - 1)}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 8,
+                    border: '1px solid #e2e8f0',
+                    cursor: entityPage <= 1 ? 'not-allowed' : 'pointer',
+                    color: '#94a3b8',
+                    fontSize: 12,
+                    opacity: entityPage <= 1 ? 0.4 : 1,
+                  }}
+                >
+                  {'<'}
+                </span>
+                {entityPageNumbers().map((n) => (
+                  <span
+                    key={n}
+                    className={`yx-page-btn${n === entityPage ? ' active' : ''}`}
+                    onClick={() => setEntityPage(n)}
+                    style={{
+                      width: 34,
+                      height: 34,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 8,
+                      background:
+                        n === entityPage ? '#3b82f6' : 'transparent',
+                      color: n === entityPage ? '#fff' : '#64748b',
+                      fontWeight: n === entityPage ? 600 : 400,
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      border:
+                        n === entityPage ? 'none' : '1px solid #e2e8f0',
+                    }}
+                  >
+                    {n}
+                  </span>
+                ))}
+                <span
+                  className={`yx-page-btn${entityPage >= entityTotalPages ? ' disabled' : ''}`}
+                  onClick={() =>
+                    entityPage < entityTotalPages &&
+                    setEntityPage((p) => p + 1)
+                  }
+                  style={{
+                    width: 34,
+                    height: 34,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 8,
+                    border: '1px solid #e2e8f0',
+                    cursor:
+                      entityPage >= entityTotalPages
+                        ? 'not-allowed'
+                        : 'pointer',
+                    color: '#94a3b8',
+                    fontSize: 12,
+                    opacity: entityPage >= entityTotalPages ? 0.4 : 1,
+                  }}
+                >
+                  {'>'}
+                </span>
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: '#94a3b8',
+                    marginLeft: 12,
+                  }}
+                >
+                  共 {entityTotal.toLocaleString()} 条，{entityPage}/
+                  {entityTotalPages} 页
+                </span>
+              </div>
+            </div>
+
+            {/* Knowledge Graph */}
+            <div
+              className="config-section"
+              style={{
+                background: '#fff',
+                borderRadius: 14,
+                border: '1px solid #eef2f6',
+                padding: 24,
+                marginBottom: 20,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 16,
+                }}
+              >
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: 15,
+                    fontWeight: 600,
+                    color: '#0b2b5c',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <ShareAltOutlined style={{ color: '#10b981' }} /> 知识图谱
                 </h3>
                 <Button
-                  type="primary"
-                  style={{ padding: '6px 20px', fontSize: 13, height: 'auto' }}
+                  style={{ padding: '6px 16px', fontSize: 13, height: 'auto' }}
                   icon={<EyeOutlined />}
-                  onClick={() => navigate(`/domain-knowledge/${id}/graph`)}
+                  onClick={() => navigate('graph')}
                 >
-                  View Full Graph
+                  查看全图
                 </Button>
               </div>
-              <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 0, marginTop: 8 }}>
-                View the complete semantic graph of ontology entities, attributes, and relations in this knowledge base.
+              {graphSummary && (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(4,1fr)',
+                    gap: 12,
+                    marginBottom: 16,
+                  }}
+                >
+                  <div
+                    style={{
+                      background: '#f0f9ff',
+                      borderRadius: 8,
+                      padding: 14,
+                      textAlign: 'center',
+                      border: '1px solid #dbeafe',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 20,
+                        fontWeight: 700,
+                        color: '#3b82f6',
+                      }}
+                    >
+                      {graphSummary.entityTypeCount}
+                    </div>
+                    <div
+                      style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}
+                    >
+                      实体类型
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      background: '#f0fdf4',
+                      borderRadius: 8,
+                      padding: 14,
+                      textAlign: 'center',
+                      border: '1px solid #bbf7d0',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 20,
+                        fontWeight: 700,
+                        color: '#10b981',
+                      }}
+                    >
+                      {graphSummary.relationTotalCount.toLocaleString()}
+                    </div>
+                    <div
+                      style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}
+                    >
+                      关系总数
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      background: '#fefce8',
+                      borderRadius: 8,
+                      padding: 14,
+                      textAlign: 'center',
+                      border: '1px solid #fef08a',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 20,
+                        fontWeight: 700,
+                        color: '#ca8a04',
+                      }}
+                    >
+                      {graphSummary.relationTypeCount}
+                    </div>
+                    <div
+                      style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}
+                    >
+                      关系类型
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      background: '#fef2f2',
+                      borderRadius: 8,
+                      padding: 14,
+                      textAlign: 'center',
+                      border: '1px solid #fecaca',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 20,
+                        fontWeight: 700,
+                        color: '#ef4444',
+                      }}
+                    >
+                      {graphSummary.avgDegree}
+                    </div>
+                    <div
+                      style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}
+                    >
+                      平均度数
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Distribution Charts */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    border: '1px solid #eef2f6',
+                    borderRadius: 10,
+                    padding: 16,
+                    background: '#fafcff',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: '#0b2b5c',
+                      marginBottom: 10,
+                    }}
+                  >
+                    核心实体分布
+                  </div>
+                  {entityDistribution.map((e) => (
+                    <div
+                      key={e.label}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <span
+                        style={{ fontSize: 12, color: '#64748b', width: 70 }}
+                      >
+                        {e.label}
+                      </span>
+                      <div
+                        style={{
+                          flex: 1,
+                          height: 8,
+                          background: '#e2e8f0',
+                          borderRadius: 4,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${e.pct}%`,
+                            background: e.color,
+                            borderRadius: 4,
+                          }}
+                        />
+                      </div>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: '#475569',
+                          width: 40,
+                          textAlign: 'right',
+                        }}
+                      >
+                        {e.count.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    border: '1px solid #eef2f6',
+                    borderRadius: 10,
+                    padding: 16,
+                    background: '#fafcff',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: '#0b2b5c',
+                      marginBottom: 10,
+                    }}
+                  >
+                    关系类型统计
+                  </div>
+                  {relationDistribution.map((r) => (
+                    <div
+                      key={r.label}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <span
+                        style={{ fontSize: 12, color: '#64748b', width: 80 }}
+                      >
+                        {r.label}
+                      </span>
+                      <div
+                        style={{
+                          flex: 1,
+                          height: 8,
+                          background: '#e2e8f0',
+                          borderRadius: 4,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${r.pct}%`,
+                            background: r.color,
+                            borderRadius: 4,
+                          }}
+                        />
+                      </div>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: '#475569',
+                          width: 50,
+                          textAlign: 'right',
+                        }}
+                      >
+                        {r.count.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Logic Rules */}
+            <div
+              className="config-section"
+              style={{
+                background: '#fff',
+                borderRadius: 14,
+                border: '1px solid #eef2f6',
+                padding: 24,
+                marginBottom: 20,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+              }}
+            >
+              {renderSectionHeader(
+                '逻辑',
+                <CodeOutlined style={{ color: '#8b5cf6' }} />,
+              )}
+              <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>
+                基于知识图谱推导的业务逻辑规则，用于智能推理与分析
               </p>
+              <Table
+                columns={[
+                  {
+                    title: '逻辑名称',
+                    dataIndex: 'name',
+                    key: 'name',
+                    render: (v: string) => (
+                      <span style={{ fontWeight: 500, color: '#0b2b5c' }}>{v}</span>
+                    ),
+                  },
+                  {
+                    title: '类型',
+                    dataIndex: 'type',
+                    key: 'type',
+                    render: (v: string) => (
+                      <span style={{ fontSize: 12, color: '#64748b' }}>{v}</span>
+                    ),
+                  },
+                  {
+                    title: '条件',
+                    dataIndex: 'condition',
+                    key: 'condition',
+                    render: (v: string) => (
+                      <span style={{ fontSize: 12, color: '#64748b' }}>{v}</span>
+                    ),
+                  },
+                  {
+                    title: '结论',
+                    dataIndex: 'conclusion',
+                    key: 'conclusion',
+                    render: (v: string) => (
+                      <span style={{ fontSize: 12, color: '#64748b' }}>{v}</span>
+                    ),
+                  },
+                  {
+                    title: '置信度',
+                    dataIndex: 'confidence',
+                    key: 'confidence',
+                    render: (v: string) => (
+                      <span
+                        style={{
+                          fontWeight: 500,
+                          color:
+                            v.startsWith('9') || v.startsWith('8')
+                              ? '#10b981'
+                              : '#f97316',
+                        }}
+                      >
+                        {v}
+                      </span>
+                    ),
+                  },
+                  {
+                    title: '状态',
+                    dataIndex: 'status',
+                    key: 'status',
+                    render: (v: string) => (
+                      <Tag color={v === '启用' ? 'success' : 'warning'}>{v}</Tag>
+                    ),
+                  },
+                  {
+                    title: '操作',
+                    key: 'actions',
+                    render: () => <a className="yx-table-action">编辑</a>,
+                  },
+                ]}
+                dataSource={logicRules}
+                rowKey="id"
+                pagination={false}
+                size="middle"
+                loading={resultLoading}
+              />
             </div>
           </div>
         )
@@ -918,22 +1446,22 @@ const openEditModal = (ds: DataSourceConfig) => {
                   gap: 8,
                 }}
               >
-                <ThunderboltOutlined style={{ color: '#8b5cf6' }} /> Trigger Rules
+                <ThunderboltOutlined style={{ color: '#8b5cf6' }} /> 触发规则
               </h3>
               <Button
                 type="primary"
                 style={{ padding: '6px 16px', fontSize: 13, height: 'auto' }}
                 icon={<PlusOutlined />}
               >
-                New Rule
+                新建规则
               </Button>
             </div>
             <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>
-              Define actions that run automatically when parsing or compilation results meet specified conditions.
+              定义当知识库的解析或编译结果满足条件时自动执行的动作
             </p>
             {actionLoading ? (
               <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
-                {t('dataSource.loading')}
+                加载中...
               </div>
             ) : (
               actionRules.map((rule, i) => {
@@ -1023,12 +1551,12 @@ const openEditModal = (ds: DataSourceConfig) => {
                             }}
                           />
                         </label>
-                        <a className="yx-table-action">{t('common.edit')}</a>
+                        <a className="yx-table-action">编辑</a>
                         <a
                           className="yx-table-action"
                           style={{ color: '#ef4444' }}
                         >
-                          {t('dataSource.delete')}
+                          删除
                         </a>
                       </div>
                     </div>
@@ -1075,7 +1603,7 @@ const openEditModal = (ds: DataSourceConfig) => {
                               marginBottom: 2,
                             }}
                           >
-                            Trigger Condition
+                            触发条件
                           </div>
                           <div
                             style={{
@@ -1121,7 +1649,7 @@ const openEditModal = (ds: DataSourceConfig) => {
                               marginBottom: 2,
                             }}
                           >
-                            Action
+                            执行动作
                           </div>
                           <div
                             style={{
@@ -1142,207 +1670,15 @@ const openEditModal = (ds: DataSourceConfig) => {
           </div>
         )
 
-      case 'permission':
-        return (
-          <div
-            className="config-section"
-            style={{
-              background: '#fff',
-              borderRadius: 14,
-              border: '1px solid #eef2f6',
-              padding: 24,
-              boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 16,
-              }}
-            >
-              <h3
-                style={{
-                  margin: 0,
-                  fontSize: 15,
-                  fontWeight: 600,
-                  color: '#0b2b5c',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <TeamOutlined style={{ color: '#3b82f6' }} /> Permissions
-              </h3>
-              <Button
-                style={{ padding: '6px 16px', fontSize: 13, height: 'auto' }}
-                icon={<PlusOutlined />}
-                onClick={() => message.info(t('domainKnowledge.addMemberSoon'))}
-              >
-                Add Member
-              </Button>
-            </div>
-            <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>
-              Manage knowledge base access. Members can be Managers or Viewers.
-            </p>
-            {permissionLoading ? (
-              <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
-                {t('dataSource.loading')}
-              </div>
-            ) : (
-              <>
-                <table
-                  style={{
-                    width: '100%',
-                    borderCollapse: 'collapse',
-                    fontSize: 13,
-                  }}
-                >
-                  <thead>
-                    <tr>
-                      <th
-                        style={{
-                          textAlign: 'left',
-                          padding: '10px 12px',
-                          fontWeight: 600,
-                          color: '#64748b',
-                          borderBottom: '2px solid #e8edf3',
-                          fontSize: 12,
-                        }}
-                      >
-                        User
-                      </th>
-                      <th
-                        style={{
-                          textAlign: 'left',
-                          padding: '10px 12px',
-                          fontWeight: 600,
-                          color: '#64748b',
-                          borderBottom: '2px solid #e8edf3',
-                          fontSize: 12,
-                        }}
-                      >
-                        Role
-                      </th>
-                      <th
-                        style={{
-                          textAlign: 'left',
-                          padding: '10px 12px',
-                          fontWeight: 600,
-                          color: '#64748b',
-                          borderBottom: '2px solid #e8edf3',
-                          fontSize: 12,
-                        }}
-                      >
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {permissionMembers.map((u) => (
-                      <tr key={u.userId}>
-                        <td
-                          style={{
-                            padding: '10px 12px',
-                            borderBottom: '1px solid #f1f5f9',
-                          }}
-                        >
-                          <div style={{ fontWeight: 500, color: '#0b2b5c' }}>
-                            {u.name}
-                          </div>
-                        </td>
-                        <td
-                          style={{
-                            padding: '10px 12px',
-                            borderBottom: '1px solid #f1f5f9',
-                          }}
-                        >
-                          <select
-                            value={u.role}
-                            onChange={(e) =>
-                              handlePermRoleChange(
-                                u.userId,
-                                e.target.value as 'view' | 'manage',
-                              )
-                            }
-                            style={{
-                              padding: '6px 28px 6px 12px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: 6,
-                              fontSize: 13,
-                              color: '#0b2b5c',
-                              background: '#fff',
-                              cursor: 'pointer',
-                              outline: 'none',
-                            }}
-                          >
-                            <option value="manage">Manager</option>
-                            <option value="view">Viewer</option>
-                          </select>
-                        </td>
-                        <td
-                          style={{
-                            padding: '10px 12px',
-                            borderBottom: '1px solid #f1f5f9',
-                          }}
-                        >
-                          <a
-                            className="yx-table-action"
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => {
-                              setPermissionMembers((prev) =>
-                                prev.filter((m) => m.userId !== u.userId),
-                              )
-                            }}
-                          >
-                            Remove
-                          </a>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                { }
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    gap: 12,
-                    marginTop: 20,
-                    paddingTop: 16,
-                    borderTop: '1px solid #eef2f6',
-                  }}
-                >
-                  <Button
-                    type="primary"
-                    loading={permissionSaving}
-                    onClick={handleSavePermissions}
-                  >
-                    Save Permissions
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        )
-
       default:
         return null
     }
   }
 
-
+  // ── main render ───────────────────────────────────────
   return (
-    <div
-      style={{
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif',
-        color: '#1e293b',
-        letterSpacing: 0,
-      }}
-    >
-      { }
+    <div>
+      {/* Back Navigation */}
       <div style={{ marginBottom: 16 }}>
         <a
           onClick={() => navigate('/domain-knowledge')}
@@ -1356,11 +1692,11 @@ const openEditModal = (ds: DataSourceConfig) => {
             padding: '4px 0',
           }}
         >
-          <ArrowLeftOutlined style={{ fontSize: 12 }} /> Back to Knowledge Bases
+          <ArrowLeftOutlined style={{ fontSize: 12 }} /> 返回知识库列表
         </a>
       </div>
 
-      { }
+      {/* Knowledge Base Header */}
       <div
         style={{
           display: 'flex',
@@ -1400,7 +1736,7 @@ const openEditModal = (ds: DataSourceConfig) => {
                 margin: 0,
               }}
             >
-              {t('dataSource.loading')}
+              加载中...
             </h2>
           </div>
         ) : detail ? (
@@ -1451,7 +1787,8 @@ const openEditModal = (ds: DataSourceConfig) => {
                     gap: 4,
                   }}
                 >
-                  <FileTextOutlined /> {t('domainKnowledge.documentsCount', { count: detail.documentCount })}
+                  <FileTextOutlined /> {detail.documentCount.toLocaleString()}{' '}
+                  文档
                 </span>
                 <span
                   style={{
@@ -1465,7 +1802,8 @@ const openEditModal = (ds: DataSourceConfig) => {
                     gap: 4,
                   }}
                 >
-                  <ShareAltOutlined /> {detail.entityCount.toLocaleString()} {t('domainKnowledge.entityCount')}
+                  <ShareAltOutlined /> {detail.entityCount.toLocaleString()}{' '}
+                  实体
                 </span>
                 <span
                   style={{
@@ -1479,7 +1817,8 @@ const openEditModal = (ds: DataSourceConfig) => {
                     gap: 4,
                   }}
                 >
-                  <ShareAltOutlined /> {detail.relationCount.toLocaleString()} {t('domainKnowledge.relationCount')}
+                  <ShareAltOutlined /> {detail.relationCount.toLocaleString()}{' '}
+                  关系
                 </span>
               </div>
             </div>
@@ -1496,19 +1835,19 @@ const openEditModal = (ds: DataSourceConfig) => {
                         : '#f59e0b',
                 }}
               >
-                {t(statusTextMap[detail.status])}
+                {statusTextMap[detail.status]}
               </div>
               <div
                 style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}
               >
-                {t('domainKnowledge.lastUpdated', { time: detail.updatedAt })}
+                上次更新：{detail.updatedAt}
               </div>
             </div>
           </>
         ) : null}
       </div>
 
-      { }
+      {/* Tab Bar */}
       <div
         style={{
           display: 'flex',
@@ -1539,165 +1878,14 @@ const openEditModal = (ds: DataSourceConfig) => {
                 gap: 6,
               }}
             >
-              <Icon /> {t(tab.tKey)}
+              <Icon /> {tab.label}
             </div>
           )
         })}
       </div>
 
-      { }
+      {/* Tab Content */}
       {renderTabContent()}
-
-      { }
-      <Modal
-        wrapClassName="yx-domain-space-modal"
-        title={
-          <span>
-            <EditOutlined style={{ color: '#3b82f6', marginRight: 8 }} />
-            {t('dataSource.editDataSource')}
-          </span>
-        }
-        open={!!editingDs}
-        onCancel={() => setEditingDs(null)}
-        onOk={async () => {
-          if (!editingDs || !editingName.trim()) {
-            message.warning(t('validation.nameRequired'))
-            return
-          }
-          setSubmittingEdit(true)
-          try {
-            const cfg = buildEditConfig()
-            await updateDataSource(editingDs.id, { name: editingName.trim(), config_json: cfg })
-            message.success(t('common.updatedSuccess'))
-            setEditingDs(null)
-            reloadDataSources()
-          } catch (err: any) {
-            message.error(err?.message || t('common.updateFailed'))
-          } finally {
-            setSubmittingEdit(false)
-          }
-        }}
-        confirmLoading={submittingEdit}
-        okText={t('common.save')}
-        cancelText={t('dataSource.cancel')}
-        width={560}
-      >
-        <div style={{ marginBottom: 16, fontSize: 13, color: '#64748b' }}>
-          {t('dataSource.accessMethod')}：<strong>{editingDs ? t(editingDs.type) : ''}</strong>
-        </div>
-        <Form layout="vertical">
-          <Form.Item label="Data Source Name" required>
-            <Input
-              value={editingName}
-              onChange={(e) => setEditingName(e.target.value)}
-              placeholder="Enter a data source name"
-            />
-          </Form.Item>
-
-          {editingDs?.accessType === 'api' && (
-            <>
-              <Form.Item label="Endpoint URL">
-                <Input value={getEditField('endpoint')} onChange={(v) => setEditField('endpoint', v.target.value)} placeholder="https://api.example.com/documents" />
-              </Form.Item>
-              <Form.Item label="HTTP Method">
-                <Select value={getEditField('method') || 'GET'} onChange={(v) => setEditField('method', v)} options={[{ value: 'GET', label: 'GET' }, { value: 'POST', label: 'POST' }]} />
-              </Form.Item>
-              <Form.Item label="Authentication">
-                <Select
-                  value={(editingDs?.configJson?.auth?.type) || 'none'}
-                  onChange={(v) => setEditField('auth', { ...(editingDs?.configJson?.auth || {}), type: v })}
-                  options={[
-                    { value: 'none', label: 'None (Public API)' },
-                    { value: 'bearer', label: 'Bearer Token' },
-                    { value: 'api_key', label: 'API Key' },
-                    { value: 'basic', label: 'Basic (username:password)' },
-                  ]}
-                />
-              </Form.Item>
-              <Form.Item label="Credential / Token" tooltip="Stored encrypted. Leave blank to keep the current value; enter a new value to replace it.">
-                <Input.Password
-                  placeholder="Enter a new credential (leave blank to keep current)"
-                  onChange={(v) => setEditField('auth', { ...(editingDs?.configJson?.auth || {}), token: v.target.value })}
-                />
-              </Form.Item>
-              <Form.Item label="API Key Header Name">
-                <Input value={getEditField('auth')?.header_name || ''} onChange={(v) => setEditField('auth', { ...(editingDs?.configJson?.auth || {}), header_name: v.target.value })} placeholder="X-API-Key" />
-              </Form.Item>
-              <Form.Item label="Document List JSONPath">
-                <Input value={getEditField('list_path') || '$.data.items'} onChange={(v) => setEditField('list_path', v.target.value)} placeholder="$.data.items" />
-              </Form.Item>
-              <Form.Item label="Download URL Field">
-                <Input value={getEditField('file_url_field') || 'url'} onChange={(v) => setEditField('file_url_field', v.target.value)} placeholder="url" />
-              </Form.Item>
-              <Form.Item label="File Name Field">
-                <Input value={getEditField('file_name_field') || 'name'} onChange={(v) => setEditField('file_name_field', v.target.value)} placeholder="name" />
-              </Form.Item>
-            </>
-          )}
-
-          {editingDs?.accessType === 'storage' && (
-            <>
-              <Form.Item label="Storage Backend">
-                <Select value={getEditField('backend') || 'minio'} onChange={(v) => setEditField('backend', v)} options={[
-                    { value: 'minio', label: 'MinIO' },
-                    { value: 's3', label: 'AWS S3' },
-                    { value: 'cos', label: 'Tencent Cloud COS' },
-                    { value: 'oss', label: 'Alibaba Cloud OSS' },
-                  ]} />
-              </Form.Item>
-              <Form.Item label="Endpoint">
-                <Input value={getEditField('endpoint')} onChange={(v) => setEditField('endpoint', v.target.value)} placeholder="http://minio:9000" />
-              </Form.Item>
-              <Form.Item label="Bucket">
-                <Input value={getEditField('bucket')} onChange={(v) => setEditField('bucket', v.target.value)} placeholder="product-files" />
-              </Form.Item>
-              <Form.Item label="Prefix">
-                <Input value={getEditField('prefix')} onChange={(v) => setEditField('prefix', v.target.value)} placeholder="kb/finance/" />
-              </Form.Item>
-              <Form.Item label="Credential (AK:SK)" tooltip="Stored encrypted. Leave blank to keep the current value; enter a new value to replace it.">
-                <Input.Password
-                  placeholder="Enter a new credential (leave blank to keep current)"
-                  onChange={(v) => setEditField('credential', v.target.value)}
-                />
-              </Form.Item>
-              <Form.Item label="Included Extensions (comma-separated)">
-                <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} value={editingExtStr} onChange={(e) => setEditingExtStr(e.target.value)} />
-              </Form.Item>
-            </>
-          )}
-
-          {editingDs?.accessType === 'api_push' && (
-            <>
-              <Form.Item label="Allowed File Types (comma-separated)">
-                <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} value={editingExtStr} onChange={(e) => setEditingExtStr(e.target.value)} />
-              </Form.Item>
-              <Form.Item label="Maximum File Size (MB)">
-                <InputNumber min={1} max={500} value={Number(getEditField('max_file_mb')) || 50} onChange={(v) => setEditField('max_file_mb', v ?? 50)} style={{ width: '100%' }} />
-              </Form.Item>
-            </>
-          )}
-
-          {editingDs?.accessType === 'file' && (
-            <Alert
-              type="info"
-              showIcon
-              style={{ marginTop: 4 }}
-              description="File upload requires no additional configuration. Select files on the upload page. PDF, Office documents, images, audio, and video are supported."
-            />
-          )}
-        </Form>
-      </Modal>
-
-      <AddDataSourceModal
-        open={addDsOpen}
-        kbId={id!}
-        existingTypes={dataSources.map((ds) => ds.accessType)}
-        onClose={() => setAddDsOpen(false)}
-        onCreated={() => {
-          setAddDsOpen(false)
-          reloadDataSources()
-        }}
-      />
     </div>
   )
 }

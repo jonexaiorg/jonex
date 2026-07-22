@@ -1,6 +1,10 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+Jonex platform - Global exception handler
 
-
+Provides FastAPI global exception handler functions, mapping exceptions to HTTP responses in a unified way
+"""
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -14,7 +18,16 @@ logger = get_logger("exception_handler")
 
 
 async def jonex_exception_handler(request: Request, exc: JonexException) -> JSONResponse:
+    """
+    Handle Jonex platform custom exceptions
 
+    Args:
+        request: FastAPI Request object
+        exc: JonexException instance
+
+    Returns:
+        Unified format error response
+    """
     request_id = getattr(request.state, "request_id", "N/A")
     logger.warning(
         f"[{request_id}] Business exception: code={exc.code}, message={exc.message}, "
@@ -34,10 +47,19 @@ async def jonex_exception_handler(request: Request, exc: JonexException) -> JSON
 
 
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """
+    Handle FastAPI HTTPException
 
+    Args:
+        request: FastAPI Request object
+        exc: HTTPException instance
+
+    Returns:
+        Unified format error response
+    """
     request_id = getattr(request.state, "request_id", "N/A")
     logger.warning(
-        f"[{request_id}] HTTP exception: status={exc.status_code}, detail={exc.detail}, "
+        f"[{request_id}] HTTP Exception: status={exc.status_code}, detail={exc.detail}, "
         f"path={request.url.path}"
     )
 
@@ -52,11 +74,20 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 async def validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
+    """
+    Handle request parameter validation errors (pydantic validation exception)
 
+    Args:
+        request: FastAPI Request object
+        exc: RequestValidationError instance
+
+    Returns:
+        Unified format error response
+    """
     request_id = getattr(request.state, "request_id", "N/A")
     errors = exc.errors()
     logger.warning(
-        f"[{request_id}] Request validation failed: {len(errors)} errors, path={request.url.path}"
+        f"[{request_id}] Parameter validation failed: {len(errors)} error(s), path={request.url.path}"
     )
 
     return error_response(
@@ -69,15 +100,24 @@ async def validation_exception_handler(
 
 
 async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Handle all uncaught exceptions (fallback)
 
+    Args:
+        request: FastAPI Request object
+        exc: Exception instance
+
+    Returns:
+        Unified format 500 error response
+    """
     request_id = getattr(request.state, "request_id", "N/A")
     logger.exception(
-        f"[{request_id}] Unhandled exception: {type(exc).__name__}: {exc}, "
+        f"[{request_id}] Uncaught exception: {type(exc).__name__}: {exc}, "
         f"path={request.url.path}"
     )
 
     internal_error = InternalError(
-        message="Internal server error. Try again later",
+        message="Internal server error, please retry later",
         cause=exc,
     )
 
@@ -90,14 +130,19 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    """
+    Register all global exception handlers to FastAPI application
 
-
+    Args:
+        app: FastAPI application instance
+    """
+    # Business exception (most specific)
     app.add_exception_handler(JonexException, jonex_exception_handler)
-
+    # HTTP Exception
     app.add_exception_handler(HTTPException, http_exception_handler)
-
+    # Parameter validation exception
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
-
+    # Fallback exception handler
     app.add_exception_handler(Exception, general_exception_handler)
 
     logger.info("Global exception handlers registered")

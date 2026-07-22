@@ -1,19 +1,21 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+Jonex platform - unified response format
 
+Define standard response structure for all API interfaces, ensuring frontend-backend contract consistency
+"""
 
-
-import json as _json
 from dataclasses import dataclass, field, asdict
 from typing import Optional, Any, Dict
 from datetime import datetime, timezone
 
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 
 @dataclass
 class StandardResponse:
-
+    """Standardized response format"""
     request_id: str
     success: bool
     code: int
@@ -23,11 +25,9 @@ class StandardResponse:
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> Dict:
-
+        """Convert to dict (None fields will be filtered out)"""
         result = asdict(self)
-        result = {k: v for k, v in result.items() if v is not None}
-
-        return jsonable_encoder(result)
+        return {k: v for k, v in result.items() if v is not None}
 
     @classmethod
     def ok(
@@ -36,7 +36,7 @@ class StandardResponse:
         data: Any = None,
         message: str = "success",
     ) -> "StandardResponse":
-
+        """Success response"""
         return cls(
             request_id=request_id,
             success=True,
@@ -53,7 +53,7 @@ class StandardResponse:
         message: str,
         details: Optional[Dict] = None,
     ) -> "StandardResponse":
-
+        """Error response"""
         return cls(
             request_id=request_id,
             success=False,
@@ -69,7 +69,18 @@ def success_response(
     request_id: str = "",
     status_code: int = 200,
 ) -> JSONResponse:
+    """
+    Build success JSONResponse
 
+    Args:
+        data: Response data
+        message: Success message
+        request_id: Request ID
+        status_code: HTTP status code
+
+    Returns:
+        JSONResponse
+    """
     response = StandardResponse.ok(request_id=request_id, data=data, message=message)
     return JSONResponse(status_code=status_code, content=response.to_dict())
 
@@ -81,7 +92,19 @@ def error_response(
     status_code: int = 500,
     details: Optional[Dict] = None,
 ) -> JSONResponse:
+    """
+    Build error JSONResponse
 
+    Args:
+        code: Business error code
+        message: Error information
+        request_id: Request ID
+        status_code: HTTP status code
+        details: Error details
+
+    Returns:
+        JSONResponse
+    """
     response = StandardResponse.error(
         request_id=request_id,
         code=code,

@@ -1,3 +1,16 @@
-# Convenience entry point for pip users. Project dependencies are declared in
-# pyproject.toml; reproducible development installs use uv.lock.
--e .
+huggingface_hub
+# LightRAG packages
+lightrag-hku
+# MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
+mineru[core]
+# Progress bars for batch processing
+tqdm
+# Note: Optional dependencies are now defined in setup.py extras_require:
+# - [image]: Pillow>=10.0.0 (for BMP, TIFF, GIF, WebP format conversion)
+# - [text]: reportlab>=4.0.0 (for TXT, MD to PDF conversion)
+# - [paddleocr]: paddleocr + pypdfium2 (for parser='paddleocr' - better OCR for scanned PDFs)
+# - [office]: requires LibreOffice (external program, not Python package)
+# - [all]: includes all optional dependencies
+#
+# Install with: pip install raganything[image,text] or pip install raganything[all]
+# For best PDF handling: pip install raganything[paddleocr]

@@ -1,100 +1,38 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { Input, Button, Table, Tag, Modal, message, Spin, Result, Select } from 'antd'
-import { useTranslation } from 'react-i18next'
-import { SearchOutlined, PlusOutlined, EditOutlined } from '@ant-design/icons'
-import {
-  listTenants, createTenant, updateTenant, deleteTenant,
-  type TenantItem, type TenantCreatePayload, type TenantUpdatePayload,
-  getPlanTypeLabel, getStatusLabel,
-} from '../../api/tenants'
+import React from 'react'
+import { Input, Button, Table, Tag, Select } from 'antd'
+import { SearchOutlined, PlusOutlined, EditOutlined, UserOutlined } from '@ant-design/icons'
+
+const tenants = [
+  { name: '金融科技有限公司', contact: '李明', email: 'liming@fintech.com', spaces: 3, users: 25, status: '启用' },
+  { name: '医疗健康集团', contact: '王芳', email: 'wangfang@med.com', spaces: 2, users: 18, status: '启用' },
+  { name: '智造科技有限公司', contact: '赵强', email: 'zhaoq@smartmfg.com', spaces: 1, users: 12, status: '启用' },
+  { name: '教育投资集团', contact: '孙丽', email: 'sunli@edu.com', spaces: 1, users: 8, status: '已欠费' },
+  { name: '法律咨询服务所', contact: '周磊', email: 'zhoulei@law.com', spaces: 2, users: 15, status: '启用' },
+  { name: '供应链管理集团', contact: '吴涛', email: 'wutao@scm.com', spaces: 1, users: 6, status: '启用' },
+  { name: '人力资源服务中心', contact: '郑红', email: 'zhengh@hr.com', spaces: 1, users: 10, status: '已欠费' },
+]
 
 export default function TenantManagement() {
-  const { t } = useTranslation()
-  const [tenants, setTenants] = useState<TenantItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editing, setEditing] = useState<TenantItem | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [form, setForm] = useState({ id: '', name: '', description: '', plan_type: 'free' })
-
-  const load = useCallback(async () => {
-    setLoading(true); setError(null)
-    try { const r = await listTenants(); setTenants(r.items) }
-    catch (e: unknown) { setError(e instanceof Error ? e.message : t('common.loadFailed')) }
-    finally { setLoading(false) }
-  }, [t])
-
-  useEffect(() => { load() }, [load])
-
-  const filtered = tenants.filter(t => !search || t.name.includes(search) || t.id.includes(search))
-
-  const openCreate = () => { setEditing(null); setForm({ id: '', name: '', description: '', plan_type: 'free' }); setModalOpen(true) }
-  const openEdit = (t: TenantItem) => { setEditing(t); setForm({ id: t.id, name: t.name, description: t.description || '', plan_type: t.plan_type }); setModalOpen(true) }
-
-  const handleSave = async () => {
-    if (!form.id && !editing) { message.warning(t('tenantManagement.codeRequired')); return }
-    if (!form.name) { message.warning(t('tenantManagement.nameRequired')); return }
-    setSubmitting(true)
-    try {
-      if (editing) {
-        const payload: TenantUpdatePayload = { name: form.name, description: form.description, plan_type: form.plan_type }
-        await updateTenant(editing.id, payload); message.success(t('common.updatedSuccess'))
-      } else {
-        const payload: TenantCreatePayload = { id: form.id, name: form.name, description: form.description, plan_type: form.plan_type }
-        await createTenant(payload); message.success(t('common.createdSuccess'))
-      }
-      setModalOpen(false); await load()
-    } catch (e: unknown) { message.error(e instanceof Error ? e.message : t('common.saveFailed')) }
-    finally { setSubmitting(false) }
-  }
-
   const columns = [
-    { title: t('tenantManagement.tenantCode'), dataIndex: 'id', key: 'id', width: 180 },
-    { title: t('tenantManagement.tenantName'), dataIndex: 'name', key: 'name', render: (v: string) => <a className="yx-table-action">{v}</a> },
-    { title: t('tenantManagement.description'), dataIndex: 'description', key: 'description', ellipsis: true },
-    { title: t('tenantManagement.planType', '版本'), dataIndex: 'plan_type', key: 'plan_type', width: 80, render: (v: string) => t(getPlanTypeLabel(v)) },
-    { title: t('tenantManagement.status'), dataIndex: 'status', key: 'status', width: 80, render: (v: number) => { const s = getStatusLabel(v); return <Tag color={s.color}>{t(s.label)}</Tag> } },
-    { title: t('common.actions', '操作'), key: 'actions', width: 100, render: (_: unknown, r: TenantItem) => <a className="yx-table-action" onClick={() => openEdit(r)}><EditOutlined /> {t('tenantManagement.edit')}</a> },
+    { title: '租户名称', dataIndex: 'name', key: 'name', render: (v: string) => <a className="yx-table-action">{v}</a> },
+    { title: '联系人', dataIndex: 'contact', key: 'contact' },
+    { title: '邮箱', dataIndex: 'email', key: 'email' },
+    { title: '空间数', dataIndex: 'spaces', key: 'spaces', width: 80 },
+    { title: '用户数', dataIndex: 'users', key: 'users', width: 80 },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: (v: string) => <Tag color={v === '启用' ? 'success' : 'warning'}>{v}</Tag> },
+    { title: '操作', key: 'actions', width: 120, render: () => <span><a className="yx-table-action">编辑</a><a className="yx-table-action" style={{ marginLeft: 8 }}>管理</a></span> },
   ]
-
-  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', minHeight: 300, alignItems: 'center' }}><Spin size="large" /></div>
-  if (error) return <Result status="error" title={t('common.loadFailed')} subTitle={error} extra={<Button type="primary" onClick={load}>{t('common.retry', '重试')}</Button>} />
 
   return (
     <div>
-      <div className="yx-page-title"><h1>{t('tenantManagement.title')}</h1></div>
+      <div className="yx-page-title"><h1>租户管理</h1></div>
       <div className="yx-card">
         <div className="yx-toolbar">
-          <Input prefix={<SearchOutlined />} placeholder={t('tenantManagement.searchPlaceholder', '搜索租户...')} style={{ width: 240 }} value={search} onChange={e => setSearch(e.target.value)} allowClear />
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t('tenantManagement.create')}</Button>
+          <Input prefix={<SearchOutlined />} placeholder="搜索租户..." style={{ width: 240 }} />
+          <Button type="primary" icon={<PlusOutlined />}>新建租户</Button>
         </div>
-        <Table columns={columns} dataSource={filtered} rowKey="id" pagination={{ total: filtered.length, pageSize: 10 }} size="middle" />
+        <Table columns={columns} dataSource={tenants} rowKey="name" pagination={{ total: 7, pageSize: 10 }} size="middle" />
       </div>
-
-      <Modal title={editing ? t('tenantManagement.edit') : t('tenantManagement.create')} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={handleSave} okText={t('common.save')} cancelText={t('common.cancel')} confirmLoading={submitting} width={480}>
-        {!editing && (
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>{t('tenantManagement.tenantCode')} <span style={{ color: '#dc2626' }}>*</span></label>
-            <Input placeholder={t('tenantManagement.codeRequired')} value={form.id} onChange={e => setForm(f => ({ ...f, id: e.target.value }))} />
-          </div>
-        )}
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>{t('tenantManagement.tenantName')} <span style={{ color: '#dc2626' }}>*</span></label>
-          <Input placeholder={t('tenantManagement.nameRequired')} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>{t('tenantManagement.description')}</label>
-          <Input placeholder={t('tenantManagement.description')} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-        </div>
-        <div>
-          <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>{t('tenantManagement.planType', '版本')}</label>
-          <Select value={form.plan_type} onChange={v => setForm(f => ({ ...f, plan_type: v }))} style={{ width: '100%' }} options={[
-            { label: t('tenantManagement.free', '免费版'), value: 'free' }, { label: t('tenantManagement.pro', '专业版'), value: 'pro' }, { label: t('tenantManagement.enterprise', '企业版'), value: 'enterprise' },
-          ]} />
-        </div>
-      </Modal>
     </div>
   )
 }

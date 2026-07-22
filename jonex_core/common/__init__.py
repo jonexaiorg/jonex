@@ -1,6 +1,10 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+Jonex platform - Common utilities module
 
-
+Provides database connection, cache, logging, configuration and other basic functionality
+"""
 
 from .config import Settings, get_config, reload_config
 from .database import (
@@ -10,25 +14,12 @@ from .database import (
     init_database,
     close_database,
     check_db_health,
+    TenantContext,
     AsyncSessionLocal,
 )
-from .tenant import (
-    DEFAULT_TENANT_IDS,
-    TenantContext,
-    extract_tenant_id,
-    is_default_tenant,
-    require_tenant,
-    tenant_scope,
-)
-from .entity import (
-    AuditMixin,
-    SoftDeleteMixin,
-    TenantMixin,
-    TimestampMixin,
-)
-from .repository import BaseRepository
 from .cache import (
     CacheUtil,
+    RedisUtil,
     TenantCache,
     get_redis_client,
     RedisPoolManager,
@@ -85,9 +76,7 @@ from .response import (
     success_response,
     error_response,
 )
-from .audit import emit_audit, audit_action
 from .exception_handler import register_exception_handlers
-from .object_storage import get_object_storage
 from .neo4j_client import (
     get_neo4j_driver,
     close_neo4j_driver,
@@ -95,11 +84,11 @@ from .neo4j_client import (
 )
 
 __all__ = [
-
+    # Configuration
     "Settings",
     "get_config",
     "reload_config",
-
+    # Database
     "Base",
     "get_db",
     "get_db_session",
@@ -108,35 +97,26 @@ __all__ = [
     "check_db_health",
     "TenantContext",
     "AsyncSessionLocal",
-    "DEFAULT_TENANT_IDS",
-    "extract_tenant_id",
-    "is_default_tenant",
-    "require_tenant",
-    "tenant_scope",
-    "AuditMixin",
-    "SoftDeleteMixin",
-    "TenantMixin",
-    "TimestampMixin",
-    "BaseRepository",
-
+    # Cache
     "CacheUtil",
+    "RedisUtil",
     "TenantCache",
     "get_redis_client",
     "RedisPoolManager",
     "check_redis_health",
-
+    # Vector database
     "MilvusClient",
     "get_milvus_client",
     "check_milvus_health",
     "milvus_context",
     "MILVUS_AVAILABLE",
-
+    # Logging
     "get_logger",
     "setup_logging",
     "set_request_id",
     "LogContext",
     "log_execution_time",
-
+    # Exception classes
     "JonexException",
     "InternalError",
     "InvalidParameterError",
@@ -167,13 +147,10 @@ __all__ = [
     "UpstreamServiceError",
     "ServiceTimeoutError",
     "get_exception_class",
-
+    # Response format
     "StandardResponse",
     "success_response",
     "error_response",
-
+    # Exception handlers
     "register_exception_handlers",
-
-    "emit_audit",
-    "audit_action",
 ]

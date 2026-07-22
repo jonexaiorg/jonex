@@ -1,4 +1,8 @@
+"""
+User authentication module
 
+Password hashing + user JWT generation/verification + one-time login ticket. Only used in Sidecar.
+"""
 import hashlib
 import hmac
 import logging
@@ -17,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class UserAuth:
-
+    """User authentication - password hashing + user JWT"""
 
     def __init__(self):
         config = get_config()
@@ -56,21 +60,21 @@ class UserAuth:
         try:
             payload = jwt.decode(token, self.secret, algorithms=[self.algorithm])
             if payload.get("type") not in ("user", "refresh"):
-                raise TokenExpiredError(message="Invalid Token type")
+                raise TokenExpiredError(message="Invalid token type")
             return payload
         except jwt.ExpiredSignatureError:
-            raise TokenExpiredError(message="Token has expired")
+            raise TokenExpiredError(message="Token Expired")
         except jwt.PyJWTError as e:
             logger.warning(f"JWT signature verification failed: {e}")
-            raise TokenExpiredError(message="Invalid Token")
+            raise TokenExpiredError(message="Invalid token")
 
 
     def create_login_ticket_plaintext(self) -> str:
-
+        """Generate one-time login ticket plaintext (32 bytes urlsafe base64)"""
         return secrets.token_urlsafe(32)
 
     def hash_login_ticket(self, ticket: str) -> str:
-
+        """HMAC-SHA256 the ticket plaintext, return hex digest. Uses JWT_SECRET as key"""
         return hmac.new(
             self.secret.encode(),
             ticket.encode(),
@@ -89,7 +93,7 @@ def get_user_auth() -> UserAuth:
 
 
 async def get_current_user(authorization: str = Header(...)) -> dict:
-
+    """FastAPI dependency: parse current user from Bearer token (only used in Sidecar)"""
     if not authorization.startswith("Bearer "):
         raise TokenExpiredError(message="Missing Bearer token")
     token = authorization[7:]
@@ -104,12 +108,12 @@ async def get_current_user(authorization: str = Header(...)) -> dict:
 
 
 def require_role(*roles: str):
-
+    """FastAPI dependency factory: verify user role"""
 
     async def _check_role(current_user: dict = Depends(get_current_user)):
         if current_user["role"] not in roles:
             raise PermissionDeniedError(
-                message=f"Required role: {', '.join(roles)}; current role: {current_user['role']}"
+                message=f"Required role: {', '.join(roles)}, current role: {current_user['role']}"
             )
         return current_user
 

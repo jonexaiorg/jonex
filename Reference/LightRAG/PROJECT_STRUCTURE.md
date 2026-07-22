@@ -224,7 +224,7 @@ LightRAG/
 
 ### 3.2 LightRAG 主类
 
-文件 [lightrag.py](lightrag/lightrag.py) 中的 `LightRAG` 类是框架的核心编排器，负责协调所有存储、LLM 调用和查询操作。
+文件 [lightrag.py](file:///c:/tyyz-python/LightRAG/lightrag/lightrag.py) 中的 `LightRAG` 类是框架的核心编排器，负责协调所有存储、LLM 调用和查询操作。
 
 **初始化参数摘录**：
 
@@ -251,7 +251,7 @@ LightRAG/
 
 ### 3.3 存储命名空间
 
-[namespace.py](lightrag/namespace.py) 定义了系统使用的 12 个存储命名空间：
+[namespace.py](file:///c:/tyyz-python/LightRAG/lightrag/namespace.py) 定义了系统使用的 12 个存储命名空间：
 
 | 命名空间 | 存储实例 | 用途 |
 |----------|----------|------|
@@ -270,7 +270,7 @@ LightRAG/
 
 ### 3.4 核心操作模块
 
-[operate.py](lightrag/operate.py) 包含以下核心操作函数：
+[operate.py](file:///c:/tyyz-python/LightRAG/lightrag/operate.py) 包含以下核心操作函数：
 
 | 函数 | 功能 |
 |------|------|
@@ -302,33 +302,33 @@ LightRAG/
 
 | 实现类 | 文件 | 说明 |
 |--------|------|------|
-| `JsonKVStorage` | [json_kv_impl.py](lightrag/kg/json_kv_impl.py) | 基于 JSON 文件的本地 KV 存储（默认） |
-| `RedisKVStorage` | [redis_impl.py](lightrag/kg/redis_impl.py) | Redis KV 存储 |
-| `MongoKVStorage` | [mongo_impl.py](lightrag/kg/mongo_impl.py) | MongoDB KV 存储 |
-| `PGGraphStore` | [postgres_impl.py](lightrag/kg/postgres_impl.py) | PostgreSQL KV 存储 |
+| `JsonKVStorage` | [json_kv_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/json_kv_impl.py) | 基于 JSON 文件的本地 KV 存储（默认） |
+| `RedisKVStorage` | [redis_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/redis_impl.py) | Redis KV 存储 |
+| `MongoKVStorage` | [mongo_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/mongo_impl.py) | MongoDB KV 存储 |
+| `PGGraphStore` | [postgres_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/postgres_impl.py) | PostgreSQL KV 存储 |
 
 ### 4.2 向量存储
 
 | 实现类 | 文件 | 说明 |
 |--------|------|------|
-| `NanoVectorDBStorage` | [nano_vector_db_impl.py](lightrag/kg/nano_vector_db_impl.py) | 嵌入式向量数据库（默认） |
-| `FaissVectorDBStorage` | [faiss_impl.py](lightrag/kg/faiss_impl.py) | FAISS 向量存储 |
-| `MilvusVectorDBStorage` | [milvus_impl.py](lightrag/kg/milvus_impl.py) | Milvus 向量数据库 |
-| `QdrantVectorDBStorage` | [qdrant_impl.py](lightrag/kg/qdrant_impl.py) | Qdrant 向量数据库 |
-| `RedisVectorDBStorage` | [redis_impl.py](lightrag/kg/redis_impl.py) | Redis 向量存储 |
-| `OpenSearchStorage` | [opensearch_impl.py](lightrag/kg/opensearch_impl.py) | OpenSearch 向量存储 |
-| `PGVectorStorage` | [postgres_impl.py](lightrag/kg/postgres_impl.py) | PGVector 向量存储 |
+| `NanoVectorDBStorage` | [nano_vector_db_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/nano_vector_db_impl.py) | 嵌入式向量数据库（默认） |
+| `FaissVectorDBStorage` | [faiss_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/faiss_impl.py) | FAISS 向量存储 |
+| `MilvusVectorDBStorage` | [milvus_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/milvus_impl.py) | Milvus 向量数据库 |
+| `QdrantVectorDBStorage` | [qdrant_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/qdrant_impl.py) | Qdrant 向量数据库 |
+| `RedisVectorDBStorage` | [redis_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/redis_impl.py) | Redis 向量存储 |
+| `OpenSearchStorage` | [opensearch_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/opensearch_impl.py) | OpenSearch 向量存储 |
+| `PGVectorStorage` | [postgres_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/postgres_impl.py) | PGVector 向量存储 |
 
 ### 4.3 图存储
 
 | 实现类 | 文件 | 说明 |
 |--------|------|------|
-| `NetworkXStorage` | [networkx_impl.py](lightrag/kg/networkx_impl.py) | 基于 NetworkX 的内存图存储（默认） |
-| `Neo4JStorage` | [neo4j_impl.py](lightrag/kg/neo4j_impl.py) | Neo4j 图数据库 |
-| `MemgraphStorage` | [memgraph_impl.py](lightrag/kg/memgraph_impl.py) | Memgraph 图数据库 |
-| `MongoGraphStorage` | [mongo_impl.py](lightrag/kg/mongo_impl.py) | MongoDB 图存储 |
-| `OpenSearchStorage` | [opensearch_impl.py](lightrag/kg/opensearch_impl.py) | OpenSearch 图存储 |
-| `PGGraphStore` | [postgres_impl.py](lightrag/kg/postgres_impl.py) | PostgreSQL (Apache AGE) 图存储 |
+| `NetworkXStorage` | [networkx_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/networkx_impl.py) | 基于 NetworkX 的内存图存储（默认） |
+| `Neo4JStorage` | [neo4j_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/neo4j_impl.py) | Neo4j 图数据库 |
+| `MemgraphStorage` | [memgraph_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/memgraph_impl.py) | Memgraph 图数据库 |
+| `MongoGraphStorage` | [mongo_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/mongo_impl.py) | MongoDB 图存储 |
+| `OpenSearchStorage` | [opensearch_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/opensearch_impl.py) | OpenSearch 图存储 |
+| `PGGraphStore` | [postgres_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/kg/postgres_impl.py) | PostgreSQL (Apache AGE) 图存储 |
 
 ### 4.4 存储配置方式
 
@@ -359,20 +359,20 @@ LIGHTRAG_GRAPH_STORAGE=NetworkXStorage       # 默认
 
 | 绑定标识 | 文件 | 支持的模型 |
 |----------|------|------------|
-| `openai` | [openai.py](lightrag/llm/openai.py) | GPT-4o, GPT-4, GPT-3.5-Turbo 等 |
-| `azure_openai` | [azure_openai.py](lightrag/llm/azure_openai.py) | Azure OpenAI 服务 |
-| `anthropic` | [anthropic.py](lightrag/llm/anthropic.py) | Claude 3.5 Sonnet, Claude 3 Opus 等 |
-| `gemini` | [gemini.py](lightrag/llm/gemini.py) | Gemini 2.0 Flash, Gemini 1.5 Pro 等 |
-| `ollama` | [ollama.py](lightrag/llm/ollama.py) | Llama 3, Mistral, Qwen 等本地模型 |
-| `bedrock` | [bedrock.py](lightrag/llm/bedrock.py) | AWS Bedrock 上的模型 |
-| `hf` | [hf.py](lightrag/llm/hf.py) | HuggingFace 推理端点 |
-| `jina` | [jina.py](lightrag/llm/jina.py) | Jina AI 嵌入 |
-| `voyageai` | [voyageai.py](lightrag/llm/voyageai.py) | VoyageAI 嵌入 |
-| `zhipu` | [zhipu.py](lightrag/llm/zhipu.py) | 智谱 GLM-4 系列 |
-| `nvidia_openai` | [nvidia_openai.py](lightrag/llm/nvidia_openai.py) | NVIDIA NIM |
-| `lmdeploy` | [lmdeploy.py](lightrag/llm/lmdeploy.py) | LMDeploy 推理服务 |
-| `lollms` | [lollms.py](lightrag/llm/lollms.py) | Lollms |
-| `llama_index` | [llama_index_impl.py](lightrag/llm/llama_index_impl.py) | LlamaIndex 集成 |
+| `openai` | [openai.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/openai.py) | GPT-4o, GPT-4, GPT-3.5-Turbo 等 |
+| `azure_openai` | [azure_openai.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/azure_openai.py) | Azure OpenAI 服务 |
+| `anthropic` | [anthropic.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/anthropic.py) | Claude 3.5 Sonnet, Claude 3 Opus 等 |
+| `gemini` | [gemini.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/gemini.py) | Gemini 2.0 Flash, Gemini 1.5 Pro 等 |
+| `ollama` | [ollama.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/ollama.py) | Llama 3, Mistral, Qwen 等本地模型 |
+| `bedrock` | [bedrock.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/bedrock.py) | AWS Bedrock 上的模型 |
+| `hf` | [hf.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/hf.py) | HuggingFace 推理端点 |
+| `jina` | [jina.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/jina.py) | Jina AI 嵌入 |
+| `voyageai` | [voyageai.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/voyageai.py) | VoyageAI 嵌入 |
+| `zhipu` | [zhipu.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/zhipu.py) | 智谱 GLM-4 系列 |
+| `nvidia_openai` | [nvidia_openai.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/nvidia_openai.py) | NVIDIA NIM |
+| `lmdeploy` | [lmdeploy.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/lmdeploy.py) | LMDeploy 推理服务 |
+| `lollms` | [lollms.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/lollms.py) | Lollms |
+| `llama_index` | [llama_index_impl.py](file:///c:/tyyz-python/LightRAG/lightrag/llm/llama_index_impl.py) | LlamaIndex 集成 |
 
 ### 5.2 配置示例
 
@@ -380,20 +380,20 @@ LIGHTRAG_GRAPH_STORAGE=NetworkXStorage       # 默认
 # LLM 配置 (以 OpenAI 为例)
 LLM_BINDING=openai
 LLM_BINDING_HOST=https://api.openai.com/v1
-LLM_BINDING_API_KEY=<your-api-key>
+LLM_BINDING_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 LLM_MODEL=gpt-4o-mini
 
 # Embedding 配置
 EMBEDDING_BINDING=openai
 EMBEDDING_BINDING_HOST=https://api.openai.com/v1
-EMBEDDING_BINDING_API_KEY=<your-api-key>
+EMBEDDING_BINDING_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_DIM=1536
 
 # 重排序配置（可选）
 RERANK_BINDING=openai
 RERANK_BINDING_HOST=https://api.openai.com/v1
-RERANK_BINDING_API_KEY=<your-api-key>
+RERANK_BINDING_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 RERANK_MODEL=gpt-4o-mini
 ```
 
@@ -551,12 +551,12 @@ bun run lint
 
 | 脚本 | 说明 |
 |------|------|
-| [clean_llm_query_cache.py](lightrag/tools/clean_llm_query_cache.py) | 清理过期的 LLM 查询缓存 |
-| [migrate_llm_cache.py](lightrag/tools/migrate_llm_cache.py) | 在不同存储后端之间迁移 LLM 缓存 |
-| [download_cache.py](lightrag/tools/download_cache.py) | 下载离线部署所需的缓存文件 |
-| [check_initialization.py](lightrag/tools/check_initialization.py) | 检查 LightRAG 初始化状态 |
-| [prepare_qdrant_legacy_data.py](lightrag/tools/prepare_qdrant_legacy_data.py) | 准备 Qdrant 旧版数据迁移 |
-| [graph_visualizer.py](lightrag/tools/lightrag_visualizer/graph_visualizer.py) | 独立的图谱可视化工具 |
+| [clean_llm_query_cache.py](file:///c:/tyyz-python/LightRAG/lightrag/tools/clean_llm_query_cache.py) | 清理过期的 LLM 查询缓存 |
+| [migrate_llm_cache.py](file:///c:/tyyz-python/LightRAG/lightrag/tools/migrate_llm_cache.py) | 在不同存储后端之间迁移 LLM 缓存 |
+| [download_cache.py](file:///c:/tyyz-python/LightRAG/lightrag/tools/download_cache.py) | 下载离线部署所需的缓存文件 |
+| [check_initialization.py](file:///c:/tyyz-python/LightRAG/lightrag/tools/check_initialization.py) | 检查 LightRAG 初始化状态 |
+| [prepare_qdrant_legacy_data.py](file:///c:/tyyz-python/LightRAG/lightrag/tools/prepare_qdrant_legacy_data.py) | 准备 Qdrant 旧版数据迁移 |
+| [graph_visualizer.py](file:///c:/tyyz-python/LightRAG/lightrag/tools/lightrag_visualizer/graph_visualizer.py) | 独立的图谱可视化工具 |
 
 ---
 
@@ -692,7 +692,7 @@ TIKTOKEN_CACHE_DIR=/app/data/tiktoken
 LLM_BINDING=openai
 LLM_MODEL=gpt-4o-mini
 LLM_BINDING_HOST=https://api.openai.com/v1
-LLM_BINDING_API_KEY=<your-api-key>
+LLM_BINDING_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 MAX_ASYNC=4
 LLM_TIMEOUT=180
 
@@ -701,7 +701,7 @@ EMBEDDING_BINDING=openai
 EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_DIM=1536
 EMBEDDING_BINDING_HOST=https://api.openai.com/v1
-EMBEDDING_BINDING_API_KEY=<your-api-key>
+EMBEDDING_BINDING_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 EMBEDDING_FUNC_MAX_ASYNC=8
 EMBEDDING_BATCH_NUM=10
 

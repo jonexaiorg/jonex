@@ -2,20 +2,14 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { Layout, Dropdown } from 'antd'
 import {
   LogoutOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
   SearchOutlined,
   BellOutlined,
   HomeOutlined,
   RightOutlined,
-  GlobalOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
-import { getUser, logout, fetchCurrentUser, setUser as cacheUser } from '../../api/auth'
+import { getUser, logout } from '../../api/auth'
 import { fetchAppManifest, getEnabledApps } from '../../api/manifest'
-import SpaceSwitcher from '../SpaceSwitcher'
-import { useAppLocale } from '../../locales/LocaleContext'
 import type { AppManifestEntry } from '@jonex/shell-sdk'
 import { colors } from '@jonex/platform-theme/tokens'
 import { prototypeNavConfig } from '../../navigation/prototypeNav.config'
@@ -23,25 +17,12 @@ import { getExpandedKeys, getBreadcrumbItems } from '../../navigation/navUtils'
 import type { PrototypeNavItem, NavSection } from '../../navigation/navTypes'
 
 export default function AppShellLayout({ children }: { children: React.ReactNode }) {
-  const { t, i18n } = useTranslation()
-  const { locale, setLocale } = useAppLocale()
-  const [user, setCurrentUser] = useState(() => getUser())
+  const [user] = useState(() => getUser())
   const navigate = useNavigate()
   const location = useLocation()
   const [apps, setApps] = useState<AppManifestEntry[]>([])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
-
-  useEffect(() => {
-    fetchCurrentUser()
-      .then((currentUser) => {
-        cacheUser(currentUser as unknown as Record<string, unknown>)
-        setCurrentUser(currentUser)
-      })
-      .catch(() => {
-
-      })
-  }, [])
 
   const userRoles = useMemo<string[]>(() => {
     return user?.roles ?? (
@@ -62,7 +43,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
     if (isMobile) setSidebarCollapsed(true)
   }, [isMobile])
 
-
+  // Auto-expand groups based on current route
   useEffect(() => {
     const keys = getExpandedKeys(location.pathname)
     setExpandedKeys((prev) => {
@@ -105,7 +86,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
 
   const userMenuItems = {
     items: [
-      { key: 'logout', icon: <LogoutOutlined />, label: t('auth.logout'), onClick: () => { logout(); navigate('/login') } },
+      { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: () => { logout(); navigate('/login') } },
     ],
   }
 
@@ -136,7 +117,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
           style={{ cursor: 'pointer' }}
         >
           <span className="yx-sub-dot" />
-          <span>{t(item.label)}</span>
+          <span>{item.label}</span>
           {item.tag && <span className="yx-tag-future">{item.tag}</span>}
         </div>
       )
@@ -150,7 +131,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
         style={{ cursor: 'pointer', textDecoration: 'none' }}
       >
         {renderNavIcon(item.icon as React.ComponentType)}
-        {!sidebarCollapsed && <span>{t(item.label)}</span>}
+        {!sidebarCollapsed && <span>{item.label}</span>}
         {!sidebarCollapsed && item.tag && <span className="yx-tag-future">{item.tag}</span>}
       </a>
     )
@@ -167,7 +148,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
           onClick={() => toggleGroup(item.key)}
         >
           {renderNavIcon(item.icon as React.ComponentType)}
-          {!sidebarCollapsed && <span>{t(item.label)}</span>}
+          {!sidebarCollapsed && <span>{item.label}</span>}
           {!sidebarCollapsed && <RightOutlined className="yx-nav-arrow" />}
         </div>
         <div className="yx-sub-menu">
@@ -179,7 +160,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      { }
+      {/* Sidebar */}
       <aside
         className="yx-sidebar"
         style={{ width: sidebarWidth }}
@@ -192,24 +173,28 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
           borderBottom: `1px solid ${colors.sidebarBorder}`,
         }}>
           <Link to="/apps/core-business/knowledge-search" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <img
-              src={sidebarCollapsed ? '/favicon.png' : '/logo.svg'}
-              alt={t('site.title')}
-              style={{
-                height: sidebarCollapsed ? 36 : 32,
-                transition: 'height 0.2s',
-              }}
-            />
+            <span style={{
+              width: 40, height: 40, borderRadius: 10,
+              background: `linear-gradient(135deg, ${colors.accentSoft}, ${colors.accent})`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 22, fontWeight: 700, color: '#fff',
+              boxShadow: '0 4px 10px rgba(59,130,246,0.35)',
+            }}>
+              溪
+            </span>
+            {!sidebarCollapsed && (
+              <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: 1 }}>
+                悦<span style={{ color: colors.accentLight }}>溪</span> · 平台
+              </span>
+            )}
           </Link>
         </div>
-
-        <SpaceSwitcher collapsed={sidebarCollapsed} />
 
         <nav style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
           {prototypeNavConfig.map((section) => (
             <div key={section.key} style={{ marginBottom: 4 }}>
               {!sidebarCollapsed && (
-                <div className="yx-nav-section">{t(section.label)}</div>
+                <div className="yx-nav-section">{section.label}</div>
               )}
               {section.items.map((item) =>
                 item.children ? renderNavGroup(item) : renderNavItem(item)
@@ -219,23 +204,11 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
         </nav>
       </aside>
 
-      { }
+      {/* Main Area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        { }
+        {/* Topbar */}
         <header className="yx-topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <button
-              onClick={() => setSidebarCollapsed((prev) => !prev)}
-              style={{
-                width: 36, height: 36, borderRadius: 8, border: 'none',
-                background: 'transparent', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 18, color: colors.textSecondary,
-              }}
-              title={sidebarCollapsed ? t('common.more') : t('common.close')}
-            >
-              {sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            </button>
             <div className="yx-breadcrumb">
               {breadcrumbItems.map((item, i) => (
                 <span key={i}>
@@ -251,7 +224,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
                       }}
                     >
                       {i === 0 && <><HomeOutlined style={{ marginRight: 4 }} /></>}
-                      {t(item.title)}
+                      {item.title}
                     </a>
                   ) : (
                     <span style={{
@@ -259,7 +232,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
                       fontWeight: i === breadcrumbItems.length - 1 ? 600 : 400,
                     }}>
                       {i === 0 && <><HomeOutlined style={{ marginRight: 4 }} /></>}
-                      {t(item.title)}
+                      {item.title}
                     </span>
                   )}
                 </span>
@@ -268,17 +241,6 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-            <button style={{
-              width: 38, height: 38, borderRadius: 10, border: 'none',
-              background: colors.iconBtnBg, color: colors.textBody, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 16, transition: 'all 0.2s ease',
-            }}
-              title={t('language.switch')}
-              onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
-            >
-              <GlobalOutlined />
-            </button>
             <button style={{
               width: 38, height: 38, borderRadius: 10, border: 'none',
               background: colors.iconBtnBg, color: colors.textBody, cursor: 'pointer',
@@ -319,7 +281,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
                       <span style={{ fontSize: 14, fontWeight: 500, color: colors.textPrimary }}>
                         {user.displayName || user.username}
                       </span>
-                      <span style={{ fontSize: 12, color: colors.textMuted }}>{t('common.status')}</span>
+                      <span style={{ fontSize: 12, color: colors.textMuted }}>管理员</span>
                     </div>
                   )}
                 </div>
@@ -328,7 +290,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
           </div>
         </header>
 
-        { }
+        {/* Content */}
         <main className="yx-content">
           {children}
         </main>

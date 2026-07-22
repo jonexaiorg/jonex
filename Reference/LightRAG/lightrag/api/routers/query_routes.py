@@ -4,10 +4,9 @@ This module contains all query-related routes for the LightRAG API.
 
 import json
 from typing import Any, Dict, List, Literal, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from lightrag.base import QueryParam
 from lightrag.api.utils_api import get_combined_auth_dependency
-from lightrag.api.workspace_manager import get_workspace_from_request  # [yuexi]
 from lightrag.utils import logger
 from pydantic import BaseModel, Field, field_validator
 
@@ -189,9 +188,7 @@ class StreamChunkResponse(BaseModel):
     )
 
 
-def create_query_routes(manager, api_key: Optional[str] = None, top_k: int = 60):
-    # [yuexi] manager is a WorkspaceRAGManager (not a single LightRAG instance).
-    # Each handler resolves the correct rag via LIGHTRAG-WORKSPACE header.
+def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
     # Fresh router per call. A module-level instance would accumulate
     # duplicate routes when the factory is invoked more than once in the
     # same process (e.g. across tests), which triggers FastAPI's
@@ -329,7 +326,7 @@ def create_query_routes(manager, api_key: Optional[str] = None, top_k: int = 60)
             },
         },
     )
-    async def query_text(request: QueryRequest, http_request: Request):  # [yuexi] +Request
+    async def query_text(request: QueryRequest):
         """
         Comprehensive RAG query endpoint with non-streaming response. Parameter "stream" is ignored.
 
@@ -409,7 +406,6 @@ def create_query_routes(manager, api_key: Optional[str] = None, top_k: int = 60)
                 - 500: Internal processing error (e.g., LLM service unavailable)
         """
         try:
-            rag = await manager.get(get_workspace_from_request(http_request))  # [yuexi]
             param = request.to_query_params(
                 False
             )  # Ensure stream=False for non-streaming endpoint
@@ -540,7 +536,7 @@ def create_query_routes(manager, api_key: Optional[str] = None, top_k: int = 60)
             },
         },
     )
-    async def query_text_stream(request: QueryRequest, http_request: Request):  # [yuexi] +Request
+    async def query_text_stream(request: QueryRequest):
         """
         Advanced RAG query endpoint with flexible streaming response.
 
@@ -668,7 +664,6 @@ def create_query_routes(manager, api_key: Optional[str] = None, top_k: int = 60)
             Use streaming mode for real-time interfaces and non-streaming for batch processing.
         """
         try:
-            rag = await manager.get(get_workspace_from_request(http_request))  # [yuexi]
             # Use the stream parameter from the request, defaulting to True if not specified
             stream_mode = request.stream if request.stream is not None else True
             param = request.to_query_params(stream_mode)
@@ -1044,7 +1039,7 @@ def create_query_routes(manager, api_key: Optional[str] = None, top_k: int = 60)
             },
         },
     )
-    async def query_data(request: QueryRequest, http_request: Request):  # [yuexi] +Request
+    async def query_data(request: QueryRequest):
         """
         Advanced data retrieval endpoint for structured RAG analysis.
 
@@ -1148,7 +1143,6 @@ def create_query_routes(manager, api_key: Optional[str] = None, top_k: int = 60)
             as structured data analysis typically requires source attribution.
         """
         try:
-            rag = await manager.get(get_workspace_from_request(http_request))  # [yuexi]
             param = request.to_query_params(False)  # No streaming for data endpoint
             response = await rag.aquery_data(request.query, param=param)
 
@@ -1167,14 +1161,14 @@ def create_query_routes(manager, api_key: Optional[str] = None, top_k: int = 60)
             logger.error(f"Error processing data query: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
-    # ── [yuexi] 结构化查询 ────────────────────────────────────────────
+    # ── [jonex] 结构化查询 ────────────────────────────────────────────
 
     @router.post(
         "/query/structured",
         dependencies=[Depends(combined_auth)],
         summary="结构化 RAG 查询，返回响应文本 + 检索数据（实体/关系/chunks）",
     )
-    async def query_structured(request: QueryRequest, http_request: Request):  # [yuexi] +Request
+    async def query_structured(request: QueryRequest):
         """
         增强型 RAG 查询，同时返回 LLM 响应文本和结构化检索数据。
 
@@ -1186,7 +1180,6 @@ def create_query_routes(manager, api_key: Optional[str] = None, top_k: int = 60)
         适用于需要同时获取回答和原始检索结果的场景（如本体增强查询、调试等）。
         """
         try:
-            rag = await manager.get(get_workspace_from_request(http_request))  # [yuexi]
             param = request.to_query_params(False)
             param.stream = False
 

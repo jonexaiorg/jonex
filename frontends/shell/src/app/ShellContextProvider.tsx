@@ -1,20 +1,17 @@
-import React, { createContext, useContext, useCallback, type ReactNode } from 'react'
-import i18n from '../locales/i18n'
-import type { ShellContext, ShellUser, SupportedLocale } from '@jonex/shell-sdk'
-import { LANGUAGE_STORAGE_KEY } from '@jonex/shell-sdk'
+import React, { createContext, useContext, type ReactNode } from 'react'
+import type { ShellContext, ShellUser } from '@jonex/shell-sdk'
 
 interface ShellContextProviderProps {
   children: ReactNode
   token: string | null
   user: ShellUser | null
-  locale: SupportedLocale
-  setLocale: (locale: SupportedLocale) => void
+  locale: string
   logout: () => void
 }
 
 const ShellCtx = createContext<ShellContext | null>(null)
 
-export function ShellContextProvider({ children, token, user, locale, setLocale, logout }: ShellContextProviderProps) {
+export function ShellContextProvider({ children, token, user, locale, logout }: ShellContextProviderProps) {
   const listeners = new Map<string, Set<(payload?: unknown) => void>>()
 
   const ctx: ShellContext = {
@@ -25,7 +22,6 @@ export function ShellContextProvider({ children, token, user, locale, setLocale,
     user,
     locale,
     theme: {},
-    setLocale,
     navigate: (to: string) => {
       window.location.href = to
     },
@@ -36,7 +32,7 @@ export function ShellContextProvider({ children, token, user, locale, setLocale,
       const handlers = listeners.get(name)
       if (handlers) {
         handlers.forEach((fn) => {
-          try { fn(payload) } catch {   }
+          try { fn(payload) } catch { /* swallow */ }
         })
       }
     },

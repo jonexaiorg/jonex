@@ -4,11 +4,10 @@ This module contains all graph-related routes for the LightRAG API.
 
 from typing import Optional, Dict, Any
 import traceback
-from fastapi import APIRouter, Depends, Query, HTTPException, Request  # [yuexi] +Request
+from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel, Field
 
 from lightrag.utils import logger
-from lightrag.api.workspace_manager import get_workspace_from_request  # [yuexi]
 from ..utils_api import get_combined_auth_dependency
 
 
@@ -85,23 +84,17 @@ class RelationCreateRequest(BaseModel):
     )
 
 
-def create_graph_routes(manager, api_key: Optional[str] = None):
-    # [yuexi] manager is a WorkspaceRAGManager (not a single LightRAG instance).
-    # Each handler resolves the correct rag via LIGHTRAG-WORKSPACE header.
+def create_graph_routes(rag, api_key: Optional[str] = None):
     # Fresh router per call. A module-level instance would accumulate
     # duplicate routes when the factory is invoked more than once in the
     # same process (e.g. across tests), which triggers FastAPI's
     # "Duplicate Operation ID" warnings.
     router = APIRouter(tags=["graph"])
 
-    async def _resolve_rag(request: Request):
-        """[yuexi] Resolve LightRAG instance for the current request's workspace."""
-        return await manager.get(get_workspace_from_request(request))
-
     combined_auth = get_combined_auth_dependency(api_key)
 
     @router.get("/graph/label/list", dependencies=[Depends(combined_auth)])
-    async def get_graph_labels(http_request: Request):  # [yuexi] +Request
+    async def get_graph_labels():
         """
         Get all graph labels
 
@@ -109,7 +102,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             List[str]: List of graph labels
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
             return await rag.get_graph_labels()
         except Exception as e:
             logger.error(f"Error getting graph labels: {str(e)}")
@@ -120,7 +112,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
 
     @router.get("/graph/label/popular", dependencies=[Depends(combined_auth)])
     async def get_popular_labels(
-        http_request: Request,  # [yuexi] +Request
         limit: int = Query(
             300, description="Maximum number of popular labels to return", ge=1, le=1000
         ),
@@ -135,7 +126,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             List[str]: List of popular labels sorted by degree (highest first)
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
             return await rag.chunk_entity_relation_graph.get_popular_labels(limit)
         except Exception as e:
             logger.error(f"Error getting popular labels: {str(e)}")
@@ -146,7 +136,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
 
     @router.get("/graph/label/search", dependencies=[Depends(combined_auth)])
     async def search_labels(
-        http_request: Request,  # [yuexi] +Request
         q: str = Query(..., description="Search query string"),
         limit: int = Query(
             50, description="Maximum number of search results to return", ge=1, le=100
@@ -163,7 +152,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             List[str]: List of matching labels sorted by relevance
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
             return await rag.chunk_entity_relation_graph.search_labels(q, limit)
         except Exception as e:
             logger.error(f"Error searching labels with query '{q}': {str(e)}")
@@ -174,7 +162,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
 
     @router.get("/graphs", dependencies=[Depends(combined_auth)])
     async def get_knowledge_graph(
-        http_request: Request,  # [yuexi] +Request
         label: str = Query(..., description="Label to get knowledge graph for"),
         max_depth: int = Query(3, description="Maximum depth of graph", ge=1),
         max_nodes: int = Query(1000, description="Maximum nodes to return", ge=1),
@@ -194,8 +181,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             Dict[str, List[str]]: Knowledge graph for label
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
-
             # Log the label parameter to check for leading spaces
             logger.debug(
                 f"get_knowledge_graph called with label: '{label}' (length: {len(label)}, repr: {repr(label)})"
@@ -213,130 +198,8 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
                 status_code=500, detail=f"Error getting knowledge graph: {str(e)}"
             )
 
-    # ── [yuexi] 穷举分页 / 计数 / 分布端点 ──────────────────────────
-    # 供 atomic-rag 的 HTTP reader 替代本地 vdb_*.json 读取。均按 LIGHTRAG-WORKSPACE
-    # 隔离；从图存储（当前 Neo4j）穷举，file_path/doc_id 过滤口径见 neo4j_impl.yuexi_*。
-    # 归档见 Reference/LightRAG/YUEXI_CHANGES.md。
-
-    def _require_jonex_graph(rag):
-        g = rag.chunk_entity_relation_graph
-        if not hasattr(g, "jonex_get_entities_page"):
-            raise HTTPException(
-                status_code=501,
-                detail="Current graph storage backend does not support jonex pagination endpoints",
-            )
-        return g
-
-    @router.get("/graph/entities", dependencies=[Depends(combined_auth)])
-    async def jonex_graph_entities(
-        http_request: Request,
-        page: int = Query(1, ge=1),
-        page_size: int = Query(50, ge=1, le=1000),
-        doc_id: Optional[str] = Query(None),
-        file_path: Optional[str] = Query(None),
-        keyword: Optional[str] = Query(None),
-        entity_type: Optional[str] = Query(None),
-        with_degree: bool = Query(True),
-    ):
-        """[yuexi] 穷举分页实体（workspace 隔离 + 可选过滤 + 可选度数）。"""
-        try:
-            rag = await _resolve_rag(http_request)
-            g = _require_jonex_graph(rag)
-            items = await g.jonex_get_entities_page(
-                skip=(page - 1) * page_size, limit=page_size,
-                doc_id=doc_id, file_path=file_path,
-                keyword=keyword, entity_type=entity_type, with_degree=with_degree,
-            )
-            counts = await g.jonex_get_graph_counts(doc_id=doc_id, file_path=file_path)
-            return {
-                "items": items,
-                "total": counts.get("entities_count", len(items)),
-                "page": page,
-                "page_size": page_size,
-            }
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"[jonex] Error getting graph entities: {e}")
-            logger.error(traceback.format_exc())
-            raise HTTPException(status_code=500, detail=f"Error getting graph entities: {e}")
-
-    @router.get("/graph/relationships", dependencies=[Depends(combined_auth)])
-    async def jonex_graph_relationships(
-        http_request: Request,
-        page: int = Query(1, ge=1),
-        page_size: int = Query(50, ge=1, le=1000),
-        doc_id: Optional[str] = Query(None),
-        file_path: Optional[str] = Query(None),
-        keyword: Optional[str] = Query(None),
-        source_entity: Optional[str] = Query(None),
-        target_entity: Optional[str] = Query(None),
-    ):
-        """[yuexi] 穷举分页关系（workspace 隔离 + 可选过滤）。"""
-        try:
-            rag = await _resolve_rag(http_request)
-            g = _require_jonex_graph(rag)
-            items = await g.jonex_get_relations_page(
-                skip=(page - 1) * page_size, limit=page_size,
-                doc_id=doc_id, file_path=file_path, keyword=keyword,
-                source_entity=source_entity, target_entity=target_entity,
-            )
-            counts = await g.jonex_get_graph_counts(
-                doc_id=doc_id, file_path=file_path,
-                source_entity=source_entity, target_entity=target_entity,
-            )
-            return {
-                "items": items,
-                "total": counts.get("relationships_count", len(items)),
-                "page": page,
-                "page_size": page_size,
-            }
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"[jonex] Error getting graph relationships: {e}")
-            logger.error(traceback.format_exc())
-            raise HTTPException(status_code=500, detail=f"Error getting graph relationships: {e}")
-
-    @router.get("/graph/counts", dependencies=[Depends(combined_auth)])
-    async def jonex_graph_counts(
-        http_request: Request,
-        doc_id: Optional[str] = Query(None),
-        file_path: Optional[str] = Query(None),
-    ):
-        """[yuexi] 实体/关系计数（workspace 隔离 + 可选过滤）。"""
-        try:
-            rag = await _resolve_rag(http_request)
-            g = _require_jonex_graph(rag)
-            return await g.jonex_get_graph_counts(doc_id=doc_id, file_path=file_path)
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"[jonex] Error getting graph counts: {e}")
-            logger.error(traceback.format_exc())
-            raise HTTPException(status_code=500, detail=f"Error getting graph counts: {e}")
-
-    @router.get("/graph/summary", dependencies=[Depends(combined_auth)])
-    async def jonex_graph_summary(
-        http_request: Request,
-        doc_id: Optional[str] = Query(None),
-        file_path: Optional[str] = Query(None),
-    ):
-        """[yuexi] 实体类型分布 + 总节点/边数（服务端聚合，供 get_graph_summary）。"""
-        try:
-            rag = await _resolve_rag(http_request)
-            g = _require_jonex_graph(rag)
-            return await g.jonex_get_graph_distribution(doc_id=doc_id, file_path=file_path)
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"[jonex] Error getting graph summary: {e}")
-            logger.error(traceback.format_exc())
-            raise HTTPException(status_code=500, detail=f"Error getting graph summary: {e}")
-
     @router.get("/graph/entity/exists", dependencies=[Depends(combined_auth)])
     async def check_entity_exists(
-        http_request: Request,  # [yuexi] +Request
         name: str = Query(..., description="Entity name to check"),
     ):
         """
@@ -349,7 +212,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             Dict[str, bool]: Dictionary with 'exists' key indicating if entity exists
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
             exists = await rag.chunk_entity_relation_graph.has_node(name)
             return {"exists": exists}
         except Exception as e:
@@ -360,7 +222,7 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             )
 
     @router.post("/graph/entity/edit", dependencies=[Depends(combined_auth)])
-    async def update_entity(request: EntityUpdateRequest, http_request: Request):  # [yuexi] +Request
+    async def update_entity(request: EntityUpdateRequest):
         """
         Update an entity's properties in the knowledge graph
 
@@ -495,7 +357,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             }
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
             result = await rag.aedit_entity(
                 entity_name=request.entity_name,
                 updated_data=request.updated_data,
@@ -551,7 +412,7 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             )
 
     @router.post("/graph/relation/edit", dependencies=[Depends(combined_auth)])
-    async def update_relation(request: RelationUpdateRequest, http_request: Request):  # [yuexi] +Request
+    async def update_relation(request: RelationUpdateRequest):
         """Update a relation's properties in the knowledge graph
 
         Args:
@@ -561,7 +422,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             Dict: Updated relation information
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
             result = await rag.aedit_relation(
                 source_entity=request.source_id,
                 target_entity=request.target_id,
@@ -587,7 +447,7 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             )
 
     @router.post("/graph/entity/create", dependencies=[Depends(combined_auth)])
-    async def create_entity(request: EntityCreateRequest, http_request: Request):  # [yuexi] +Request
+    async def create_entity(request: EntityCreateRequest):
         """
         Create a new entity in the knowledge graph
 
@@ -637,8 +497,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             # - Vector embedding creation in entities_vdb
             # - Metadata population and defaults
             # - Index consistency via _edit_entity_done
-            rag = await _resolve_rag(http_request)  # [yuexi]
-            # the acreate_entity call follows
             result = await rag.acreate_entity(
                 entity_name=request.entity_name,
                 entity_data=request.entity_data,
@@ -662,7 +520,7 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             )
 
     @router.post("/graph/relation/create", dependencies=[Depends(combined_auth)])
-    async def create_relation(request: RelationCreateRequest, http_request: Request):  # [yuexi] +Request
+    async def create_relation(request: RelationCreateRequest):
         """
         Create a new relationship between two entities in the knowledge graph
 
@@ -725,7 +583,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             # - Duplicate relation checks
             # - Vector embedding creation in relationships_vdb
             # - Index consistency via _edit_relation_done
-            rag = await _resolve_rag(http_request)  # [yuexi]
             result = await rag.acreate_relation(
                 source_entity=request.source_entity,
                 target_entity=request.target_entity,
@@ -752,7 +609,7 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             )
 
     @router.post("/graph/entities/merge", dependencies=[Depends(combined_auth)])
-    async def merge_entities(request: EntityMergeRequest, http_request: Request):  # [yuexi] +Request
+    async def merge_entities(request: EntityMergeRequest):
         """
         Merge multiple entities into a single entity, preserving all relationships
 
@@ -809,7 +666,6 @@ def create_graph_routes(manager, api_key: Optional[str] = None):
             - This operation cannot be undone, so verify entity names before merging
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
             result = await rag.amerge_entities(
                 source_entities=request.entities_to_change,
                 target_entity=request.entity_to_change_into,

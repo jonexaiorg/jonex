@@ -1,5 +1,3 @@
-import { LANGUAGE_STORAGE_KEY } from './constants'
-
 export const JONEX_ACCESS_TOKEN_KEY = 'jonex_access_token'
 export const JONEX_REFRESH_TOKEN_KEY = 'jonex_refresh_token'
 export const JONEX_USER_KEY = 'jonex_user'
@@ -52,11 +50,11 @@ export function writeCachedUser(user: unknown): void {
 export function clearAuthStorage(options: { keepLocale?: boolean } = {}): void {
   const storage = getStorage()
   if (!storage) return
-  const locale = options.keepLocale ? storage.getItem(LANGUAGE_STORAGE_KEY) : null
+  const locale = options.keepLocale ? storage.getItem('locale') : null
   storage.removeItem(JONEX_ACCESS_TOKEN_KEY)
   storage.removeItem(JONEX_REFRESH_TOKEN_KEY)
   storage.removeItem(JONEX_USER_KEY)
   storage.removeItem(LEGACY_USER_INFO_KEY)
   LEGACY_AUTH_STORAGE_KEYS.forEach((key) => storage.removeItem(key))
-  if (options.keepLocale && locale) storage.setItem(LANGUAGE_STORAGE_KEY, locale)
+  if (options.keepLocale && locale) storage.setItem('locale', locale)
 }

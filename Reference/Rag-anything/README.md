@@ -281,31 +281,19 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/HKUDS/RAG-Anything.git
 cd RAG-Anything
 
-# Install the exact dependency graph recorded in uv.lock
-uv sync --frozen
-
-# If you intentionally change dependencies, refresh and review the lock first:
-# uv lock --upgrade && uv sync --frozen
+# Install the package and dependencies in a virtual environment
+uv sync
 
 # If you encounter network timeouts (especially for opencv packages):
-# UV_HTTP_TIMEOUT=120 uv sync --frozen
+# UV_HTTP_TIMEOUT=120 uv sync
 
 # Run commands directly with uv (recommended approach)
 uv run python examples/raganything_example.py --help
 
-# Install with optional dependencies, still using the committed lock
-uv sync --frozen --extra image --extra text  # Specific extras
-uv sync --frozen --all-extras                 # All optional features
+# Install with optional dependencies
+uv sync --extra image --extra text  # Specific extras
+uv sync --all-extras                 # All optional features
 ```
-
-#### Dependency Reproducibility and LightRAG Compatibility
-
-- `uv.lock` is the canonical, cross-platform lock for source development and CI. Use `uv sync --frozen` so resolution never changes implicitly.
-- RAG-Anything `1.3.1` pins its embedded Python dependency to `lightrag-hku==1.4.16`. This is the tested compatibility pair.
-- A separately deployed LightRAG API server is an independent process. A sibling source checkout (for example `../LightRAG`) is **not** imported by RAG-Anything automatically, so local LightRAG modifications do not affect this environment.
-- `requirements.txt` is only a pip convenience entry point. It delegates to `pyproject.toml`; use `uv.lock` whenever an exactly reproducible environment is required.
-
-To test a different LightRAG source tree, change the dependency explicitly and regenerate the lock in a reviewable commit. Do not rely on an unrelated editable installation already present in the environment.
 
 #### Optional Dependencies
 
@@ -352,7 +340,7 @@ async def main():
     # Create RAGAnything configuration
     config = RAGAnythingConfig(
         working_dir="./rag_storage",
-        parser="mineru",  # Parser selection: mineru, mineru_online, docling, or paddleocr
+        parser="mineru",  # Parser selection: mineru, docling, or paddleocr
         parse_method="auto",  # Parse method: auto, ocr, or txt
         enable_image_processing=True,
         enable_table_processing=True,
@@ -1066,7 +1054,7 @@ Create a `.env` file (refer to `.env.example`):
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_BASE_URL=your_base_url  # Optional
 OUTPUT_DIR=./output             # Default output directory for parsed documents
-PARSER=mineru                   # Parser selection: mineru, mineru_online, docling, or paddleocr
+PARSER=mineru                   # Parser selection: mineru, docling, or paddleocr
 PARSE_METHOD=auto              # Parse method: auto, ocr, or txt
 ```
 
@@ -1103,11 +1091,6 @@ RAGAnything now supports multiple parsers, each with specific advantages:
 - Powerful OCR and table extraction capabilities
 - GPU acceleration support
 
-#### MinerU Online Parser
-- Uses MinerU's official online Precision Extract API instead of local models
-- Set `PARSER=mineru_online` and `MINERU_API_TOKEN`
-- Downloads the result zip and reads MinerU `content_list` JSON for the normal RAG-Anything pipeline
-
 #### Docling Parser
 - Optimized for Office documents and HTML files
 - Better document structure preservation
@@ -1141,19 +1124,6 @@ mineru -p input.pdf -o output_dir -m ocr     # OCR-focused parsing
 mineru -p input.pdf -o output_dir -b pipeline --device cuda  # GPU acceleration
 ```
 
-For MinerU's online Precision Extract API:
-
-```bash
-PARSER=mineru_online
-MINERU_API_TOKEN=your_mineru_api_token
-MINERU_API_BASE_URL=https://mineru.net
-MINERU_MODEL_VERSION=vlm
-MINERU_POLL_INTERVAL=5
-MINERU_POLL_TIMEOUT=1800
-```
-
-`mineru_online` uses MinerU's batch upload flow: it requests a signed upload URL, uploads the local file, polls the batch result, downloads the returned zip, and reads the `*_content_list.json` inside it.
-
 You can also configure parsing through RAGAnything parameters:
 
 ```python
@@ -1162,7 +1132,7 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # or "ocr", "txt"
-    parser="mineru"               # Optional: "mineru", "mineru_online", "docling", or "paddleocr"
+    parser="mineru"               # Optional: "mineru", "docling", or "paddleocr"
 )
 
 # Advanced parsing configuration with special parameters
@@ -1170,7 +1140,7 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # Parsing method: "auto", "ocr", "txt"
-    parser="mineru",              # Parser selection: "mineru", "mineru_online", "docling", or "paddleocr"
+    parser="mineru",              # Parser selection: "mineru", "docling", or "paddleocr"
 
     # MinerU special parameters - all supported kwargs:
     lang="ch",                   # Document language for OCR optimization (e.g., "ch", "en", "ja")
@@ -1190,7 +1160,7 @@ await rag.process_document_complete(
 )
 ```
 
-> **Note**: MinerU 2.0 no longer uses the `magic-pdf.json` configuration file. All settings are now passed as command-line parameters or function arguments. RAG-Anything supports multiple document parsers, including MinerU, MinerU Online, Docling, and PaddleOCR.
+> **Note**: MinerU 2.0 no longer uses the `magic-pdf.json` configuration file. All settings are now passed as command-line parameters or function arguments. RAG-Anything supports multiple document parsers, including MinerU, Docling, and PaddleOCR.
 
 ### Processing Requirements
 

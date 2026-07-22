@@ -8,7 +8,6 @@ import { useStore } from '@/store'
 import { menuConfig, IconMap } from '@/router/menu.config'
 import type { MenuItem } from '@/router/menu.config'
 import { buildLoginRedirectUrl, clearAuthStorage } from '@jonex/shell-sdk'
-import SpaceSwitcher from '@/components/SpaceSwitcher'
 import styles from './index.module.scss'
 
 const { Content } = Layout
@@ -78,19 +77,18 @@ const BasicLayout = observer(() => {
 
   return (
     <div className={styles['page-layout']}>
-      { }
+      {/* Sidebar */}
       <aside className="yx-sidebar" style={{ width: sidebarWidth }}>
         <div className={styles['sidebar-brand']}>
-          <Link to="/knowledge-search" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center' }}>
-            <img
-              src={sidebarCollapsed ? '/favicon-white.png' : '/logo-white.svg'}
-              alt="Jonex"
-              style={{ height: sidebarCollapsed ? 36 : 32, transition: 'height 0.2s' }}
-            />
+          <Link to="/knowledge-search" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span className={styles['brand-icon']}>溪</span>
+            {!sidebarCollapsed && (
+              <span className={styles['brand-text']}>
+                悦<span className={styles['brand-accent']}>溪</span> · 平台
+              </span>
+            )}
           </Link>
         </div>
-
-        <SpaceSwitcher collapsed={sidebarCollapsed} />
 
         <nav className={styles['sidebar-nav']}>
           {!sidebarCollapsed && <div className="yx-nav-section">{t('site.title')}</div>}
@@ -102,19 +100,19 @@ const BasicLayout = observer(() => {
               style={{ cursor: 'pointer', textDecoration: 'none' }}
             >
               {renderNavIcon(item.icon)}
-              {!sidebarCollapsed && <span>{t(item.label)}</span>}
+              {!sidebarCollapsed && <span>{item.label}</span>}
             </a>
           ))}
         </nav>
       </aside>
 
-      { }
+      {/* Main Area */}
       <div className={styles['main-area']}>
-        { }
+        {/* Topbar */}
         <header className="yx-topbar">
           <div className="yx-breadcrumb">
             <HomeOutlined style={{ marginRight: 6 }} />
-            <span className="current">{t(currentTitle) || t('site.title')}</span>
+            <span className="current">{currentTitle || t('site.title')}</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -125,7 +123,7 @@ const BasicLayout = observer(() => {
                     {
                       key: 'logout',
                       icon: <LogoutOutlined />,
-                      label: t('auth.logout'),
+                      label: t('auth.signOut'),
                       onClick: handleLogout,
                     },
                   ],
@@ -140,7 +138,7 @@ const BasicLayout = observer(() => {
           </div>
         </header>
 
-        { }
+        {/* Content */}
         <main className="yx-content">
           <Outlet />
         </main>

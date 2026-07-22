@@ -1,17 +1,11 @@
-
+#!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+Jonex platform - API route module
+"""
 
 from .knowledge_base import router as knowledge_base_router
-from .knowledge_base import ingest_router as knowledge_base_ingest_router
 from .tcadp import router as tcadp_router
 from .auth import router as auth_router
-from .platform import router as platform_router
-from .business_domain import ecosystem_router
 
-__all__ = [
-    "knowledge_base_router",
-    "knowledge_base_ingest_router",
-    "tcadp_router",
-    "auth_router",
-    "platform_router",
-    "ecosystem_router",
-]
+__all__ = ["knowledge_base_router", "tcadp_router", "auth_router"]

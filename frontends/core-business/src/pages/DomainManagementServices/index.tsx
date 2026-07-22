@@ -1,61 +1,44 @@
 import React, { useState } from 'react'
 import { Input, Select, Button, Card, Table, Tag, Space } from 'antd'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons'
-import { useTranslation } from 'react-i18next'
 
-const SERVICE_TYPES = ['all', 'search', 'inference', 'analysis'] as const
-type ServiceType = (typeof SERVICE_TYPES)[number]
-
-const MOCK_SERVICES = [
-  { nameKey: 'smartQa', domainKey: 'financialRisk', type: 'inference', callType: 'REST API', status: 'running' },
-  { nameKey: 'knowledgeRetrieval', domainKey: 'financialRisk', type: 'search', callType: 'gRPC', status: 'running' },
-  { nameKey: 'medicalRecordAnalysis', domainKey: 'medicalInsurance', type: 'analysis', callType: 'REST API', status: 'running' },
-  { nameKey: 'equipmentDiagnostics', domainKey: 'smartProduction', type: 'inference', callType: 'REST API', status: 'maintenance' },
-  { nameKey: 'courseRecommendation', domainKey: 'onlineEducation', type: 'analysis', callType: 'gRPC', status: 'running' },
-] as const
+const mockServices = [
+  { name: '智能问答服务', domain: '金融风控', type: '推理服务', callType: 'REST API', status: '运行中' },
+  { name: '知识检索服务', domain: '金融风控', type: '检索服务', callType: 'gRPC', status: '运行中' },
+  { name: '病历分析服务', domain: '医疗保险', type: '分析服务', callType: 'REST API', status: '运行中' },
+  { name: '设备诊断服务', domain: '智能生产', type: '推理服务', callType: 'REST API', status: '维护中' },
+  { name: '课程推荐服务', domain: '在线教育', type: '分析服务', callType: 'gRPC', status: '运行中' },
+]
 
 export default function DomainManagementServices() {
-  const { t } = useTranslation('business')
   const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState<ServiceType>('all')
-
-  const services = MOCK_SERVICES.map((service) => ({
-    ...service,
-    name: t(`domainService.samples.services.${service.nameKey}`),
-    domain: t(`domainService.samples.domains.${service.domainKey}`),
-  }))
+  const [typeFilter, setTypeFilter] = useState('全部类型')
 
   const columns = [
-    { title: t('domainService.name'), dataIndex: 'name', key: 'name', width: 160, render: (v: string) => <a className="yx-table-action">{v}</a> },
-    { title: t('domainService.space'), dataIndex: 'domain', key: 'domain', width: 120 },
-    { title: t('domainService.serviceType'), dataIndex: 'type', key: 'type', width: 110, render: (value: Exclude<ServiceType, 'all'>) => t(`domainService.serviceTypes.${value}`) },
-    { title: t('domainService.callMethod'), dataIndex: 'callType', key: 'callType', width: 110 },
-    { title: t('domainService.status'), dataIndex: 'status', key: 'status', width: 90, render: (value: string) => <Tag color={value === 'running' ? 'success' : 'warning'}>{t(value === 'running' ? 'domainEngine.running' : 'status.maintenance')}</Tag> },
-    { title: t('knowledgeSearch.actions'), key: 'actions', width: 120, render: () => <Space><a className="yx-table-action">{t('domainService.edit')}</a><a className="yx-table-action">{t('domainService.monitor')}</a></Space> },
+    { title: '服务名称', dataIndex: 'name', key: 'name', width: 160, render: (v: string) => <a className="yx-table-action">{v}</a> },
+    { title: '所属领域', dataIndex: 'domain', key: 'domain', width: 120 },
+    { title: '服务类型', dataIndex: 'type', key: 'type', width: 110 },
+    { title: '调用方式', dataIndex: 'callType', key: 'callType', width: 110 },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: (v: string) => <Tag color={v === '运行中' ? 'success' : 'warning'}>{v}</Tag> },
+    { title: '操作', key: 'actions', width: 120, render: () => <Space><a className="yx-table-action">编辑</a><a className="yx-table-action">监控</a></Space> },
   ]
 
-  const normalizedSearch = search.trim().toLocaleLowerCase()
-  const filtered = services.filter((service) =>
-    (!normalizedSearch || service.name.toLocaleLowerCase().includes(normalizedSearch))
-    && (typeFilter === 'all' || service.type === typeFilter)
+  const filtered = mockServices.filter((s) =>
+    s.name.includes(search) && (typeFilter === '全部类型' || s.type === typeFilter)
   )
 
   return (
     <div>
-      <div className="yx-page-title"><h1>{t('domainService.serviceList')}</h1></div>
+      <div className="yx-page-title"><h1>服务管理</h1></div>
 
       <Card className="yx-card">
         <div className="yx-toolbar">
-          <Input prefix={<SearchOutlined />} placeholder={t('domainService.searchServices')} value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 240 }} />
-          <Select<ServiceType>
-            value={typeFilter}
-            onChange={setTypeFilter}
-            style={{ width: 140 }}
-            options={SERVICE_TYPES.map((value) => ({ value, label: t(`domainService.serviceTypes.${value}`) }))}
-          />
-          <Button type="primary" icon={<PlusOutlined />}>{t('domainService.create')}</Button>
+          <Input prefix={<SearchOutlined />} placeholder="搜索服务名称..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 240 }} />
+          <Select value={typeFilter} onChange={setTypeFilter} style={{ width: 140 }}
+            options={['全部类型', '检索服务', '推理服务', '分析服务'].map((s) => ({ value: s, label: s }))} />
+          <Button type="primary" icon={<PlusOutlined />}>新建服务</Button>
         </div>
-        <Table columns={columns} dataSource={filtered} rowKey="nameKey" pagination={{ total: filtered.length, pageSize: 5 }} size="middle" />
+        <Table columns={columns} dataSource={filtered} rowKey="name" pagination={{ total: 10, pageSize: 5 }} size="middle" />
       </Card>
     </div>
   )

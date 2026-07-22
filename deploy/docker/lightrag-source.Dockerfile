@@ -1,60 +1,35 @@
-# ============================================================
-# LightRAG, RAG configuration for this setting.
-# ============================================================
-# Path configuration for this setting.
-# Docker configuration for this setting.
-#
-# Docker configuration for this setting.
-# LightRAG, RAG configuration for this setting.
-# Configuration note for this setting.
-# LightRAG, RAG configuration for FROM.
-# LightRAG, RAG configuration for FROM.
-# ============================================================
 
 # syntax=docker/dockerfile:1
 
-# frontend configuration for FROM.
 FROM --platform=$BUILDPLATFORM oven/bun:1 AS frontend-builder
 WORKDIR /app
 COPY Reference/LightRAG/lightrag_webui/ ./lightrag_webui/
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     cd lightrag_webui \
     && bun install --frozen-lockfile \
-    && bun --bun ./node_modules/vite/bin/vite.js build
+    && bun run build
 
-# Service dependency and startup ordering for FROM.
-# Service dependency and startup ordering for FROM.
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
 ENV DEBIAN_FRONTEND=noninteractive \
     UV_SYSTEM_PYTHON=1 \
-    UV_COMPILE_BYTECODE=1 \
-    UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
-    UV_HTTP_TIMEOUT=120
+    UV_COMPILE_BYTECODE=1
 WORKDIR /app
 
-# Service dependency and startup ordering for COPY.
 COPY Reference/LightRAG/pyproject.toml .
 COPY Reference/LightRAG/setup.py .
-COPY Reference/LightRAG/README.md .
-COPY Reference/LightRAG/lightrag/ ./lightrag/
+COPY Reference/LightRAG/uv.lock .
 RUN --mount=type=cache,target=/root/.local/share/uv \
-    uv sync --no-dev --extra api --extra offline-storage --extra offline-llm --no-install-project --no-editable
+    uv sync --frozen --no-dev --extra api --extra offline --no-install-project --no-editable
 
-# LightRAG, RAG configuration for COPY.
+COPY Reference/LightRAG/lightrag/ ./lightrag/
 COPY --from=frontend-builder /app/lightrag/api/webui ./lightrag/api/webui
 RUN --mount=type=cache,target=/root/.local/share/uv \
     uv sync --frozen --no-dev --extra api --extra offline --no-editable
 
-# Sensitive configuration for RUN; use a securely generated environment-specific value.
-RUN --mount=type=cache,target=/app/tiktoken_cache \
-    mkdir -p /app/tiktoken_cache \
-    && uv run lightrag-download-cache --cache-dir /app/tiktoken_cache \
-    || case $? in 2) ;; *) exit $? ;; esac \
-    && mkdir -p /app/data/tiktoken \
-    && cp -r /app/tiktoken_cache/. /app/data/tiktoken/
+RUN mkdir -p /app/data/tiktoken \
+    && uv run lightrag-download-cache --cache-dir /app/data/tiktoken || status=$?; \
+       if [ -n "${status:-}" ] && [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then exit "$status"; fi
 
-# Configuration note for FROM.
-# Copy the required files into the image.
 FROM python:3.12-slim
 WORKDIR /app
 ENV PATH=/app/.venv/bin:$PATH

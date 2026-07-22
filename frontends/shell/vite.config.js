@@ -32,7 +32,7 @@ export default defineConfig({
     port: 5173,
     host: true,
     proxy: {
-
+      // —— 后端 API ——
       '/api/': {
         target: apiTarget,
         changeOrigin: true,
@@ -41,8 +41,8 @@ export default defineConfig({
         target: apiTarget,
         changeOrigin: true,
       },
-
-
+      // —— 子应用 remote assets（Module Federation） ——
+      // 请求 /remotes/xxx/... → 子应用 vite dev server，去掉 /remotes 前缀
       '/remotes/core-business/': {
         target: 'http://localhost:5175',
         changeOrigin: true,
@@ -67,7 +67,7 @@ export default defineConfig({
             ? '/@id/__x00__virtual:__federation_remote_ecosystemManagement_entry' + (path.includes('?') ? path.substring(path.indexOf('?')) : '')
             : path.replace(/^\/remotes/, ''),
       },
-
+      // —— 子应用 standalone SPA 回退 ——
       '/core-business/': {
         target: 'http://localhost:5175',
         changeOrigin: true,

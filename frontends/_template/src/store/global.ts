@@ -1,9 +1,8 @@
 import { makeAutoObservable } from 'mobx'
 import { getItem, setItem } from '@/utils/storage'
-import { LANGUAGE_STORAGE_KEY } from '@jonex/shell-sdk'
 
 class GlobalStore {
-  locale: string = getItem<string>(LANGUAGE_STORAGE_KEY) || 'en'
+  locale: string = getItem<string>('locale') || 'zh'
   userInfo: Record<string, unknown> | null = getItem<Record<string, unknown>>('userInfo') || null
 
   constructor() {
@@ -12,7 +11,7 @@ class GlobalStore {
 
   setLocale = (lang: string) => {
     this.locale = lang
-    setItem(LANGUAGE_STORAGE_KEY, lang)
+    setItem('locale', lang)
   }
 
   setUserInfo = (data: Record<string, unknown> | null) => {

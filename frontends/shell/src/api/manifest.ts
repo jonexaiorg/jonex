@@ -1,8 +1,7 @@
 import type { AppManifest, AppManifestEntry } from '@jonex/shell-sdk'
 import { isManifestV2 } from '@jonex/shell-sdk'
 
-const PLATFORM_MANIFEST_URL = '/api/v1/platform/frontend/apps'
-const FALLBACK_MANIFEST_URL = '/app-manifest.json'
+const MANIFEST_URL = '/app-manifest.json'
 
 let cachedManifest: AppManifest | null = null
 let cacheTime = 0
@@ -14,32 +13,19 @@ export async function fetchAppManifest(): Promise<AppManifest> {
     return cachedManifest
   }
 
-  let data: AppManifest | null = null
-
-  try {
-    data = await loadManifest(PLATFORM_MANIFEST_URL)
-  } catch (error) {
-    console.warn('[shell] platform manifest unavailable, using local fallback', error)
-    data = await loadManifest(FALLBACK_MANIFEST_URL)
+  const resp = await fetch(MANIFEST_URL)
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch app manifest: ${resp.status}`)
   }
+  const data: AppManifest = await resp.json()
 
-  if (!isManifestV2(data)) {
-    throw new Error('Unsupported manifest schema version')
+  if (isManifestV2(data) && data.schemaVersion !== 2) {
+    throw new Error(`Unsupported manifest schema version: ${data.schemaVersion}`)
   }
 
   cachedManifest = data
   cacheTime = now
   return cachedManifest
-}
-
-async function loadManifest(url: string): Promise<AppManifest> {
-  const resp = await fetch(url)
-  if (!resp.ok) {
-    throw new Error(`Failed to fetch app manifest from ${url}: ${resp.status}`)
-  }
-
-  const payload = await resp.json()
-  return (payload?.data ?? payload) as AppManifest
 }
 
 export function getEnabledApps(manifest: AppManifest, userRoles: string[]): AppManifestEntry[] {

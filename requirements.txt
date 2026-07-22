@@ -35,12 +35,6 @@ jieba>=0.42.1
 
 # Utilities
 python-dateutil>=2.8.2
-cos-python-sdk-v5>=1.9.0
-
-# 数据源接入（外部 S3/MinIO 拉取、API JSON 定位、凭据加密）
-boto3>=1.34.0,<2.0.0
-jsonpath-ng>=1.6.0,<2.0.0
-cryptography>=42.0.0
 
 # Logging
 python-json-logger>=2.0.7

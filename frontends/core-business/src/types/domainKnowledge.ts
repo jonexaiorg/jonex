@@ -1,10 +1,9 @@
 export type DomainKnowledgeStatus = 'synced' | 'syncing' | 'failed' | 'disabled'
 
 export type DomainKnowledgeSourceType =
-  | 'api'
-  | 'api_push'
-  | 'storage'
-  | 'file'
+  | 'api_sync'
+  | 'manual_upload'
+  | 'storage_direct'
 
 export interface DomainKnowledgeSpace {
   id: string
@@ -63,10 +62,16 @@ export interface DomainKnowledgePermissionPayload {
 }
 
 export const statusTextMap: Record<DomainKnowledgeStatus, string> = {
-  synced: 'status.synced',
-  syncing: 'status.syncing',
-  failed: 'status.failed',
-  disabled: 'status.inactive',
+  synced: '已同步',
+  syncing: '同步中',
+  failed: '同步失败',
+  disabled: '已停用',
+}
+
+export const sourceTypeTextMap: Record<DomainKnowledgeSourceType, string> = {
+  api_sync: 'API同步',
+  manual_upload: '手动上传',
+  storage_direct: '文件存储直连',
 }
 
 export const statusColorMap: Record<DomainKnowledgeStatus, string> = {
@@ -76,7 +81,7 @@ export const statusColorMap: Record<DomainKnowledgeStatus, string> = {
   disabled: 'default',
 }
 
-
+// ─── Detail Page Types ──────────────────────────────────
 
 export interface DomainKnowledgeDetail {
   id: string
@@ -89,20 +94,15 @@ export interface DomainKnowledgeDetail {
   compileVersionCount: number
   status: DomainKnowledgeStatus
   updatedAt: string
-
-  ontologyDegraded?: boolean
 }
-
-export type DataSourceDisplayStatus = 'running' | 'paused' | 'error'
 
 export interface DataSourceConfig {
   id: string
   name: string
   type: string
-  accessType: string
-  configJson: Record<string, any>
   docs: number
-  status: DataSourceDisplayStatus
+  status: string
+  desc: string
   iconType: 'api' | 'upload' | 'storage'
   iconBg: string
   iconColor: string
@@ -231,154 +231,6 @@ export interface DomainKnowledgeResultStats {
   sourceFileCount: number
 }
 
-
-
-
-export interface OntologyStatistics {
-  knowledge_base_id: string
-  knowledge_base_name: string
-
-  last_update_time?: string | null
-  source_file_count: number
-  ontology_instance_count: number
-  ontology_relation_count: number
-
-  ontology_degraded?: boolean
-}
-
-
-export interface OntologyInstanceSummary {
-  name: string
-  display_name: string
-  description: string
-  status: string
-  build_status: string
-  instance_count: number
-  attributes: Array<{ name: string; display_name: string; type: string; description?: string }>
-}
-
-
-export interface RelationInstanceSummary {
-  name: string
-  display_name: string
-  description: string
-  source: string
-  target: string
-  source_display_name: string
-  target_display_name: string
-  cardinality: string
-  status: string
-  build_status: string
-  instance_count: number
-}
-
-
-export interface OntologyInstanceRow {
-  name: string
-  type: string
-  aliases: string[]
-  attributes: Record<string, unknown> | null
-  description: string
-  confidence: number | null
-  doc_ids: string[]
-}
-
-
-export interface OntologyInstanceListParams {
-  kbId: string
-  entityType?: string
-  keyword?: string
-  page: number
-  pageSize: number
-}
-
-
-export interface RelationInstanceRow {
-  source: string
-  source_type: string
-  relation_type: string
-  target: string
-  target_type: string
-  attributes: Record<string, unknown> | null
-  confidence: number | null
-}
-
-
-export interface RelationInstanceListParams {
-  kbId: string
-  relationType?: string
-  sourceName?: string
-  targetName?: string
-  sourceType?: string
-  targetType?: string
-  keyword?: string
-  page: number
-  pageSize: number
-}
-
-
-export interface OntologyGraphNode {
-  id: string
-  name: string
-  type: string
-  aliases: string[]
-  attributes: Record<string, unknown> | null
-  description: string
-  confidence: number | null
-  doc_ids: string[]
-}
-
-
-export interface OntologyGraphEdge {
-  source: string
-  source_type: string
-  target: string
-  target_type: string
-  label: string
-  confidence: number | null
-}
-
-
-export interface OntologyGraphData {
-  nodes: OntologyGraphNode[]
-  edges: OntologyGraphEdge[]
-
-  total_nodes: number
-
-  total_relations: number
-
-  type_counts: Record<string, number>
-
-  returned_nodes: number
-
-  returned_edges: number
-
-  truncated: boolean
-
-  limit: number
-
-  degraded?: boolean
-
-  degraded_reason?: string
-}
-
-
-export interface OntologyGraphParams {
-  limit?: number
-
-  entityTypes?: string[]
-}
-
-
-export interface OntologyNeighborData {
-  nodes: OntologyGraphNode[]
-  edges: OntologyGraphEdge[]
-
-  degraded?: boolean
-
-  degraded_reason?: string
-}
-
 export interface GraphSummary {
   entityTypeCount: number
   relationTotalCount: number
@@ -386,7 +238,7 @@ export interface GraphSummary {
   avgDegree: number
 }
 
-
+// ─── Manual Datasource Types ────────────────────────────
 
 export interface ManualDocItem {
   id: string
@@ -407,7 +259,7 @@ export interface ManualDocListParams {
   status?: string
 }
 
-
+// ─── Backend parse-result types (snake_case) ──────────────
 
 export interface BackendParseResultSummary {
   knowledge_base_id: string
@@ -455,253 +307,4 @@ export interface BackendPaginatedResult<T> {
   page_size: number
   scope_mode?: string
   scope_warning?: string
-}
-
-export type CompiledAttrType = 'string' | 'text' | 'number' | 'date' | 'enum' | 'boolean'
-export type CompiledRelationCardinality = 'one_to_one' | 'one_to_many' | 'many_to_one' | 'many_to_many' | 'custom'
-export type SchemaMode = 'template_seeded' | 'manual_edited'
-export type SchemaSyncStatus = 'synced' | 'outdated'
-
-export interface CompiledSchemaAttribute {
-  name: string
-  display_name: string
-  description?: string
-  type: CompiledAttrType
-  required: boolean
-  is_primary_key?: boolean
-  source_attribute_id?: string | null
-}
-
-export interface CompiledSchemaEntityType {
-  name: string
-  display_name: string
-  description?: string
-  requirement?: string
-  status?: 'active' | 'inactive'
-  aliases: string[]
-  source_object_id?: string | null
-  attributes: CompiledSchemaAttribute[]
-}
-
-export interface CompiledSchemaRelationType {
-  name: string
-  display_name: string
-  description?: string
-  status?: 'active' | 'inactive'
-  aliases: string[]
-  source: string
-  target: string
-  source_relation_id?: string | null
-  cardinality: CompiledRelationCardinality
-}
-
-export interface CompiledSchema {
-  id?: number
-  tenant_id?: string
-  knowledge_base_id?: string
-  template_domain_id?: string | null
-  template_scenario_id?: string | null
-  source_type?: string
-  source_version: number
-  source_hash?: string | null
-  schema_version: number
-  entity_types: CompiledSchemaEntityType[]
-  relation_types: CompiledSchemaRelationType[]
-  constraints: Record<string, unknown>[]
-  disambiguation: Record<string, unknown>
-  prompt_schema: Record<string, unknown>
-  status: string
-  schema_mode: SchemaMode
-  sync_status: SchemaSyncStatus
-  edited_at?: string | null
-  edited_by?: string | null
-  compiled_at?: string | null
-}
-
-export interface OntologyBinding {
-  id: number
-  tenant_id: string
-  knowledge_base_id: string
-  template_domain_id?: string | null
-  template_scenario_id?: string | null
-  source_type: string
-  status: string
-  created_at?: string | null
-  updated_at?: string | null
-}
-
-export interface OntologyTemplateSummary {
-  domain_id?: string | null
-  domain_name?: string | null
-  scenario_id?: string | null
-  scenario_name?: string | null
-  source_version?: number | null
-  source_hash?: string | null
-}
-
-export interface OntologyEditorState {
-  knowledge_base_id: string
-  binding?: OntologyBinding | null
-  compiled_schema?: CompiledSchema | null
-  current_template?: OntologyTemplateSummary | null
-}
-
-
-
-export type OntologyDefStatus = 'active' | 'inactive'
-
-export const ontologyStatusTextMap: Record<OntologyDefStatus, string> = {
-  active: 'status.active',
-  inactive: 'status.inactive',
-}
-
-export type OntologyAttrType = '字符串' | '数值' | '日期' | '枚举' | '文本' | '布尔'
-
-export interface OntologyAttribute {
-  id: string
-  name: string
-  description?: string
-  type: OntologyAttrType
-  isPrimaryKey: boolean
-}
-
-export interface OntologyObjectDef {
-  id: string
-  knowledgeBaseId: string
-  name: string
-  description: string
-  attributes: OntologyAttribute[]
-  requirement: string
-  status: OntologyDefStatus
-}
-
-export type OntologyRelationType = '一对一' | '一对多' | '多对一' | '多对多' | '自定义'
-
-export interface OntologyRelationDef {
-  id: string
-  knowledgeBaseId: string
-  sourceObject: string
-  name: string
-  targetObject: string
-  description: string
-  relationType: OntologyRelationType
-  status: OntologyDefStatus
-}
-
-export type CompileScope = 'single' | 'whole'
-export type CompileTrigger = 'upload' | 'update'
-
-export const compileScopeTextMap: Record<CompileScope, string> = {
-  single: 'ontology.singleDoc',
-  whole: 'ontology.wholeKb',
-}
-export const compileTriggerTextMap: Record<CompileTrigger, string> = {
-  upload: 'ontology.triggerOnUpload',
-  update: 'ontology.triggerOnUpdate',
-}
-
-export interface CompileStep {
-  id: string
-  knowledgeBaseId: string
-  order: number
-  name: string
-  prompt: string
-  skill: string
-  scope: CompileScope
-  trigger: CompileTrigger
-  template: string
-}
-
-export interface EngineSetting {
-  knowledgeBaseId: string
-  semanticModel: string
-}
-
-export type SaveOntologyObjectPayload = Omit<OntologyObjectDef, 'id' | 'knowledgeBaseId'>
-export type SaveOntologyRelationPayload = Omit<OntologyRelationDef, 'id' | 'knowledgeBaseId'>
-export type SaveCompileStepPayload = Omit<CompileStep, 'id' | 'knowledgeBaseId'>
-
-
-
-export type ConstraintTargetType = 'entity' | 'attribute' | 'relation'
-
-export const constraintTargetTypeTextMap: Record<ConstraintTargetType, string> = {
-  entity: 'ontology.entity',
-  attribute: 'ontology.attribute',
-  relation: 'ontology.relation',
-}
-
-export type ConstraintTypeCode = 'mutually_exclusive' | 'value_range' | 'unique' | 'required' | 'custom'
-
-export const constraintTypeTextMap: Record<ConstraintTypeCode, string> = {
-  mutually_exclusive: 'ontology.constraintMutuallyExclusive',
-  value_range: 'ontology.constraintValueRange',
-  unique: 'ontology.constraintUnique',
-  required: 'ontology.constraintRequired',
-  custom: 'ontology.custom',
-}
-
-export function normalizeConstraintType(value?: string | null): ConstraintTypeCode {
-  const aliases: Record<string, ConstraintTypeCode> = {
-    mutually_exclusive: 'mutually_exclusive',
-    '互斥': 'mutually_exclusive',
-    value_range: 'value_range',
-    '值域要求': 'value_range',
-    unique: 'unique',
-    '唯一': 'unique',
-    required: 'required',
-    '必填': 'required',
-    custom: 'custom',
-    '自定义': 'custom',
-  }
-  return aliases[value || ''] || 'custom'
-}
-
-
-export interface CompiledSchemaConstraint {
-  name: string
-  target_type: ConstraintTargetType
-  target_code: string
-  target_label?: string | null
-  constraint_type: ConstraintTypeCode
-  expression?: string
-  suggestion?: string
-}
-
-
-export interface OntologyConstraint {
-  id: string
-  name: string
-  targetType: ConstraintTargetType
-  targetCode: string
-  targetLabel?: string
-  constraintType: ConstraintTypeCode
-  expression?: string
-  suggestion?: string
-}
-
-export type SaveOntologyConstraintPayload = Omit<OntologyConstraint, 'id'>
-
-
-
-export interface SynonymGroup {
-  id: string
-  knowledgeBaseId: string
-  terms: string[]
-  canonical?: string | null
-  createdAt?: string | null
-  updatedAt?: string | null
-}
-
-export interface SynonymListResult {
-  items: SynonymGroup[]
-  total: number
-  page: number
-  pageSize: number
-}
-
-export interface SynonymImportResult {
-  created: number
-  skipped: number
-  failed: { index: number; reason: string }[]
 }

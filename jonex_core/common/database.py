@@ -1,11 +1,20 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+Jonex platform - Database connection module
 
-
+Based on SQLAlchemy 2.0 + asyncpg, supports:
+- Async database operations
+- Multi-tenant isolation
+- Connection pool management
+- Read/write separation (optional)
+- Automatic session management
+"""
 
 import json
 import logging
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from urllib.parse import quote
 
 from sqlalchemy.ext.asyncio import (
@@ -18,28 +27,27 @@ from sqlalchemy import event
 from sqlalchemy.exc import SQLAlchemyError
 
 from jonex_core.common.config import get_config
-from jonex_core.common.tenant import TenantContext
 
 logger = logging.getLogger(__name__)
 
-
+# ==================== Base configuration ====================
 _config = get_config()
 
-
+# Database connection URL
 _encoded_password = quote(_config.DB_PASSWORD.encode('utf-8'), safe='')
 SQLALCHEMY_DATABASE_URL = (
     f"postgresql+asyncpg://{_config.DB_USERNAME}:{_encoded_password}@"
     f"{_config.DB_HOST}:{_config.DB_PORT}/{_config.DB_NAME}"
 )
 
-
+# ==================== Lazy-loaded engine and session factory ====================
 _async_engine = None
 _async_session_factory = None
 _initialized = False
 
 
 def _initialize_engine():
-
+    """Initialize database engine (lazy loading)"""
     global _async_engine, _initialized
     if _async_engine is None:
         logger.info("Initializing database connection pool...")
@@ -59,13 +67,13 @@ def _initialize_engine():
 
 
 def _get_engine():
-
+    """Get database engine"""
     _initialize_engine()
     return _async_engine
 
 
 def _get_session_factory():
-
+    """Get async session factory"""
     global _async_session_factory
     if _async_session_factory is None:
         _async_session_factory = async_sessionmaker(
@@ -75,59 +83,95 @@ def _get_session_factory():
             autocommit=False,
             expire_on_commit=False,
         )
-
+        # Register event listeners
         _register_session_events(_async_session_factory)
     return _async_session_factory
 
 
 def _register_session_events(factory):
-
-
+    """Register session event listeners"""
+    # SQLAlchemy events need to be registered on the actual session class
     pass
 
 
-
+# Base model class
 Base = declarative_base()
 
 
-
+# Export for external use (compatible with old code, session will be created on invocation)
 def AsyncSessionLocal():
-
+    """Get async session instance (compatible with old code invocation pattern)"""
     factory = _get_session_factory()
     return factory()
 
 
+# ==================== Multi-tenant support ====================
+class TenantContext:
+    """Tenant context manager"""
+    _tenant_id: Optional[str] = None
 
+    @classmethod
+    def set(cls, tenant_id: str):
+        cls._tenant_id = tenant_id
+
+    @classmethod
+    def get(cls) -> Optional[str]:
+        return cls._tenant_id
+
+    @classmethod
+    def clear(cls):
+        cls._tenant_id = None
+
+
+# ==================== Database session retrieval ====================
 @asynccontextmanager
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Get database session (context manager)
 
+    Usage example:
+        async with get_db_session() as session:
+            result = await session.execute(query)
+    """
     factory = _get_session_factory()
     session = factory()
-    session.info["tenant_id"] = TenantContext.get()
     try:
         yield session
-        await session.commit()
+        if session.dirty or session.deleted or session.new:
+            await session.commit()
     except SQLAlchemyError as e:
         await session.rollback()
-        logger.error(f"Database operation failed; transaction rolled back: {str(e)}")
+        logger.error(f"Database operation exception, rolled back: {str(e)}")
         raise
     except Exception as e:
         await session.rollback()
-        logger.error(f"Unexpected error; transaction rolled back: {str(e)}")
+        logger.error(f"Unknown exception, rolled back: {str(e)}")
         raise
     finally:
         await session.close()
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncSession:
+    """
+    Database session retrieval for dependency injection
 
+    FastAPI Depends usage example:
+        @app.get("/items")
+        async def get_items(db: AsyncSession = Depends(get_db)):
+            ...
+    """
     async with get_db_session() as session:
         yield session
 
 
-
+# ==================== Database initialization ====================
 async def init_database(drop_existing: bool = False):
+    """
+    Initialize database table structure
 
+    Args:
+        drop_existing: Whether to drop existing tables first (only for development environment)
+    """
     engine = _get_engine()
 
     if drop_existing and _config.ENV != "production":
@@ -137,11 +181,11 @@ async def init_database(drop_existing: bool = False):
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("✅ Database schema initialized")
+    logger.info("✅ Database table structure initialization completed")
 
 
 async def close_database():
-
+    """Close database connection pool"""
     global _async_engine, _async_session_factory, _initialized
     if _async_engine is not None:
         await _async_engine.dispose()
@@ -151,9 +195,9 @@ async def close_database():
         logger.info("✅ Database connection pool closed")
 
 
-
+# ==================== Health check ====================
 async def check_db_health() -> bool:
-
+    """Check database connection health status"""
     try:
         async with get_db_session() as session:
             from sqlalchemy import text
@@ -164,9 +208,13 @@ async def check_db_health() -> bool:
         return False
 
 
-
+# ==================== Sync support (compatible with original code) ====================
 def get_sync_session():
+    """
+    Get sync session (for compatibility with old code, new code should use async version)
 
+    Note: Need to create sync engine, not implemented here yet
+    """
     raise NotImplementedError(
-        "同步数据库会话已废弃，请使用异步版本 get_db_session()"
+        "Sync database session has been deprecated, please use async version get_db_session()"
     )

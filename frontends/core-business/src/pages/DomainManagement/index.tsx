@@ -1,1006 +1,131 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Input, Button, Table, Tag, Modal, Space, message, Result, Spin } from 'antd'
-import {
-  PlusOutlined,
-  SearchOutlined,
-  ReloadOutlined,
-  GlobalOutlined,
-  TeamOutlined,
-  KeyOutlined,
-  PlusCircleOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  CopyOutlined,
-  CheckOutlined,
-  StopOutlined,
-  CloseOutlined,
-  UserAddOutlined,
-} from '@ant-design/icons'
-import { useSearchParams } from 'react-router-dom'
-import { observer } from 'mobx-react-lite'
-import { useStore } from '@/store'
-import { SPACE_URL_PARAM } from '@jonex/shell-sdk'
-import type { ColumnsType } from 'antd/es/table'
-import {
-  listServices, createService, updateService, deleteService,
-  listServiceApiKeys, createServiceApiKey, deleteServiceApiKey,
-  getServicePermissions, setServicePermissions,
-} from '../../api/domainService'
-import {
-  SERVICE_STATUS_MAP,
-  userToPermMember,
-  type DomainServiceItem,
-  type DomainServiceFormData,
-  type KnowledgeBaseOption,
-  type PermMember,
-  type ServiceApiKeyItem,
-} from '../../types/domainService'
-import { listUsers, type PlatformUser } from '../../api/user'
-import { getDomainKnowledgeList } from '../../api/domainKnowledge'
-import type { DomainSpace } from '../../types/domainSpace'
+import React, { useState } from 'react'
+import { Input, Select, Button, Card, Table, Tag, Modal, Space, message } from 'antd'
+import { PlusOutlined, SearchOutlined, SettingOutlined, KeyOutlined } from '@ant-design/icons'
 
-export default observer(function DomainManagement() {
-  const { t } = useTranslation('business')
-  const { global } = useStore()
-  const [searchParams, setSearchParams] = useSearchParams()
+const mockDomains = [
+  { name: '金融风控', space: '金融风控空间', kbs: ['金融产品知识库', '客户服务知识库'], status: '启用' },
+  { name: '医疗保险', space: '医疗健康空间', kbs: ['医学文献知识库'], status: '启用' },
+  { name: '智能生产', space: '智能制造空间', kbs: ['设备故障知识库'], status: '启用' },
+  { name: '在线教育', space: '教育培训空间', kbs: ['课程资源知识库'], status: '维护中' },
+  { name: '法律法规', space: '法律咨询空间', kbs: ['法律法规知识库', '合规文书知识库'], status: '启用' },
+  { name: '智能客服', space: '金融风控空间', kbs: ['客户服务知识库'], status: '已停用' },
+  { name: '质量检测', space: '智能制造空间', kbs: ['质量检测知识库'], status: '启用' },
+  { name: '合规审查', space: '法律咨询空间', kbs: ['法律法规知识库'], status: '启用' },
+]
 
-  const [services, setServices] = useState<DomainServiceItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+const allKbs = ['金融产品知识库', '医学文献知识库', '设备故障知识库', '课程资源知识库', '法律法规知识库', '客户服务知识库', '合规文书知识库', '质量检测知识库']
+
+const mockUsers = [
+  { name: '张明远', dept: '系统管理员', avatar: '张', bg: '#3b82f6' },
+  { name: '李思雨', dept: '金融风控部 · 分析师', avatar: '李', bg: '#10b981' },
+  { name: '王浩', dept: '风险管理部 · 经理', avatar: '王', bg: '#8b5cf6' },
+  { name: '陈雪', dept: '合规审查部 · 专员', avatar: '陈', bg: '#f97316' },
+  { name: '赵一鸣', dept: '信息技术部 · 开发工程师', avatar: '赵', bg: '#ec4899' },
+]
+
+const srvList = [
+  { name: '智能问答服务', type: '推理服务', key: 'sk-qa-************a3f2', endpoint: 'https://api.domain.com/qa', status: '启用' },
+  { name: '知识检索服务', type: '检索服务', key: 'sk-search-********b7e1', endpoint: 'https://api.domain.com/search', status: '启用' },
+  { name: '数据统计分析', type: '分析服务', key: 'sk-analytics-****d4f0', endpoint: 'https://api.domain.com/analytics', status: '启用' },
+  { name: '批量处理服务', type: '处理服务', key: 'sk-batch-********c9a2', endpoint: 'https://api.domain.com/batch', status: '已暂停' },
+  { name: '实时监控服务', type: '监控服务', key: 'sk-monitor-****e5b7', endpoint: 'https://api.domain.com/monitor', status: '启用' },
+]
+
+export default function DomainManagement() {
   const [search, setSearch] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-
-  const [formOpen, setFormOpen] = useState(false)
-  const [editing, setEditing] = useState<DomainServiceItem | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<DomainServiceItem | null>(null)
-
-
-  const [formName, setFormName] = useState('')
-  const [formSpaceId, setFormSpaceId] = useState('')
-  const [formStatus, setFormStatus] = useState(true)
-  const [formKbIds, setFormKbIds] = useState<string[]>([])
-
-
+  const [spaceFilter, setSpaceFilter] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const [permOpen, setPermOpen] = useState(false)
-  const [permTarget, setPermTarget] = useState<DomainServiceItem | null>(null)
-  const [permSearch, setPermSearch] = useState('')
-  const [permMembers, setPermMembers] = useState<PermMember[]>([])
-  const [permLoading, setPermLoading] = useState(false)
-  const [permSaving, setPermSaving] = useState(false)
+  const [srvOpen, setSrvOpen] = useState(false)
+  const [currentDomain, setCurrentDomain] = useState<any>(null)
 
-
-  const [userSelectOpen, setUserSelectOpen] = useState(false)
-  const [userSearchText, setUserSearchText] = useState('')
-  const [availableUsers, setAvailableUsers] = useState<PlatformUser[]>([])
-  const [usersLoading, setUsersLoading] = useState(false)
-  const userSelectRef = useRef<HTMLDivElement>(null)
-
-
-  const [srvConfigOpen, setSrvConfigOpen] = useState(false)
-  const [srvConfigTarget, setSrvConfigTarget] = useState<DomainServiceItem | null>(null)
-  const [apiKeys, setApiKeys] = useState<ServiceApiKeyItem[]>([])
-  const [apiKeysLoading, setApiKeysLoading] = useState(false)
-  const [creatingKey, setCreatingKey] = useState(false)
-  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null)
-
-  const spaceMap = new Map(global.spaces.map((s) => [s.id, s.name]))
-
-  const kbNameMap = new Map<string, string>()
-  services.forEach((s) => {
-    s.kb_ids?.forEach((kid, i) => {
-      if (!kbNameMap.has(kid) && s.kb_names?.[i]) {
-        kbNameMap.set(kid, s.kb_names[i])
-      }
-    })
-  })
-
-
-  const loadServices = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await listServices(global.currentSpaceId || undefined, 0, 100)
-      setServices(result.items)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('domainService.loadFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    global.loadSpaces()
-  }, [])
-
-
-  useEffect(() => {
-    const urlSpaceId = searchParams.get(SPACE_URL_PARAM)
-    if (urlSpaceId && global.spaces.some((s) => s.id === urlSpaceId)) {
-      global.setCurrentSpaceId(urlSpaceId, { persist: true, broadcast: false })
-    }
-  }, [])
-
-
-  useEffect(() => {
-    if (global.spacesLoaded) {
-      loadServices()
-      const urlSpaceId = searchParams.get(SPACE_URL_PARAM)
-      if (global.currentSpaceId && global.currentSpaceId !== urlSpaceId) {
-        setSearchParams(
-          (prev) => {
-            const next = new URLSearchParams(prev)
-            next.set(SPACE_URL_PARAM, global.currentSpaceId!)
-            return next
-          },
-          { replace: true },
-        )
-      }
-    }
-  }, [global.currentSpaceId, global.spacesLoaded])
-
-
-  useEffect(() => {
-    if (!userSelectOpen) return
-    const handler = (e: MouseEvent) => {
-      if (userSelectRef.current && !userSelectRef.current.contains(e.target as Node)) {
-        setUserSelectOpen(false)
-        setUserSearchText('')
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [userSelectOpen])
-
-
-  const filtered = services.filter((s) => {
-    if (search && !s.name.includes(search) && !(s.description || '').includes(search)) return false
-    return true
-  })
-
-
-  const openCreate = () => {
-    setEditing(null)
-    setFormName('')
-    setFormSpaceId('')
-    setFormStatus(true)
-    setFormKbIds([])
-    setFormOpen(true)
-  }
-
-  const openEdit = (item: DomainServiceItem) => {
-    setEditing(item)
-    setFormName(item.name)
-    setFormSpaceId(item.space_id)
-    setFormStatus(item.status === 'active')
-    setFormKbIds(item.kb_ids || [])
-    setFormOpen(true)
-  }
-
-  const handleSave = async () => {
-    if (!formName.trim()) { message.warning(t('domainService.nameRequired')); return }
-    if (!formSpaceId) { message.warning(t('domainService.spaceRequired')); return }
-    setSubmitting(true)
-    try {
-      const data: DomainServiceFormData = {
-        name: formName.trim(),
-        space_id: formSpaceId,
-        status: formStatus ? 'active' : 'inactive',
-        kb_ids: formKbIds,
-      }
-      if (editing) {
-        await updateService(editing.id, data)
-        message.success(t('domainService.updateSuccess'))
-      } else {
-        await createService(data)
-        message.success(t('domainService.createSuccess'))
-      }
-      setFormOpen(false)
-      await loadServices()
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('common.saveFailed'))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return
-    setSubmitting(true)
-    try {
-      await deleteService(deleteTarget.id)
-      message.success(t('domainService.deleteSuccess'))
-      setDeleteTarget(null)
-      await loadServices()
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('common.deleteFailed'))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const toggleServiceStatus = async (item: DomainServiceItem) => {
-    const newStatus = item.status === 'active' ? 'inactive' : 'active'
-    try {
-      await updateService(item.id, { status: newStatus })
-      setServices((prev) =>
-        prev.map((s) => (s.id === item.id ? { ...s, status: newStatus } : s)),
-      )
-      message.success(newStatus === 'active' ? t('status.enabled') : t('status.disabled'))
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('common.operationFailed'))
-    }
-  }
-
-
-  const openPermModal = async (item: DomainServiceItem) => {
-    setPermTarget(item)
-    setPermSearch('')
-    setPermOpen(true)
-    setPermLoading(true)
-    setUserSelectOpen(false)
-    setUserSearchText('')
-    try {
-      const result = await getServicePermissions(item.id)
-      const perms = result?.permissions ?? []
-      if (Array.isArray(perms) && perms.length > 0) {
-
-        let userMap: Map<string, PlatformUser> = new Map()
-        try {
-          const userResult = await listUsers(1, 100)
-          for (const u of userResult.items) {
-            userMap.set(String(u.id), u)
-          }
-        } catch {   }
-        const members: PermMember[] = perms.map((p) => {
-          const uid = String(p.user_id)
-          const user = userMap.get(uid)
-          return user
-            ? userToPermMember(user, (p.role === 'manager' ? 'manager' : 'viewer'))
-            : {
-                id: uid,
-                name: t('domainService.unknownUser', { id: uid.slice(0, 8) }),
-                department: '',
-                avatar: uid.charAt(0).toUpperCase(),
-                avatarColor: '#94a3b8',
-                role: (p.role === 'manager' ? 'manager' : 'viewer') as 'viewer' | 'manager',
-              }
-        })
-        setPermMembers(members)
-      } else {
-        setPermMembers([])
-      }
-    } catch {
-      setPermMembers([])
-    } finally {
-      setPermLoading(false)
-    }
-  }
-
-  const handlePermSave = async () => {
-    if (!permTarget) return
-    setPermSaving(true)
-    try {
-      const permissions = permMembers.map((m) => ({
-        user_id: m.id,
-        role: m.role,
-      }))
-      await setServicePermissions(permTarget.id, permissions)
-      message.success(t('permission.saveSuccess'))
-      setPermOpen(false)
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('common.saveFailed'))
-    } finally {
-      setPermSaving(false)
-    }
-  }
-
-  const loadAvailableUsers = useCallback(async () => {
-    setUsersLoading(true)
-    try {
-      const result = await listUsers(1, 100)
-      setAvailableUsers(result.items)
-    } catch {
-      setAvailableUsers([])
-    } finally {
-      setUsersLoading(false)
-    }
-  }, [])
-
-  const addPermMember = (user: PlatformUser) => {
-    setPermMembers((prev) => {
-      if (prev.some((m) => m.id === String(user.id))) return prev
-      return [...prev, userToPermMember(user, 'viewer')]
-    })
-  }
-
-  const removePermMember = (userId: string) => {
-    setPermMembers((prev) => prev.filter((m) => m.id !== userId))
-  }
-
-  const filteredPermMembers = permMembers.filter((m) => {
-    if (!permSearch) return true
-    return m.name.includes(permSearch) || m.department.includes(permSearch)
-  })
-
-
-  const addedUserIds = new Set(permMembers.map((m) => m.id))
-  const filteredAvailableUsers = availableUsers.filter((u) => {
-    if (!userSearchText) return !addedUserIds.has(String(u.id))
-    const q = userSearchText.toLowerCase()
-    return (
-      !addedUserIds.has(String(u.id)) &&
-      ((u.display_name || '').toLowerCase().includes(q) ||
-        u.username.toLowerCase().includes(q) ||
-        (u.email || '').toLowerCase().includes(q))
-    )
-  })
-
-
-  const openSrvConfig = async (item: DomainServiceItem) => {
-    setSrvConfigTarget(item)
-    setCopiedKeyId(null)
-    setSrvConfigOpen(true)
-    setApiKeysLoading(true)
-    try {
-      const result = await listServiceApiKeys(item.id)
-      setApiKeys(result.items || [])
-    } catch {
-      setApiKeys([])
-    } finally {
-      setApiKeysLoading(false)
-    }
-  }
-
-  const handleCopyKey = async (keyId: string, key: string) => {
-    try {
-      await navigator.clipboard.writeText(key)
-      setCopiedKeyId(keyId)
-      setTimeout(() => setCopiedKeyId(null), 2000)
-    } catch {
-      const ta = document.createElement('textarea')
-      ta.value = key
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-      setCopiedKeyId(keyId)
-      setTimeout(() => setCopiedKeyId(null), 2000)
-    }
-  }
-
-  const handleCreateKey = async () => {
-    if (!srvConfigTarget) return
-    setCreatingKey(true)
-    try {
-      const newKey = await createServiceApiKey(srvConfigTarget.id, { expires_in_days: 365 })
-      setApiKeys((prev) => [newKey, ...prev])
-      message.success(t('domainService.apiKeyCreated'))
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('common.createFailed'))
-    } finally {
-      setCreatingKey(false)
-    }
-  }
-
-  const handleDeleteKey = async (keyId: string) => {
-    if (!srvConfigTarget) return
-    Modal.confirm({
-      title: t('domainService.deleteApiKeyTitle'),
-      content: t('domainService.deleteApiKeyConfirm'),
-      okText: t('domainService.confirmDelete'),
-      okType: 'danger',
-      cancelText: t('domainService.cancel'),
-      onOk: async () => {
-        await deleteServiceApiKey(srvConfigTarget.id, keyId)
-        setApiKeys((prev) => prev.filter((k) => k.id !== keyId))
-        message.success(t('domainService.apiKeyDeleted'))
-      },
-    })
-  }
-
-  const formatDate = (dateStr: string | null): string => {
-    if (!dateStr) return '—'
-    try {
-      return new Date(dateStr).toISOString().slice(0, 10)
-    } catch {
-      return dateStr
-    }
-  }
-
-
-  const [availableKbs, setAvailableKbs] = useState<KnowledgeBaseOption[]>([])
-
-  useEffect(() => {
-
-    getDomainKnowledgeList({ page: 1, pageSize: 100 })
-      .then((result) => {
-        if (result.list && result.list.length > 0) {
-          setAvailableKbs(result.list.map((kb) => ({ id: kb.id, name: kb.name })))
-        }
-      })
-      .catch(() => {   })
-  }, [])
-  const toggleKb = (kbId: string) => {
-    setFormKbIds((prev) =>
-      prev.includes(kbId) ? prev.filter((id) => id !== kbId) : [...prev, kbId],
-    )
-  }
-
-
-  const columns: ColumnsType<DomainServiceItem> = [
-    {
-      title: t('domainService.serviceName'),
-      dataIndex: 'name',
-      key: 'name',
-      width: 140,
-      render: (v: string) => (
-        <span
-          className="yx-domain-name"
-          onClick={() => { }}
-        >
-          {v}
-        </span>
-      ),
-    },
-    {
-      title: t('domainService.space'),
-      dataIndex: 'space_id',
-      key: 'space',
-      width: 140,
-      render: (id: string) => spaceMap.get(id) || id,
-    },
-    {
-      title: t('domainService.relatedKnowledgeBases'),
-      key: 'kbs',
-      width: 240,
-      render: (_: unknown, r: DomainServiceItem) => (
-        <div className="yx-kb-tags">
-          {r.kb_ids && r.kb_ids.length > 0
-            ? r.kb_ids.map((kbId) => (
-                <span key={kbId} className="yx-kb-tag">
-                  {kbNameMap.get(kbId) || kbId}
-                </span>
-              ))
-            : <span className="yx-kb-tag">—</span>}
-        </div>
-      ),
-    },
-
-
-
-
-
-
-
-
-
-
-
-
-    {
-      title: t('domainService.status'),
-      dataIndex: 'status',
-      key: 'status',
-      width: 90,
-      render: (v: string, r: DomainServiceItem) => {
-        const cfg = SERVICE_STATUS_MAP[v]
-        if (!cfg) return <Tag>{v}</Tag>
-        return (
-          <Tag
-            color={v === 'active' ? 'success' : v === 'testing' ? 'warning' : 'error'}
-            style={{ cursor: 'pointer' }}
-            onClick={() => toggleServiceStatus(r)}
-          >
-            {t(cfg.label)}
-          </Tag>
-        )
-      },
-    },
-    {
-      title: t('domainService.actions'),
-      key: 'actions',
-      width: 240,
-      render: (_: unknown, r: DomainServiceItem) => {
-        const isActive = r.status === 'active'
-        return (
-          <Space>
-            <a
-              className="yx-table-action"
-              onClick={() => toggleServiceStatus(r)}
-            >
-              {t(isActive ? 'domainService.deactivate' : 'domainService.activate')}
-            </a>
-            { }
-            {
-
-}
-            <a className="yx-table-action" onClick={() => openEdit(r)}>
-              {t('domainService.edit')}
-            </a>
-            <a
-              className="yx-table-action"
-              style={{ color: '#dc2626' }}
-              onClick={() => setDeleteTarget(r)}
-            >
-              {t('domainService.delete')}
-            </a>
-          </Space>
-        )
-      },
-    },
+  const columns = [
+    { title: '领域服务名称', dataIndex: 'name', key: 'name', width: 140, render: (v: string) => <a className="yx-table-action">{v}</a> },
+    { title: '所属空间', dataIndex: 'space', key: 'space', width: 140 },
+    { title: '关联知识库', dataIndex: 'kbs', key: 'kbs', width: 220, render: (v: string[]) => (
+      <Space size={4} wrap>{v.map((k) => <Tag key={k} style={{ fontSize: 11, background: '#f1f5f9', color: '#64748b', border: 'none' }}>{k}</Tag>)}</Space>
+    )},
+    { title: '权限设置', key: 'perm', width: 100, render: (_: any, r: any) => (
+      <Button type="link" size="small" onClick={() => { setCurrentDomain(r); setPermOpen(true) }}><SettingOutlined /> 设置权限</Button>
+    )},
+    { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (v: string) => <Tag color={v === '启用' ? 'success' : v === '维护中' ? 'warning' : 'error'}>{v}</Tag> },
+    { title: '操作', key: 'actions', width: 180, render: (_: any, r: any) => (
+      <Space>
+        <a className="yx-table-action" onClick={() => { setCurrentDomain(r); setSrvOpen(true) }}><KeyOutlined /> 服务配置</a>
+        <a className="yx-table-action" onClick={() => { setCurrentDomain(r); setEditOpen(true) }}>编辑</a>
+        <a className="yx-table-action" onClick={() => { message.success(`已删除 ${r.name}`) }}>删除</a>
+      </Space>
+    )},
   ]
 
+  const filtered = mockDomains.filter((d) =>
+    (!spaceFilter || d.space === spaceFilter) && d.name.includes(search)
+  )
 
-  if (loading && services.length === 0) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
-        <Spin size="large" />
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <Result
-        status="error"
-        title={t('domainService.loadFailed')}
-        subTitle={error}
-        extra={
-          <Button type="primary" icon={<ReloadOutlined />} onClick={() => loadServices()}>
-            {t('domainService.retry')}
-          </Button>
-        }
-      />
-    )
-  }
-
-  const spaceOptions = global.spaces.filter((s: DomainSpace) => s.status === 'active')
+  const spaces = [...new Set(mockDomains.map((d) => d.space))]
 
   return (
-    <div className="yx-domain-management-page">
-      { }
-      <div className="yx-page-header">
-        <h1 className="yx-page-title">{t('domainService.title')}</h1>
-        <p className="yx-page-desc">
-          {t('domainService.pageDescription')}
-        </p>
+    <div>
+      <div className="yx-page-title">
+        <h1>领域服务管理</h1>
+        <p style={{ fontSize: 14, color: '#64748b', marginTop: 6 }}>管理各领域空间下的业务领域，每个领域必属于某个领域空间，并可关联一个或多个知识库</p>
       </div>
 
-      { }
-      <div className="yx-filter-row">
-        <label>
-          <GlobalOutlined style={{ color: '#3b82f6' }} /> {t('domainService.space')}:
-        </label>
-        <select
-          className="yx-filter-select"
-          disabled
-          value={global.currentSpaceId || ''}
-        >
-          <option value="">{t('domainService.allSpaces')}</option>
-          {spaceOptions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <span className="yx-filter-count">{t('domainService.domainCount', { count: filtered.length })}</span>
+      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Select placeholder="全部空间" allowClear value={spaceFilter || undefined} onChange={(v) => setSpaceFilter(v || '')} style={{ width: 180 }}
+          options={spaces.map((s) => ({ value: s, label: s }))} />
+        <span style={{ fontSize: 13, color: '#94a3b8' }}>共 {filtered.length} 个领域</span>
       </div>
 
-      { }
-      <div className="yx-card">
+      <Card className="yx-card">
         <div className="yx-toolbar">
-          <div className="yx-search-box">
-            <SearchOutlined style={{ color: '#94a3b8', fontSize: 14 }} />
-            <input
-              type="text"
-              placeholder={t('domainService.searchPlaceholder')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            {t('domainService.create')}
-          </Button>
+          <Input prefix={<SearchOutlined />} placeholder="搜索领域服务名称..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 240 }} />
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setCurrentDomain(null); setCreateOpen(true) }}>新建领域服务</Button>
         </div>
+        <Table columns={columns} dataSource={filtered} rowKey="name" pagination={{ total: 8, pageSize: 8 }} size="middle" />
+      </Card>
 
-        <Table<DomainServiceItem>
-          columns={columns}
-          dataSource={filtered}
-          rowKey="id"
-          pagination={{
-            total: filtered.length,
-            pageSize: 10,
-            showTotal: (total, range) => t('domainService.totalRange', { total, start: range[0], end: range[1] }),
-          }}
-          size="middle"
-          locale={{ emptyText: t('domainService.empty') }}
-        />
-      </div>
-
-      { }
-      <Modal
-        wrapClassName="yx-domain-space-modal"
-        title={
-          <span>
-            {editing ? (
-              <EditOutlined style={{ color: '#3b82f6', marginRight: 8 }} />
-            ) : (
-              <PlusCircleOutlined style={{ color: '#3b82f6', marginRight: 8 }} />
-            )}
-            {t(editing ? 'domainService.edit' : 'domainService.create')}
-          </span>
-        }
-        open={formOpen}
-        onCancel={() => setFormOpen(false)}
-        onOk={handleSave}
-        confirmLoading={submitting}
-        okText={t(editing ? 'domainService.save' : 'domainService.createAction')}
-        cancelText={t('domainService.cancel')}
-        width={600}
-        destroyOnHidden
-      >
-        <div className="yx-form-row">
-          <label>
-            {t('domainService.name')} <span style={{ color: '#ef4444' }}>*</span>
-          </label>
-          <input
-            type="text"
-            className="yx-form-input"
-            placeholder={t('domainService.namePlaceholder')}
-            value={formName}
-            onChange={(e) => setFormName(e.target.value)}
-          />
+      <Modal title={currentDomain ? '编辑领域' : '新建领域服务'} open={createOpen || editOpen} onCancel={() => { setCreateOpen(false); setEditOpen(false) }} onOk={() => { message.success(currentDomain ? '保存成功' : '创建成功'); setCreateOpen(false); setEditOpen(false) }} width={600}>
+        <div className="yx-form-row"><label>领域名称 <span style={{ color: '#ef4444' }}>*</span></label><Input defaultValue={currentDomain?.name || ''} /></div>
+        <div className="yx-form-row"><label>所属空间 <span style={{ color: '#ef4444' }}>*</span></label>
+          <Select defaultValue={currentDomain?.space} style={{ width: '100%' }} options={spaces.map((s) => ({ value: s, label: s }))} />
         </div>
         <div className="yx-form-row">
-          <label>
-            {t('domainService.space')} <span style={{ color: '#ef4444' }}>*</span>
-          </label>
-          <select
-            className="yx-form-select"
-            value={formSpaceId}
-            onChange={(e) => setFormSpaceId(e.target.value)}
-          >
-            <option value="">{t('domainService.selectSpace')}</option>
-            {spaceOptions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="yx-form-row">
-          <label>{t('domainService.relatedKnowledgeBases')}</label>
-          <div className="yx-kb-check-list">
-            {availableKbs.map((kb) => (
-              <label key={kb.id} className="yx-kb-check-item">
-                <input
-                  type="checkbox"
-                  checked={formKbIds.includes(kb.id)}
-                  onChange={() => toggleKb(kb.id)}
-                />
-                {kb.name}
-              </label>
-            ))}
+          <label>关联知识库</label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {allKbs.map((k) => <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6, border: '1px solid #eef2f6', fontSize: 13, color: '#475569', cursor: 'pointer' }}><input type="checkbox" defaultChecked={currentDomain?.kbs?.includes(k)} />{k}</label>)}
           </div>
-          <div className="yx-form-hint">
-            {t('domainService.relatedKnowledgeBasesHint')}
-          </div>
-        </div>
-        <div className="yx-form-row">
-          <label>{t('domainService.status')}</label>
-          <div className="yx-switch-wrap">
-            <label className="yx-switch-label">
-              <input
-                type="checkbox"
-                checked={formStatus}
-                onChange={(e) => setFormStatus(e.target.checked)}
-              />
-              <span className="yx-switch-slider" />
-            </label>
-            <span className="yx-switch-text">{t(formStatus ? 'domainService.enabled' : 'domainService.disabled')}</span>
-          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>选择该领域需要关联的知识库，可多选</div>
         </div>
       </Modal>
 
-      { }
-      <Modal
-        wrapClassName="yx-domain-space-modal"
-        title={
-          <span>
-            <StopOutlined style={{ color: '#ef4444', marginRight: 8 }} />
-            {t('domainService.confirmDelete')}
-          </span>
-        }
-        open={!!deleteTarget}
-        onCancel={() => setDeleteTarget(null)}
-        footer={
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 12 }}>
-            <Button onClick={() => setDeleteTarget(null)}>{t('domainService.cancel')}</Button>
-            <Button
-              danger
-              type="primary"
-              loading={submitting}
-              onClick={handleDelete}
-            >
-              {t('domainService.confirmDelete')}
-            </Button>
+      <Modal title="领域权限设置" open={permOpen} onCancel={() => setPermOpen(false)} onOk={() => { message.success('权限保存成功'); setPermOpen(false) }} width={600}>
+        <p style={{ fontSize: 14, color: '#475569', marginBottom: 16 }}>为领域 <strong style={{ color: '#0b2b5c' }}>{currentDomain?.name}</strong> 添加成员并设置权限</p>
+        <Input prefix={<SearchOutlined />} placeholder="搜索用户或角色..." style={{ marginBottom: 12 }} />
+        {mockUsers.map((u, i) => (
+          <div key={u.name} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #eef2f6', marginBottom: 8 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: u.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: '#fff', flexShrink: 0 }}>{u.avatar}</div>
+            <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div><div style={{ fontSize: 12, color: '#94a3b8' }}>{u.dept}</div></div>
+            <Select defaultValue={i === 2 || i === 4 ? '管理' : '查看'} style={{ width: 100 }} options={[{ value: '查看', label: '查看' }, { value: '管理', label: '管理' }]} />
           </div>
-        }
-        width={420}
-      >
-        <div style={{ textAlign: 'center', padding: '12px 0' }}>
-          <DeleteOutlined style={{ fontSize: 48, color: '#ef4444', marginBottom: 16, display: 'block' }} />
-          <p style={{ fontSize: 16, color: '#1e293b', fontWeight: 500 }}>
-            {t('domainService.deleteConfirm', { name: deleteTarget?.name ?? '' })}
-          </p>
-          <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 8 }}>
-            {t('domainService.deleteWarning')}
-          </p>
-        </div>
+        ))}
       </Modal>
 
-      { }
-      <Modal
-        wrapClassName="yx-domain-space-modal"
-        title={
-          <span>
-            <TeamOutlined style={{ color: '#3b82f6', marginRight: 8 }} />
-            {t('domainService.permissionTitle')}
-          </span>
-        }
-        open={permOpen}
-        onCancel={() => { setPermOpen(false); setUserSelectOpen(false) }}
-        onOk={handlePermSave}
-        confirmLoading={permSaving}
-        okText={t('domainService.savePermission')}
-        cancelText={t('domainService.cancel')}
-        width={600}
-      >
-        <p style={{ fontSize: 14, color: '#475569', marginBottom: 12 }}>
-          {t('domainService.permissionDescription', { name: permTarget?.name ?? '' })}
-        </p>
-
-        { }
-        <div ref={userSelectRef} style={{ position: 'relative', marginBottom: 12 }}>
-          <Button
-            icon={<UserAddOutlined />}
-            onClick={() => {
-              const willOpen = !userSelectOpen
-              setUserSelectOpen(willOpen)
-              setUserSearchText('')
-              if (willOpen && availableUsers.length === 0) loadAvailableUsers()
-            }}
-            style={{ marginBottom: userSelectOpen ? 8 : 0 }}
-          >
-            {t('domainService.addMember')}
-          </Button>
-          {userSelectOpen && (
-            <div
-              style={{
-                position: 'absolute', top: 38, left: 0, zIndex: 10,
-                width: 320, background: '#fff', borderRadius: 8,
-                boxShadow: '0 4px 20px rgba(0,0,0,.12)', border: '1px solid #e2e8f0',
-                overflow: 'hidden',
-              }}
-            >
-              <div style={{ padding: '8px 12px', borderBottom: '1px solid #e2e8f0' }}>
-                <Input
-                  size="small"
-                  placeholder={t('domainService.searchUsers')}
-                  prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
-                  value={userSearchText}
-                  onChange={(e) => setUserSearchText(e.target.value)}
-                  allowClear
-                />
-              </div>
-              <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-                {usersLoading ? (
-                  <div style={{ textAlign: 'center', padding: 20 }}><Spin size="small" /></div>
-                ) : filteredAvailableUsers.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>
-                    {t(userSearchText ? 'domainService.noMatchingUsers' : 'domainService.noAvailableUsers')}
-                  </div>
-                ) : (
-                  filteredAvailableUsers.slice(0, 30).map((user) => (
-                    <div
-                      key={user.id}
-                      className="yx-perm-user-row"
-                      style={{ cursor: 'pointer', padding: '8px 12px' }}
-                      onClick={() => { addPermMember(user); setUserSearchText('') }}
-                    >
-                      <div
-                        className="yx-perm-avatar"
-                        style={{ background: userToPermMember(user).avatarColor }}
-                      >
-                        {userToPermMember(user).avatar}
-                      </div>
-                      <div className="yx-perm-user-info" style={{ flex: 1 }}>
-                        <div className="yx-perm-user-name">
-                          {user.display_name || user.username}
-                        </div>
-                        <div className="yx-perm-user-dept">
-                          {user.email || user.role || ''}
-                        </div>
-                      </div>
-                      <span style={{ fontSize: 20, color: '#3b82f6', lineHeight: 1 }}>+</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        { }
-        <div className="yx-search-box" style={{ width: '100%', marginBottom: 12 }}>
-          <SearchOutlined style={{ color: '#94a3b8', fontSize: 14 }} />
-          <input
-            type="text"
-            placeholder={t('domainService.searchAddedMembers')}
-            value={permSearch}
-            onChange={(e) => setPermSearch(e.target.value)}
-            style={{ width: '100%' }}
-          />
-        </div>
-
-        { }
-        <div style={{ maxHeight: 280, overflowY: 'auto' }}>
-          {permLoading ? (
-            <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
-          ) : filteredPermMembers.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 24, color: '#94a3b8', fontSize: 13 }}>
-              {t(permSearch ? 'domainService.noMatchingMembers' : 'domainService.noPermissionMembers')}
-            </div>
-          ) : (
-            filteredPermMembers.map((member) => (
-              <div key={member.id} className="yx-perm-user-row">
-                <div className="yx-perm-avatar" style={{ background: member.avatarColor }}>
-                  {member.avatar}
-                </div>
-                <div className="yx-perm-user-info" style={{ flex: 1 }}>
-                  <div className="yx-perm-user-name">{member.name}</div>
-                  <div className="yx-perm-user-dept">{member.department || `ID: ${member.id.slice(0, 8)}`}</div>
-                </div>
-                <div className="yx-perm-radio">
-                  <label
-                    className={`yx-perm-radio-label${member.role === 'viewer' ? ' is-checked' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name={`perm-${member.id}`}
-                      value="viewer"
-                      checked={member.role === 'viewer'}
-                      onChange={() => {
-                        setPermMembers((prev) =>
-                          prev.map((m) => (m.id === member.id ? { ...m, role: 'viewer' as const } : m)),
-                        )
-                      }}
-                    />
-                    {t('domainService.viewer')}
-                  </label>
-                  <label
-                    className={`yx-perm-radio-label${member.role === 'manager' ? ' is-checked' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name={`perm-${member.id}`}
-                      value="manager"
-                      checked={member.role === 'manager'}
-                      onChange={() => {
-                        setPermMembers((prev) =>
-                          prev.map((m) => (m.id === member.id ? { ...m, role: 'manager' as const } : m)),
-                        )
-                      }}
-                    />
-                    {t('domainService.manager')}
-                  </label>
-                </div>
-                <button
-                  type="button"
-                  className="yx-perm-remove-btn"
-                  onClick={() => removePermMember(member.id)}
-                  title={t('domainService.removeMember')}
-                  style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: '#94a3b8', fontSize: 16, padding: '0 0 0 8px',
-                    lineHeight: 1,
-                  }}
-                >
-                  <CloseOutlined />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </Modal>
-
-      { }
-      <Modal
-        wrapClassName="yx-domain-space-modal"
-        title={
-          <span>
-            <KeyOutlined style={{ color: '#f97316', marginRight: 8 }} />
-            {t('domainService.serviceConfig')}
-          </span>
-        }
-        open={srvConfigOpen}
-        onCancel={() => setSrvConfigOpen(false)}
-        footer={
-          <Button onClick={() => setSrvConfigOpen(false)}>{t('domainService.close')}</Button>
-        }
-        width={760}
-      >
-        <p style={{ fontSize: 14, color: '#475569', marginBottom: 16 }}>
-          {t('domainService.apiKeyDescription', { name: srvConfigTarget?.name ?? '' })}
-        </p>
+      <Modal title="服务配置" open={srvOpen} onCancel={() => setSrvOpen(false)} onOk={() => { message.success('配置保存成功'); setSrvOpen(false) }} width={720}>
+        <p style={{ fontSize: 14, color: '#475569', marginBottom: 16 }}>领域 <strong style={{ color: '#0b2b5c' }}>{currentDomain?.name}</strong> 的服务与 API Key 管理</p>
         <div style={{ textAlign: 'right', marginBottom: 12 }}>
-          <Button
-            type="primary"
-            size="small"
-            icon={<PlusOutlined />}
-            loading={creatingKey}
-            onClick={handleCreateKey}
-          >
-            {t('domainService.addApiKey')}
-          </Button>
+          <Button type="primary" size="small" icon={<PlusOutlined />}>新建服务</Button>
         </div>
-        {apiKeysLoading ? (
-          <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
-        ) : (
-          <table className="yx-srv-table">
-            <thead>
-              <tr>
-                <th style={{ minWidth: 240 }}>API Key</th>
-                <th>{t('domainService.expiresAt')}</th>
-                <th>{t('domainService.actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {apiKeys.length === 0 ? (
-                <tr>
-                  <td colSpan={3} style={{ textAlign: 'center', color: '#94a3b8', padding: 24 }}>
-                    {t('domainService.emptyApiKeys')}
-                  </td>
-                </tr>
-              ) : (
-                apiKeys.map((key) => (
-                  <tr key={key.id}>
-                    <td>
-                      <span className="yx-key-text">
-                        {key.key_encrypted || '—'}
-                      </span>
-                      {key.key_encrypted && (
-                        <button
-                          className={`yx-copy-btn${copiedKeyId === key.id ? ' copied' : ''}`}
-                          title={t(copiedKeyId === key.id ? 'domainService.copied' : 'domainService.copyApiKey')}
-                          onClick={() => handleCopyKey(key.id, key.key_encrypted)}
-                        >
-                          {copiedKeyId === key.id ? <CheckOutlined /> : <CopyOutlined />}
-                        </button>
-                      )}
-                    </td>
-                    <td>{formatDate(key.expires_at)}</td>
-                    <td>
-                      <div className="yx-srv-actions">
-                        <button
-                          className="danger"
-                          onClick={() => handleDeleteKey(key.id)}
-                        >
-                          <DeleteOutlined /> {t('domainService.delete')}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        )}
+        <Table columns={[
+          { title: '服务名称', dataIndex: 'name', key: 'name', width: 130 },
+          { title: '服务类型', dataIndex: 'type', key: 'type', width: 90 },
+          { title: 'API Key', dataIndex: 'key', key: 'key', width: 200, render: (v: string) => <code style={{ fontSize: 12, background: '#f1f5f9', padding: '2px 8px', borderRadius: 4 }}>{v}</code> },
+          { title: '调用端点', dataIndex: 'endpoint', key: 'endpoint', width: 200 },
+          { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (v: string) => <Tag color={v === '启用' ? 'success' : 'warning'}>{v}</Tag> },
+          { title: '操作', key: 'actions', width: 80, render: () => <Space size={4}><a className="yx-table-action">编辑</a><a className="yx-table-action">删除</a></Space> },
+        ]} dataSource={srvList} rowKey="name" pagination={false} size="small" />
       </Modal>
     </div>
   )
-})
+}

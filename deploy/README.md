@@ -1,370 +1,468 @@
-# deploy
+# Jonex平台 Docker 部署指南
 
-`deploy/` contains Jonex platform deployment files, including Docker build contexts, Nginx configurations, and PostgreSQL migrations.
+## 🚀 快速开始
 
-## Main Directories
-
-The following lists the deployment entry points and primary configurations; build artifacts and local caches are excluded.
-
-```text
-deploy/
-├── config/                      # Capability runtime and ontology TBox configuration
-├── docker/                      # Service image Dockerfiles and build helper scripts
-├── nginx/                       # Frontend-gateway and frontend Nginx configurations
-├── postgres/
-│   ├── init.sql                 # PostgreSQL initialization entry point
-│   └── migrations/              # Numbered migration scripts
-├── redis/                       # Redis configuration
-├── scripts/                     # Build and operations helper scripts
-├── docker-compose.yml           # Production baseline, only publishes frontend-gateway
-├── docker-compose.override.yml  # Local full Docker integration test ports
-├── docker-compose.debug.yml     # Host-side single service debugging override
-├── docker-compose.gpu.yml       # NVIDIA GPU override
-├── .env.example                 # Platform deployment variable template
-├── .env.rag.example             # LightRAG variable template
-└── start_capability.py          # Common capability service entry point
-```
-
-## Deployment Entry Points
-
-In production, browsers only access `frontend-gateway`:
-
-```text
-frontend-gateway:80
-  -> shell and sub-app frontend static assets
-  -> /api/** -> gateway:8000
-  -> LLM calls: lightrag / knowledge-base -> llm-gateway:8787 -> upstream LLM
-```
-
-Gateway, Sidecar, LLM Gateway, capability services, RAG services, PostgreSQL, Redis, Milvus, etcd, MinIO, and Neo4j are only accessible via container network in the production baseline. Development environments use `docker-compose.override.yml` to expose debug ports explicitly. To switch individual backend services or `atomic-rag` to host debugging, use `docker-compose.debug.yml`. See [DEPLOYMENT_ARCHITECTURE.md](DEPLOYMENT_ARCHITECTURE.md) for full port and service topology.
-
-## Amazon Linux 2023 Prerequisites
-
-Before deploying on a new Amazon Linux 2023 x86_64 host, verify the OS, architecture, and existing container tooling:
+### 1. 环境准备
 
 ```bash
-cat /etc/os-release
-uname -m
-command -v docker || true
-rpm -q docker || true
-sudo nginx -t  # when using host Nginx
+# 检查 Docker 和 Docker Compose
+docker --version
+docker-compose --version
 ```
 
-Prefer installing the Docker RPM from Amazon Linux repositories. Do not add RHEL-focused Docker CE repositories or perform a full system upgrade just to install Docker:
+### 2. 初始化配置
 
 ```bash
-sudo dnf install -y docker
-sudo systemctl enable --now containerd.service docker.service
-sudo systemctl is-active containerd.service docker.service
-sudo docker version
-sudo docker buildx version
-sudo docker compose version
+# 进入项目根目录
+cd jonex-platform
+
+# 使用 Makefile 初始化
+make init
+
+# 或手动复制
+cp deploy/.env.example deploy/.env
+cp deploy/.env.rag.example deploy/.env.rag      # LightRAG 容器专属配置（含 LLM/Embedding/存储后端）
+# 编辑 deploy/.env 和 deploy/.env.rag 配置文件
+# 注意：deploy/.env 中的 LIGHTRAG_API_KEY 必须与 deploy/.env.rag 中的 LIGHTRAG_API_KEY 保持一致
 ```
 
-If the RPM does not provide usable Buildx or Compose plugins, download **fixed-version** binaries from the official Docker release only, verifying the publisher-provided SHA-256 before installation. Do not download unpinned `latest`. Production commands should use `sudo docker`; do not add the deployment account to the `docker` group (equivalent to root) for the convenience of omitting `sudo`. Docker's creation of bridge networks and firewall rules is normal behavior — do not disable Docker's firewall integration. If Nginx is already running on the host, run `sudo nginx -t` before and after installation and confirm the service remains active.
+### 3. 启动服务
 
-## Nginx Files
-
-| File | Responsibility |
-|---|---|
-| `nginx/frontend-gateway.conf` | Sole frontend entry point, aggregates shell, sub-apps, remote assets, and `/api/**` reverse proxy. |
-
-When adding a new frontend sub-app, update simultaneously:
-
-- Sub-app Dockerfile.
-- Sub-app `nginx/default.conf`.
-- Standalone routes and remote asset reverse proxy in `deploy/nginx/frontend-gateway.conf`.
-- Platform backend app registry.
-- `frontends/shell/public/app-manifest.json` local fallback.
-
-## PostgreSQL Migrations
-
-Migration script rules:
-
-- New business tables should include `tenant_id`, timestamps, and soft delete fields by default, plus audit fields where necessary.
-- Platform shared metadata (apps, menus, permissions, system config) does not include `tenant_id`.
-- Platform runtime data and business data must include a valid `tenant_id`.
-- Local development and demo data use `tenant_jonex_demo`.
-- Do not write to a default business tenant.
-
-## Common Commands
-
+**开发模式**（默认，自动加载 `docker-compose.override.yml`）：
 ```bash
+# 方式一：使用 Makefile（Linux/macOS）
 make build
-make up
+make up           # Gateway 8000 / Sidecar 8001 对外，便于直连调试
+
+# 方式二：使用 jonex.ps1（Windows）
+.\jonex.ps1 build
+.\jonex.ps1 up
+
+# 方式三：使用 docker-compose
+cd deploy
+docker-compose build
+docker-compose up -d
+```
+
+**生产模式**（仅暴露 Frontend 80）：
+```bash
+make up-prod                # 显式跳过 override.yml
+.\jonex.ps1 up-prod
+# 或：cd deploy && docker-compose -f docker-compose.yml up -d
+```
+
+### 4. 验证服务
+
+```bash
+# 查看服务状态
 make ps
+
+# 查看日志
 make logs
-make down
-make docker-local-up
-```
 
-- `make up`: Loads `docker-compose.override.yml`, suitable for local full Docker integration testing with regular debug ports exposed.
-- `make docker-local-up`: Loads `docker-compose.debug.yml`, suitable for keeping other services in Docker while debugging a single backend service or `atomic-rag` on the host. `lightrag` exposes port `9621` for convenience, but `atomic-rag` inside the container still calls it via `http://lightrag:9621` by default.
+# 健康检查
+make test
 
-Single service:
-
-```bash
-make rebuild-service SERVICE=platform-service
-make restart-service SERVICE=platform-service
-make logs-service SERVICE=platform-service
-```
-
-Frontend images:
-
-```bash
-make rebuild-frontend-gateway
-make rebuild-shell-frontend
-make rebuild-core-business-frontend
-make rebuild-platform-management-frontend
-make rebuild-ecosystem-management-frontend
-```
-
-## Build Acceleration (Integrated into Compose Build)
-
-Build optimizations are **directly integrated into `docker compose build`**: extracting a shared base image `python-base`, using `COMPOSE_BAKE` to delegate parallel builds to buildx, and retaining apt/pip/pnpm cache mounts. The output is the same `deploy-*` images that `docker compose up` actually runs — **no separate `jonex/*` images**. Runtime artifacts are identical to pre-optimization (dependency set / ports / commands / health checks / frontend dist unchanged).
-
-How it works: The Dockerfiles for the 7 backend services (4 capability services + gateway/sidecar/llm-gateway) use `FROM ${PYTHON_BASE}`. Compose uses `additional_contexts: python-base: docker-image://jonex/python-base:local` (named context `python-base`, avoiding collision with `AS base` stage alias inside Dockerfiles) to reuse the pre-built shared base layer.
-
-### One-Command Build
-
-```bash
-# *nix / CI: build python-base first, then parallel compose build (outputs total time in seconds)
-bash deploy/scripts/build_all.sh
-bash deploy/scripts/build_all.sh gateway    # build specific compose service
-
-# Windows (cmd)
-deploy\scripts\build_all.cmd
-
-# make (automatically builds base first, then COMPOSE_BAKE parallel build)
-make build            # local integration test
-make build-gpu        # GPU
-make build-prod       # production
-make build-backend    # backend only
-make build-service SERVICE=gateway
-```
-
-Equivalent manual two-step process (already wrapped by scripts/Make):
-
-```bash
-# 1) Build shared base image and load into local image registry (reused by 7 backend services)
-docker buildx build --load -t jonex/python-base:local -f deploy/docker/python-base.Dockerfile .
-# 2) Parallel compose build (delegates to buildx bake)
-cd deploy && COMPOSE_BAKE=1 docker compose build
-```
-
-> `python-base` is not a compose service — `docker compose up` will not start it. It is only referenced as a build-time named context. The layer is rebuilt after first use or when the dependency manifest changes, and cached thereafter.
-
-### Optimization Breakdown
-
-| Optimization | Description |
-|---|---|
-| Shared base image | `python-base.Dockerfile` consolidates common layers for 7 backend services (timezone / Tencent mirrors / apt / pip dependencies) |
-| Parallel build | `COMPOSE_BAKE=1` makes `docker compose build` delegate to buildx bake, running builds in parallel according to dependency graph |
-| Frontend pnpm store cache | 5 frontends share `--mount=type=cache,id=jonex-pnpm-store` — zero download when dependencies unchanged |
-| Atomic-rag layer pinning | Fixed layer order, source code is the final `COPY` — source-only changes rebuild only 1 layer |
-
-### Build Benchmark (Optional)
-
-```bash
-python deploy/scripts/build_benchmark.py --scenario cold --repeat 3 --baseline deploy/build-baseline.json
-python deploy/scripts/build_benchmark.py --scenario incremental --repeat 3 --baseline deploy/build-baseline.json
-```
-
-### Advanced: CI Cross-Machine Cache (Optional)
-
-To reuse build layer cache across CI runners, declare `build.cache_from` / `build.cache_to` in each compose service's config (for registry or GHA cache, with `docker-container` builder). `COMPOSE_BAKE=1 docker compose build` passes these through to buildx. Local `docker` driver does not support cache export, so no configuration is needed.
-
-### Verification Tests (Optional)
-
-```bash
-# Lightweight unit / snapshot tests for build optimization (no Docker required, milliseconds)
-uv run pytest tests/unit/test_python_base_dockerfile.py tests/unit/test_build_benchmark.py
-```
-
-> The simplest way to verify optimization effectiveness is to run `make build` (or `deploy\scripts\build_all.cmd`) followed by `docker compose up -d` for a smoke test.
-
-## Health Checks and Logs
-
-```bash
-# Frontend Nginx health check (production sole external port)
-curl http://localhost/health        # Returns 'ok'
-
-# Development mode (compose override exposes ports) — backend directly accessible
-curl http://localhost:8000/health   # Gateway
+# 访问健康检查接口
+curl http://localhost:8000/health   # 网关
 curl http://localhost:8001/health   # Sidecar
-curl http://localhost:8003/health   # Knowledge base
-curl http://localhost:8005/health   # Business domain
-curl http://localhost:8006/health   # Platform
-curl http://localhost:8787/health   # LLM Gateway
-
-# Production mode — backend not exposed externally, access via container
-docker exec jonex-gateway curl -s http://localhost:8000/health
 ```
 
-Logs:
+## 📦 服务列表
+
+| 服务名称 | 容器内端口 | 开发模式宿主端口 | 生产模式宿主端口 | 说明 |
+|---------|-----------|----------------|-----------------|------|
+| **frontend** | 80 | 80 | **80** | 前端 Nginx，唯一对外入口（静态资源 + /api 反向代理） |
+| **gateway** | 8000 | 8000 | 仅容器内 | API 网关（业务路由聚合、CORS） |
+| **sidecar** | 8000 | 8001 | 仅容器内 | 内部能力代理（认证、计量、限流） |
+| **knowledge-base-service** | 8000 | 8003 | 仅容器内 | 知识库能力服务 |
+| **atomic-rag** | 8000 | 8004 | 仅容器内 | RAG 原子能力服务（解析 + HTTP 调 lightrag） |
+| **lightrag** | 9621 | 9621 | 仅容器内 | LightRAG 引擎 + WebUI（源码自建镜像 jonex-lightrag-source，源码集成于 Reference/LightRAG，think 开关默认关闭 Qwen3.5 思考模式） |
+| **redis** | 6379 | 6379 | 6379 | Redis 缓存 / 服务发现 |
+| **neo4j** | 7687 / 7474(browser) | — | 仅容器内 | Neo4j 5.26 图数据库（本体 ABox 存储，APOC 插件，持久化卷 jonex-neo4j-data） |
+| **milvus** / **etcd** / **minio** | - | - | 仅容器内 | 预留：知识库存储后端切 PG/Milvus 时启用（首版未连） |
+
+> 端口策略：开发模式自动加载 `docker-compose.override.yml`，把 Gateway 8000、Sidecar 8001、lightrag 9621、atomic-rag 8004 同时映射到宿主机便于直连调试；生产模式 (`make up-prod` / `.\jonex.ps1 up-prod`) 显式跳过 override，仅暴露 Frontend 80。
+
+> 知识库 RAG 链路：浏览器 → Frontend → Gateway（文件落地）→ Sidecar → knowledge-base 服务（业务层 CRUD + 状态机）→ Sidecar → atomic-rag（解析）→ lightrag（向量/图谱/LLM）。**lightrag 不直接对外**，所有调用必须经过 atomic-rag 包装。knowledge-base 不参与文件 IO，仅处理 file_path 字符串。
+
+## 🔧 常用命令
+
+### 使用 Makefile
 
 ```bash
-make logs                 # All
-make logs-service SERVICE=knowledge-base-service
+# 查看所有命令
+make help
+
+# 构建镜像
+make build
+
+# 启动服务
+make up
+
+# 停止服务
+make down
+
+# 查看日志
+make logs
 make logs-sidecar
-make logs-postgres
-```
+make logs-knowledge-base
 
-Application logs are also mounted to the `jonex-logs` data volume.
-
-## Database Management
-
-```bash
-# Connect to PostgreSQL
+# 进入容器
+make shell-sidecar
 make shell-postgres
-# or: docker exec -it jonex-postgres psql -U jonex -d jonex
-
-# Initialize / recreate schema and seed data
-make init-db
 ```
 
-Migration scripts are located in `postgres/migrations/` and executed in numbered order (`001_schemas` → `002_platform` → `004_knowledge_base` → `005_business_domain` → `006_seed_data` → `007_comments`, subsequent numbers continue sequentially). `postgres/init.sql` is the aggregated initialization entry point for the container's first startup.
-
-> Note: `001` creates platform, knowledge_base, business_domain, and metering schemas; metering table `metering.llm_usage_log` is included in `002`; knowledge base document storage columns, data source tables, and editable fields for ontology compile snapshots are included in `004`; corresponding seed data is in `006`.
-
-If the data volume was initialized before a particular schema was added, it can be applied manually:
+### 使用 Docker Compose
 
 ```bash
-docker exec -i jonex-postgres psql -U jonex -d jonex < postgres/migrations/004_knowledge_base.sql
+cd deploy
+
+# 构建所有镜像
+docker-compose build
+
+# 启动所有服务
+docker-compose up -d
+
+# 查看服务状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f
+
+# 查看特定服务日志
+docker-compose logs -f sidecar
+docker-compose logs -f knowledge-base-service
+
+# 重启服务
+docker-compose restart
+
+# 停止服务
+docker-compose stop
+
+# 停止并删除容器
+docker-compose down
+
+# 停止并删除容器和数据卷（慎用）
+docker-compose down -v
 ```
 
-## GPU Acceleration (Optional)
-
-If the host has an NVIDIA GPU with `nvidia-container-toolkit` installed, overlay `docker-compose.gpu.yml` to enable GPU for atomic-rag:
+## 📊 扩缩容
 
 ```bash
-make build-gpu     # Build images
-make up-gpu        # Start (auto-loads gpu.yml)
 
-# Verify GPU is enabled
+# 或直接使用 docker-compose
+cd deploy
+```
+
+## 🔨 开发模式
+
+```bash
+# 开发模式启动（代码热重载）
+make dev
+```
+
+## 📈 监控
+
+### 健康检查
+
+```bash
+# 前端 Nginx 健康检查（生产唯一对外端口）
+curl http://localhost/health        # 返回 'ok'（text/plain）
+
+# 开发模式下后端服务可直连
+curl http://localhost:8000/health   # 网关
+curl http://localhost:8001/health   # Sidecar
+curl http://localhost:8003/health   # 知识库服务（首次需先 docker-compose up -d knowledge-base-service）
+
+# 生产模式下后端不对外，需进容器或通过反代访问
+docker-compose exec gateway curl http://localhost:8000/health
+```
+
+### 日志位置
+
+- 容器日志：通过 `docker logs` 查看
+- 应用日志：挂载到 `jonex-logs` 数据卷
+
+## 🗄️ 数据库管理
+
+### 连接数据库
+
+```bash
+# 使用 Makefile
+make shell-postgres
+
+# 或直接连接
+cd deploy
+docker-compose exec postgres psql -U jonex -d jonex
+```
+
+### 初始化本体表
+
+如果 PostgreSQL 数据卷在添加 `ontology` schema 之前已初始化，需要手动补建：
+
+```bash
+cd deploy
+docker-compose exec -T postgres psql -U jonex -d jonex < postgres/init.sql
+```
+
+或只建 ontology 部分：
+
+```bash
+docker exec jonex-postgres psql -U jonex -d jonex -c "CREATE SCHEMA IF NOT EXISTS ontology;"
+```
+
+## 🚀 GPU 加速（可选）
+
+宿主机有 NVIDIA GPU 并已安装 `nvidia-container-toolkit` 时，叠加 `docker-compose.gpu.yml` 为 atomic-rag 启用 GPU：
+
+```bash
+# 使用 Makefile（推荐）
+make docker-gpu-build    # 构建镜像
+make docker-gpu-up       # 启动（自动加载 gpu.yml）
+
+# 或手动指定
+cd deploy
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+
+# 验证 GPU 是否生效
 docker exec jonex-atomic-rag python -c "import torch; print(torch.cuda.is_available())"
 ```
 
-When GPU is enabled, the MinerU parser automatically uses CUDA, and atomic-rag CPU memory usage decreases significantly.
+GPU 生效后 MinerU 解析器自动使用 CUDA，atomic-rag CPU 内存占用从 ~4G 降至 ~2G。
 
-## Ontology Knowledge Engine Operations
+## 🧠 本体知识引擎（Ontology Engine）
 
-After document parsing and LightRAG ingestion are complete, Stage 4 ontology extraction can be optionally enabled. Current responsibility split:
+文档解析 + LightRAG 入库完成后，可选开启 Stage 4 本体抽取，将结构化实体和关系写入 Neo4j 图数据库（`:OntologyEntity` 节点 / `[:ONT_REL]` 边），实现跨文档实体自动连通。
 
-- **atomic-rag** performs extraction, producing `ontology_data` (entities / relationships), without directly writing to Neo4j.
-- **knowledge-base** reconciliation service (`reconciliation_service`) writes `ontology_data` to Neo4j, then updates the PostgreSQL `ontology_status` state machine (write Neo4j first, set `READY` on success, `FAILED` on failure).
-- Neo4j schema is initialized automatically by `ensure_ontology_schema()` when knowledge-base starts — failure only generates a warning, does not block the service.
-- When Neo4j is unavailable, knowledge base queries and document READY flow degrade gracefully to standard RAG without blocking core functionality.
+### 启用方式
 
-### Enabling
-
-Enable the extraction switch in `deploy/.env` and restart atomic-rag:
+在 `deploy/.env` 中添加：
 
 ```bash
-# deploy/.env
 ONTOLOGY_EXTRACT_ENABLED=true
-ONTOLOGY_SCHEMA_PATH=deploy/config/ontology/default.yaml
-
-make restart-service SERVICE=atomic-rag
 ```
 
-Ontology TBox definition is in `deploy/config/ontology/default.yaml` (entity types, aliases, attributes, relationship types).
-
-### Neo4j Container
+重启 atomic-rag：
 
 ```bash
-# Constraint check
-docker exec jonex-neo4j cypher-shell -u neo4j -p "$NEO4J_PASSWORD" "SHOW CONSTRAINTS;"
+cd deploy
+docker compose up -d atomic-rag
+```
 
-# View ontology entities
-docker exec jonex-neo4j cypher-shell -u neo4j -p "$NEO4J_PASSWORD" \
+### 本体 schema 配置
+
+本体 TBox 定义在 YAML 文件中，默认路径 `deploy/config/ontology/default.yaml`：
+
+```yaml
+entity_types:
+  - name: Organization
+    aliases: ["公司", "企业"]
+    attributes:
+      - { name: legal_name, type: string }
+relation_types:
+  - name: BELONGS_TO
+    source: Person
+    target: Organization
+```
+
+自定义 schema 可通过 `ONTOLOGY_SCHEMA_PATH` 环境变量指定。
+
+### Neo4j 容器
+
+Neo4j 随 `docker compose up` 自动启动，schema 由 knowledge-base 服务启动时自动初始化（`ensure_ontology_schema()`）：
+
+```bash
+# 健康检查
+docker exec jonex-neo4j cypher-shell -u neo4j -p jonex_neo4j_123 "SHOW CONSTRAINTS;"
+
+# 查看本体实体
+docker exec jonex-neo4j cypher-shell -u neo4j -p jonex_neo4j_123 \
   "MATCH (n:OntologyEntity) RETURN n.tenant_id, n.entity_type, n.canonical_name LIMIT 10;"
 ```
 
-### Enhanced Search (Ontology-First)
+### 本体查询（Ontology Query）
+
+增强搜索 API 实现本体优先分流，通过 API Gateway 调用：
 
 ```bash
-curl "http://localhost:8000/api/v1/knowledge-base/documents/search/enhanced?query=<query>&knowledge_base_id=KB1&mode=hybrid&top_k=3" \
-     -H "Authorization: Bearer <access_token>"
+curl "http://localhost:8000/api/v1/knowledge-base/documents/search/enhanced?query=腾讯&knowledge_base_id=KB1&mode=hybrid&top_k=3" \
+     -H "Authorization: Bearer jonex_test_tenant123"
 ```
 
-Returns `{answer, source:"ontology"|"rag", ontology_instances:[...], rag_used:boolean}`: `source="ontology"` indicates answer based on Neo4j graph facts + LLM; `source="rag"` indicates ontology missed and fell back to full RAG.
+返回格式：`{answer, source:"ontology"|"rag", ontology_instances:[...], rag_used:boolean}`
 
-Documents with `ontology_status` of `pending`/`failed` are automatically retried by the reconciliation loop.
+- `source="ontology"`：基于 Neo4j 图谱事实 + LLM 回答，未使用 RAG
+- `source="rag"`：本体未命中或知识不足，回退到完整 RAG
 
-### Ontology-Related Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `ONTOLOGY_EXTRACT_ENABLED` | `false` | Whether to enable ontology extraction |
-| `ONTOLOGY_SCHEMA_PATH` | `deploy/config/ontology/default.yaml` | TBox schema path |
-| `NEO4J_URI` | `bolt://localhost:7687` | Neo4j connection URI |
-| `NEO4J_USERNAME` | `neo4j` | Neo4j username |
-| `NEO4J_PASSWORD` | `CHANGE_ME` | Neo4j password (must be changed before deployment) |
-
-## Data Backup
+解析结果实体/关系类型覆盖：
 
 ```bash
-# PostgreSQL
+# 获取解析结果实体列表（Neo4j 实体类型叠加）
+curl "http://localhost:8000/api/v1/knowledge-base/bases/KB1/parse-result/entities?entity_type=Organization" \
+     -H "Authorization: Bearer jonex_test_tenant123"
+```
+
+### 本体重试
+
+`ontology_status` 为 `pending` 或 `failed` 的文档会由对账循环自动重试（最多 3 次），也可手动触发：
+
+```bash
+curl -X POST http://localhost:8003/invoke \
+  -H "Authorization: Bearer jonex_test_tenant123" \
+  -d '{"action": "retry_ontology_extract", "data": {"document_id": "...", "knowledge_base_id": "..."}}'
+```
+
+### 配置参考
+
+关键环境变量：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `ONTOLOGY_EXTRACT_ENABLED` | `false` | 是否启用本体抽取 |
+| `ONTOLOGY_SCHEMA_PATH` | `deploy/config/ontology/default.yaml` | TBox schema 路径 |
+| `ONTOLOGY_LLM_BINDING_HOST` | `LLM_BINDING_HOST` | 本体抽取 LLM 地址 |
+| `ONTOLOGY_LLM_MODEL` | `deepseek-v4-flash` | 本体抽取 LLM 模型 |
+| `NEO4J_URI` | `bolt://localhost:7687` | Neo4j 连接地址 |
+| `NEO4J_USERNAME` | `neo4j` | Neo4j 用户名 |
+| `NEO4J_PASSWORD` | `jonex_neo4j_123` | Neo4j 密码 |
+
+### 扩展点（待实现）
+
+- **多 domain 支持**：`ONTOLOGY_SCHEMA_DIR` 加载多个 YAML 文件，按 `domain` 区分
+- **知识库→domain 映射**：通过 `extra_metadata` 指定知识库所属 domain
+- **本体查询增强**：查询结果用本体实体做事实校验 / rerank
+
+### 数据备份
+
+```bash
+# 备份 PostgreSQL
 docker exec jonex-postgres pg_dump -U jonex jonex > backup_$(date +%Y%m%d).sql
 
-# Redis
+# 备份 Redis
 docker exec jonex-redis redis-cli BGSAVE
 docker cp jonex-redis:/data/dump.rdb ./redis_backup.rdb
 
-# Neo4j
+# 备份 Neo4j
 docker exec jonex-neo4j neo4j-admin database dump neo4j --to-path=/backups
 docker cp jonex-neo4j:/backups ./neo4j_backup
 ```
 
-## Troubleshooting
+## 🚀 生产部署
 
-Service won't start:
+### 1. 环境配置
+
+复制生产环境配置：
 
 ```bash
-make logs-service SERVICE=<service>     # View detailed logs
-make restart-service SERVICE=<service>  # Restart a single service
-make recreate-service SERVICE=<service> # Force recreate
+cp deploy/.env.example deploy/.env.production
+# 修改为生产环境配置
 ```
 
-Database connection failures:
+### 2. 使用生产环境配置启动
 
 ```bash
-make ps                                 # Check container status
-make logs-postgres                      # View PostgreSQL logs
-docker exec jonex-postgres pg_isready -U jonex
+cd deploy
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-Performance issues:
+### 3. 建议配置
+
+- **高可用**：使用 PostgreSQL 主从复制
+- **缓存集群**：部署 Redis Cluster
+- **负载均衡**：使用 Nginx 或云服务商 LB
+- **监控告警**：接入 Prometheus + Grafana + Alertmanager
+
+## 🔍 故障排查
+
+### 服务无法启动
 
 ```bash
-docker stats                            # Container resource usage
+# 查看详细日志
+docker-compose logs --tail=100 [service_name]
+
+# 重启单个服务
+docker-compose restart [service_name]
+
+# 重建服务
+docker-compose up -d --force-recreate [service_name]
+```
+
+### 数据库连接失败
+
+```bash
+# 检查 PostgreSQL 是否正常运行
+docker-compose ps postgres
+
+# 查看 PostgreSQL 日志
+docker-compose logs postgres
+
+# 手动连接测试
+docker-compose exec postgres pg_isready -U jonex
+```
+
+### 性能问题
+
+```bash
+# 查看容器资源使用
+docker stats
+
+# 查看服务内部日志
 make logs-sidecar
-make logs-service SERVICE=knowledge-base-service
 ```
 
-## Required Security Configuration
+## 📝 文件结构
 
-After the first run of `make init`, edit `deploy/.env` and replace all `CHANGE_ME` values. At minimum, set: `DB_PASSWORD`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `NEO4J_PASSWORD`, `JWT_SECRET`, and `SIDECAR_API_KEY`. `SIDECAR_API_KEY` is the shared secret for Gateway/internal clients to call Sidecar — both Gateway and Sidecar must read the same non-empty value.
+```
+deploy/
+├── docker/                          # Dockerfile
+│   ├── sidecar.Dockerfile          # Sidecar 代理镜像
+│   ├── capability.Dockerfile       # 能力服务镜像模板
+│   ├── gateway.Dockerfile          # API Gateway 镜像
+│   ├── frontend-entrypoint.py      # 运行时注入 window.__JONEX_CONFIG__
+│   ├── atomic-rag.Dockerfile       # RAG 原子能力服务镜像
+│   ├── atomic-rag-requirements.txt # atomic-rag 专属依赖
+│   └── lightrag-source.Dockerfile # LightRAG 源码自建镜像（Reference/LightRAG 1.4.16）
+├── nginx/
+│   └── frontend.conf               # 前端 Nginx 配置（CSP / SPA 回退 / API 反代）
+├── docker-compose.yml              # 生产 Compose 编排
+├── docker-compose.override.yml     # 开发模式覆盖（Gateway/Sidecar 端口对外）
+├── docker-compose.gpu.yml          # GPU 加速覆盖（NVIDIA GPU）
+├── docker-compose.mac.yml          # macOS 开发覆盖（CPU 降配）
+├── .env.example                    # 环境变量模板
+├── postgres/                       # PostgreSQL 配置
+├── config/                         # 运行时配置
+│   └── ontology/                   # 本体 schema 定义（TBox YAML）
+├── redis/                          # Redis 配置
+│   └── redis.conf                  # Redis 配置文件
+├── DEPLOYMENT_ARCHITECTURE.md      # 架构设计文档
+└── README.md                       # 本文档
+```
 
-Use Python to generate a high-entropy key, and do not commit the output to Git:
+## 🎯 快速部署步骤总结
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(48))"
+# 1. 克隆项目
+git clone <repository-url>
+cd jonex-platform
+
+# 2. 初始化配置
+make init
+# 编辑 deploy/.env
+
+# 3. 构建并启动
+make build && make up
+
+# 4. 验证服务
+make test
+
+# 5. 查看日志
+make logs
 ```
 
-`LIGHTRAG_API_KEY` in `deploy/.env.rag` must also match the platform-side calling configuration. In production, also replace `LLMGW_INTERNAL_TOKENS` and configure real upstream LLM credentials.
+## 📞 技术支持
 
-## Quick Deployment Steps
-
-```bash
-make init                # First-time init from public example files to actual env
-# Edit deploy/.env, deploy/.env.rag; replace all CHANGE_ME, ensure shared keys match on both sides
-make build && make up    # Build and start local Docker deployment (loads override)
-make ps                  # Verify status
-make logs                # View logs
-```
-
-For host-side single-service debugging, use `make docker-local-up`. For production / server orchestration, use `make build-prod` / `make up-prod` or `make build-server` / `make up-server`.
-
-See [DEPLOYMENT_ARCHITECTURE.md](DEPLOYMENT_ARCHITECTURE.md) for detailed deployment topology.
+如遇问题，请：
+1. 查看服务日志：`make logs`
+2. 检查配置文件：`deploy/.env`
+3. 参考架构设计文档：`DEPLOYMENT_ARCHITECTURE.md`

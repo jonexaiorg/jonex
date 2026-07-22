@@ -1,4 +1,9 @@
+"""
+Ontology data model - TBox layer.
 
+Defines the structured types of ontology schema (entity type definition, attribute definition, relation type definition),
+and the top-level OntologySchema container, corresponding to the format of the ontology YAML file.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 @dataclass
 class AttributeDef:
-
+    """Attribute definition of entity type."""
 
     name: str
     type: str = "string"
@@ -18,7 +23,7 @@ class AttributeDef:
 
 @dataclass
 class EntityTypeDef:
-
+    """Entity type definition (concept class in TBox)."""
 
     name: str
     aliases: List[str] = field(default_factory=list)
@@ -35,11 +40,11 @@ class EntityTypeDef:
 
 @dataclass
 class RelationTypeDef:
-
+    """Relation type definition (role/attribute in TBox)."""
 
     name: str
-    source: Optional[str] = None
-    target: Optional[str] = None
+    source: Optional[str] = None  # Source entity type constraint
+    target: Optional[str] = None  # Target entity type constraint
     description: Optional[str] = None
 
     @classmethod
@@ -54,7 +59,7 @@ class RelationTypeDef:
 
 @dataclass
 class ConstraintDef:
-
+    """Ontology constraint definition."""
 
     type: str
     entity: Optional[str] = None
@@ -73,7 +78,7 @@ class ConstraintDef:
 
 @dataclass
 class DisambiguationConfig:
-
+    """Disambiguation configuration."""
 
     case_insensitive: bool = True
     alias_merge: bool = True
@@ -88,7 +93,7 @@ class DisambiguationConfig:
 
 @dataclass
 class OntologySchema:
-
+    """Top-level ontology schema definition, corresponding to one ontology YAML file."""
 
     version: int = 1
     domain: str = "default"
@@ -96,7 +101,7 @@ class OntologySchema:
     relation_types: List[RelationTypeDef] = field(default_factory=list)
     constraints: List[ConstraintDef] = field(default_factory=list)
     disambiguation: DisambiguationConfig = field(default_factory=DisambiguationConfig)
-    raw: Optional[Dict[str, Any]] = None
+    raw: Optional[Dict[str, Any]] = None  # Original dict, for code that needs direct access to YAML fields
 
     @classmethod
     def from_dict(cls, data: dict) -> "OntologySchema":
@@ -117,7 +122,7 @@ class OntologySchema:
         return [rt.name for rt in self.relation_types]
 
     def find_entity_type(self, name: str) -> Optional[EntityTypeDef]:
-
+        """Find entity type definition by name (including alias matching)."""
         for et in self.entity_types:
             if et.name.lower() == name.lower():
                 return et
@@ -130,42 +135,3 @@ class OntologySchema:
             if rt.name == name:
                 return rt
         return None
-
-    @classmethod
-    def from_compiled_dict(cls, data: dict) -> "OntologySchema":
-
-        entity_types = []
-        for et in data.get("entity_types", []):
-            attrs = []
-            for a in et.get("attributes", []):
-                attrs.append(AttributeDef(
-                    name=a.get("name") or a.get("ontology_code", ""),
-                    type=a.get("type", "string"),
-                    required=a.get("required", False),
-                    description=a.get("display_name") or a.get("description"),
-                ))
-            entity_types.append(EntityTypeDef(
-                name=et.get("name", ""),
-                aliases=et.get("aliases", []),
-                attributes=attrs,
-            ))
-
-        relation_types = []
-        for rt in data.get("relation_types", []):
-            relation_types.append(RelationTypeDef(
-                name=rt.get("name", ""),
-                source=rt.get("source"),
-                target=rt.get("target"),
-                description=rt.get("display_name") or rt.get("description"),
-            ))
-
-        disamb = data.get("disambiguation", {})
-        return cls(
-            version=data.get("schema_version", 1),
-            domain=data.get("template_scenario_id") or data.get("domain", "compiled"),
-            entity_types=entity_types,
-            relation_types=relation_types,
-            constraints=[ConstraintDef.from_dict(c) for c in data.get("constraints", [])],
-            disambiguation=DisambiguationConfig.from_dict(disamb),
-            raw=data,
-        )

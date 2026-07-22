@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,58 +9,55 @@ authors = [
     {name = "Zirui Guo"}
 ]
 description = "RAGAnything: All-in-One RAG System"
-readme = {file = "README.md", content-type = "text/markdown"}
-license = "MIT"
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "huggingface-hub>=0.34.0,<2.0.0",
-    # RAG-Anything 1.3.1 is tested against this LightRAG release. The
-    # sibling LightRAG service is a separate process and is not imported here.
-    "lightrag-hku==1.4.16",
-    "tqdm>=4.66.0,<5.0.0",
+    "huggingface_hub",
+    "lightrag-hku",
+    "mineru[core]",
+    "tqdm",
 ]
 
 [project.optional-dependencies]
-image = ["Pillow>=10.0.0,<13.0.0"]
-text = ["reportlab>=4.0.0,<5.0.0"]
-audio = ["openai-whisper>=20231117"]
+image = ["Pillow>=10.0.0"]
+text = ["reportlab>=4.0.0"]
+audio = ["openai-whisper>=20231117"]  # ASR transcription support
 office = []  # Requires LibreOffice (external program)
-# Local MinerU CLI parsing. Online and self-hosted parsers are HTTP clients and
-# do not require this extra.
-local = ["mineru[core]>=2.1.0,<3.0.0"]
 video = [
-    "cos-python-sdk-v5>=1.9.0,<2.0.0",
-    "xxhash>=3.0.0,<4.0.0",
-    "imagehash>=4.3.0,<5.0.0",
+    "cos-python-sdk-v5>=1.9.0",
+    "xxhash>=3.0.0",
+    "imagehash>=4.3.0",
 ]
 paddleocr = [
-    "paddleocr>=2.7.0,<4.0.0",
-    "pypdfium2>=4.25.0,<6.0.0",
+    "paddleocr>=2.7.0",
+    "pypdfium2>=4.25.0",
 ]
 markdown = [
-    "markdown>=3.4.0,<4.0.0",
-    "weasyprint>=60.0,<70.0",
-    "pygments>=2.10.0,<3.0.0",
+    "markdown>=3.4.0",
+    "weasyprint>=60.0",
+    "pygments>=2.10.0",
 ]
 all = [
     "openai-whisper>=20231117",
-    "Pillow>=10.0.0,<13.0.0",
-    "reportlab>=4.0.0,<5.0.0",
-    "paddleocr>=2.7.0,<4.0.0",
-    "pypdfium2>=4.25.0,<6.0.0",
-    "markdown>=3.4.0,<4.0.0",
-    "weasyprint>=60.0,<70.0",
-    "pygments>=2.10.0,<3.0.0",
-    "cos-python-sdk-v5>=1.9.0,<2.0.0",
-    "xxhash>=3.0.0,<4.0.0",
-    "imagehash>=4.3.0,<5.0.0",
+    "Pillow>=10.0.0",
+    "reportlab>=4.0.0",
+    "paddleocr>=2.7.0",
+    "pypdfium2>=4.25.0",
+    "markdown>=3.4.0",
+    "weasyprint>=60.0",
+    "pygments>=2.10.0",
+    "cos-python-sdk-v5>=1.9.0",
+    "xxhash>=3.0.0",
+    "imagehash>=4.3.0",
 ]
 
 [project.urls]
@@ -69,17 +66,16 @@ Documentation = "https://github.com/HKUDS/RAG-Anything"
 Repository = "https://github.com/HKUDS/RAG-Anything"
 Issues = "https://github.com/HKUDS/RAG-Anything/issues"
 
-[dependency-groups]
-dev = [
-    "pytest>=8.0.0,<9.0.0",
-    "pytest-asyncio>=0.24.0,<2.0.0",
-    "black>=24.0.0,<27.0.0",
-    "isort>=5.13.0,<7.0.0",
-    "flake8>=7.0.0,<8.0.0",
-    "mypy>=1.10.0,<2.0.0",
-    "openai>=1.0.0,<3.0.0",
-    "python-dotenv>=1.0.0,<2.0.0",
-    "build>=1.2.0,<2.0.0",
+[tool.uv]
+dev-dependencies = [
+    "pytest>=6.0",
+    "pytest-asyncio",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+    "openai",
+    "python-dotenv",
 ]
 
 [tool.setuptools.packages.find]

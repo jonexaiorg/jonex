@@ -394,7 +394,7 @@ def main():
         "--parser",
         default="mineru",
         help=(
-            "Parser to use. Built-ins: mineru, mineru_online, docling, paddleocr. "
+            "Parser to use. Built-ins: mineru, docling, paddleocr. "
             "When using RAGAnything as a library, any custom parsers that you "
             "have registered via register_parser() in the current process "
             "are also accepted. The standalone CLI itself does not perform "

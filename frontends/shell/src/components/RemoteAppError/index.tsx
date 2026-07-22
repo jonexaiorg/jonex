@@ -1,6 +1,5 @@
 import React, { Component, type ReactNode } from 'react'
 import { Result, Button, Space } from 'antd'
-import i18n from '../../locales/i18n'
 
 interface Props {
   children: ReactNode
@@ -34,19 +33,18 @@ export default class RemoteAppError extends Component<Props, State> {
   }
 
   render() {
-    const t = i18n.t.bind(i18n)
     if (this.state.hasError) {
       const { appName, standaloneUrl } = this.props
       return (
         <Result
           status="warning"
-          title={t('error.serverError')}
-          subTitle={appName ? `「${appName}」: ${this.state.error?.message}` : this.state.error?.message}
+          title="应用运行出错"
+          subTitle={appName ? `「${appName}」运行时发生错误: ${this.state.error?.message}` : this.state.error?.message}
           extra={
             <Space>
-              <Button type="primary" onClick={this.handleRetry}>{t('common.retry')}</Button>
+              <Button type="primary" onClick={this.handleRetry}>重试</Button>
               {standaloneUrl && (
-                <Button onClick={() => window.open(standaloneUrl, '_self')}>{t('common.detail')}</Button>
+                <Button onClick={() => window.open(standaloneUrl, '_self')}>独立打开</Button>
               )}
             </Space>
           }

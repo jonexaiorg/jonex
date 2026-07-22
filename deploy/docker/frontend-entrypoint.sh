@@ -1,12 +1,8 @@
-
-
-
-
-
+#!/bin/sh
 
 set -e
 
-API_BASE_URL="${API_BASE_URL:-/api}"
+API_BASE_URL="${API_BASE_URL:-http://gateway:8000}"
 ENV="${ENV:-production}"
 APP_TITLE="${APP_TITLE:-Jonex平台}"
 

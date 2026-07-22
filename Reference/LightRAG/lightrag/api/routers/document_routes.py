@@ -19,7 +19,6 @@ from fastapi import (
     Depends,
     File,
     HTTPException,
-    Request,  # [yuexi]
     UploadFile,
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -32,7 +31,6 @@ from lightrag.utils import (
     sanitize_text_for_encoding,
 )
 from lightrag.api.utils_api import get_combined_auth_dependency
-from lightrag.api.workspace_manager import get_workspace_from_request  # [yuexi]
 from ..config import global_args
 
 
@@ -2089,19 +2087,13 @@ async def background_delete_documents(
 
 
 def create_document_routes(
-    manager, doc_manager: DocumentManager, api_key: Optional[str] = None
+    rag: LightRAG, doc_manager: DocumentManager, api_key: Optional[str] = None
 ):
-    # [yuexi] manager is a WorkspaceRAGManager (not a single LightRAG instance).
-    # Each handler resolves the correct rag via LIGHTRAG-WORKSPACE header.
     # Fresh router per call — see the note above the temp_prefix constant.
     router = APIRouter(
         prefix="/documents",
         tags=["documents"],
     )
-
-    async def _resolve_rag(request: Request):
-        """[yuexi] Resolve LightRAG instance for the current request's workspace."""
-        return await manager.get(get_workspace_from_request(request))
 
     # Create combined auth dependency for document routes
     combined_auth = get_combined_auth_dependency(api_key)
@@ -2109,9 +2101,7 @@ def create_document_routes(
     @router.post(
         "/scan", response_model=ScanResponse, dependencies=[Depends(combined_auth)]
     )
-    async def scan_for_new_documents(
-        http_request: Request, background_tasks: BackgroundTasks  # [yuexi] +Request
-    ):
+    async def scan_for_new_documents(background_tasks: BackgroundTasks):
         """
         Trigger the scanning process for new documents.
 
@@ -2125,9 +2115,6 @@ def create_document_routes(
         # Generate track_id with "scan" prefix for scanning operation
         track_id = generate_track_id("scan")
 
-        # [yuexi] Resolve workspace-specific LightRAG instance
-        rag = await _resolve_rag(http_request)
-
         # Start the scanning process in the background with track_id
         background_tasks.add_task(run_scanning_process, rag, doc_manager, track_id)
         return ScanResponse(
@@ -2140,9 +2127,7 @@ def create_document_routes(
         "/upload", response_model=InsertResponse, dependencies=[Depends(combined_auth)]
     )
     async def upload_to_input_dir(
-        http_request: Request,  # [yuexi] +Request
-        background_tasks: BackgroundTasks,
-        file: UploadFile = File(...),
+        background_tasks: BackgroundTasks, file: UploadFile = File(...)
     ):
         """
         Upload a file to the input directory and index it.
@@ -2196,9 +2181,6 @@ def create_document_routes(
             HTTPException: If the file type is not supported (400), file too large (413), or other errors occur (500).
         """
         try:
-            # [yuexi] Resolve workspace-specific LightRAG instance
-            rag = await _resolve_rag(http_request)
-
             # Sanitize filename to prevent Path Traversal attacks
             safe_filename = sanitize_filename(file.filename, doc_manager.input_dir)
 
@@ -2224,7 +2206,7 @@ def create_document_routes(
                             detail=f"File too large. Maximum size: {global_args.max_upload_size / 1024 / 1024:.1f}MB, uploaded: {file_size / 1024 / 1024:.1f}MB",
                         )
                 else:
-                    # If size not known, we'll check during streaming
+                    # If size not available, we'll check during streaming
                     logger.debug(
                         f"File size not available in UploadFile for {safe_filename}, will check during streaming"
                     )
@@ -2313,9 +2295,7 @@ def create_document_routes(
         "/text", response_model=InsertResponse, dependencies=[Depends(combined_auth)]
     )
     async def insert_text(
-        request: InsertTextRequest,
-        background_tasks: BackgroundTasks,
-        http_request: Request,  # [yuexi] +Request
+        request: InsertTextRequest, background_tasks: BackgroundTasks
     ):
         """
         Insert text into the RAG system.
@@ -2334,8 +2314,6 @@ def create_document_routes(
             HTTPException: If an error occurs during text processing (500).
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
-
             # Check if file_source already exists in doc_status storage
             if (
                 request.file_source
@@ -2397,9 +2375,7 @@ def create_document_routes(
         dependencies=[Depends(combined_auth)],
     )
     async def insert_texts(
-        request: InsertTextsRequest,
-        background_tasks: BackgroundTasks,
-        http_request: Request,  # [yuexi] +Request
+        request: InsertTextsRequest, background_tasks: BackgroundTasks
     ):
         """
         Insert multiple texts into the RAG system.
@@ -2418,8 +2394,6 @@ def create_document_routes(
             HTTPException: If an error occurs during text processing (500).
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
-
             # Check if any file_sources already exist in doc_status storage
             if request.file_sources:
                 for file_source in request.file_sources:
@@ -2481,7 +2455,7 @@ def create_document_routes(
     @router.delete(
         "", response_model=ClearDocumentsResponse, dependencies=[Depends(combined_auth)]
     )
-    async def clear_documents(http_request: Request):  # [yuexi] +Request
+    async def clear_documents():
         """
         Clear all documents from the RAG system.
 
@@ -2506,9 +2480,6 @@ def create_document_routes(
             get_namespace_data,
             get_namespace_lock,
         )
-
-        # [yuexi] Resolve workspace-specific LightRAG instance
-        rag = await _resolve_rag(http_request)
 
         # Get pipeline status and lock
         pipeline_status = await get_namespace_data(
@@ -2680,7 +2651,7 @@ def create_document_routes(
         dependencies=[Depends(combined_auth)],
         response_model=PipelineStatusResponse,
     )
-    async def get_pipeline_status(http_request: Request) -> PipelineStatusResponse:  # [yuexi] +Request
+    async def get_pipeline_status() -> PipelineStatusResponse:
         """
         Get the current status of the document indexing pipeline.
 
@@ -2710,8 +2681,6 @@ def create_document_routes(
                 get_namespace_lock,
                 get_all_update_flags_status,
             )
-
-            rag = await _resolve_rag(http_request)  # [yuexi]
 
             pipeline_status = await get_namespace_data(
                 "pipeline_status", workspace=rag.workspace
@@ -2781,7 +2750,7 @@ def create_document_routes(
     @router.get(
         "", response_model=DocsStatusesResponse, dependencies=[Depends(combined_auth)]
     )
-    async def documents(http_request: Request) -> DocsStatusesResponse:  # [yuexi] +Request
+    async def documents() -> DocsStatusesResponse:
         """
         Get the status of all documents in the system. This endpoint is deprecated; use /documents/paginated instead.
         To prevent excessive resource consumption, a maximum of 1,000 records is returned.
@@ -2800,8 +2769,6 @@ def create_document_routes(
             HTTPException: If an error occurs while retrieving document statuses (500).
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
-
             statuses = (
                 DocStatus.PENDING,
                 DocStatus.PROCESSING,
@@ -2899,7 +2866,6 @@ def create_document_routes(
     async def delete_document(
         delete_request: DeleteDocRequest,
         background_tasks: BackgroundTasks,
-        http_request: Request,  # [yuexi] +Request
     ) -> DeleteDocByIdResponse:
         """
         Delete documents and all their associated data by their IDs using background processing.
@@ -2931,8 +2897,6 @@ def create_document_routes(
                 get_namespace_data,
                 get_namespace_lock,
             )
-
-            rag = await _resolve_rag(http_request)  # [yuexi]
 
             pipeline_status = await get_namespace_data(
                 "pipeline_status", workspace=rag.workspace
@@ -2977,7 +2941,7 @@ def create_document_routes(
         response_model=ClearCacheResponse,
         dependencies=[Depends(combined_auth)],
     )
-    async def clear_cache(request: ClearCacheRequest, http_request: Request):  # [yuexi] +Request
+    async def clear_cache(request: ClearCacheRequest):
         """
         Clear all cache data from the LLM response cache storage.
 
@@ -2994,7 +2958,6 @@ def create_document_routes(
             HTTPException: If an error occurs during cache clearing (500).
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
             # Call the aclear_cache method (no modes parameter)
             await rag.aclear_cache()
 
@@ -3012,7 +2975,7 @@ def create_document_routes(
         response_model=DeletionResult,
         dependencies=[Depends(combined_auth)],
     )
-    async def delete_entity(request: DeleteEntityRequest, http_request: Request):  # [yuexi] +Request
+    async def delete_entity(request: DeleteEntityRequest):
         """
         Delete an entity and all its relationships from the knowledge graph.
 
@@ -3026,7 +2989,6 @@ def create_document_routes(
             HTTPException: If the entity is not found (404) or an error occurs (500).
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
             result = await rag.adelete_by_entity(entity_name=request.entity_name)
             if result.status == "not_found":
                 raise HTTPException(status_code=404, detail=result.message)
@@ -3048,7 +3010,7 @@ def create_document_routes(
         response_model=DeletionResult,
         dependencies=[Depends(combined_auth)],
     )
-    async def delete_relation(request: DeleteRelationRequest, http_request: Request):  # [yuexi] +Request
+    async def delete_relation(request: DeleteRelationRequest):
         """
         Delete a relationship between two entities from the knowledge graph.
 
@@ -3062,7 +3024,6 @@ def create_document_routes(
             HTTPException: If the relation is not found (404) or an error occurs (500).
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
             result = await rag.adelete_by_relation(
                 source_entity=request.source_entity,
                 target_entity=request.target_entity,
@@ -3087,7 +3048,7 @@ def create_document_routes(
         response_model=TrackStatusResponse,
         dependencies=[Depends(combined_auth)],
     )
-    async def get_track_status(track_id: str, http_request: Request) -> TrackStatusResponse:  # [yuexi] +Request
+    async def get_track_status(track_id: str) -> TrackStatusResponse:
         """
         Get the processing status of documents by tracking ID.
 
@@ -3107,8 +3068,6 @@ def create_document_routes(
             HTTPException: If track_id is invalid (400) or an error occurs (500).
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
-
             # Validate track_id
             if not track_id or not track_id.strip():
                 raise HTTPException(status_code=400, detail="Track ID cannot be empty")
@@ -3165,7 +3124,6 @@ def create_document_routes(
     )
     async def get_documents_paginated(
         request: DocumentsRequest,
-        http_request: Request,  # [yuexi] +Request
     ) -> PaginatedDocsResponse:
         """
         Get documents with pagination support.
@@ -3186,8 +3144,6 @@ def create_document_routes(
         Raises:
             HTTPException: If an error occurs while retrieving documents (500).
         """
-        rag = await _resolve_rag(http_request)  # [yuexi]
-
         trace_id = uuid4().hex[:8]
         request_start = time.perf_counter()
         status_filter_value = (
@@ -3345,7 +3301,7 @@ def create_document_routes(
         response_model=StatusCountsResponse,
         dependencies=[Depends(combined_auth)],
     )
-    async def get_document_status_counts(http_request: Request) -> StatusCountsResponse:  # [yuexi] +Request
+    async def get_document_status_counts() -> StatusCountsResponse:
         """
         Get counts of documents by status.
 
@@ -3359,7 +3315,6 @@ def create_document_routes(
             HTTPException: If an error occurs while retrieving status counts (500).
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
             status_counts = await rag.doc_status.get_all_status_counts()
             return StatusCountsResponse(status_counts=status_counts)
 
@@ -3373,7 +3328,7 @@ def create_document_routes(
         response_model=ReprocessResponse,
         dependencies=[Depends(combined_auth)],
     )
-    async def reprocess_failed_documents(background_tasks: BackgroundTasks, http_request: Request):  # [yuexi] +Request
+    async def reprocess_failed_documents(background_tasks: BackgroundTasks):
         """
         Reprocess failed and pending documents.
 
@@ -3399,8 +3354,6 @@ def create_document_routes(
             HTTPException: If an error occurs while initiating reprocessing (500).
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
-
             # Start the reprocessing in the background
             # Note: Reprocessed documents retain their original track_id from initial upload
             background_tasks.add_task(rag.apipeline_process_enqueue_documents)
@@ -3421,7 +3374,7 @@ def create_document_routes(
         response_model=CancelPipelineResponse,
         dependencies=[Depends(combined_auth)],
     )
-    async def cancel_pipeline(http_request: Request):  # [yuexi] +Request
+    async def cancel_pipeline():
         """
         Request cancellation of the currently running pipeline.
 
@@ -3447,8 +3400,6 @@ def create_document_routes(
                 get_namespace_data,
                 get_namespace_lock,
             )
-
-            rag = await _resolve_rag(http_request)  # [yuexi]
 
             pipeline_status = await get_namespace_data(
                 "pipeline_status", workspace=rag.workspace
@@ -3481,7 +3432,7 @@ def create_document_routes(
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=str(e))
 
-    # ── [yuexi] 自定义 KG 端点 ────────────────────────────────────────
+    # ── [jonex] 自定义 KG 端点 ────────────────────────────────────────
 
     class ChunkItem(BaseModel):
         """自定义 KG 插入请求中的单个 chunk。"""
@@ -3530,7 +3481,7 @@ def create_document_routes(
         dependencies=[Depends(combined_auth)],
         summary="直接插入自定义知识图谱（chunks + entities + relationships）",
     )
-    async def insert_custom_kg(request: CustomKGRequest, http_request: Request):  # [yuexi] +Request
+    async def insert_custom_kg(request: CustomKGRequest):
         """
         直接将预先构建的知识图谱插入 RAG 系统。
 
@@ -3545,8 +3496,6 @@ def create_document_routes(
         - 对已有图谱数据的批量修正
         """
         try:
-            rag = await _resolve_rag(http_request)  # [yuexi]
-
             custom_kg = {
                 "chunks": [
                     c.model_dump(exclude_none=True) for c in request.chunks

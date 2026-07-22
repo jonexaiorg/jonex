@@ -11,7 +11,6 @@ import asyncio
 from lightrag import LightRAG, QueryParam
 from lightrag.utils import TiktokenTokenizer
 from lightrag.api.utils_api import get_combined_auth_dependency
-from lightrag.api.workspace_manager import get_workspace_from_request  # [yuexi]
 from fastapi import Depends
 
 
@@ -219,13 +218,9 @@ def parse_query_mode(query: str) -> tuple[str, SearchMode, bool, Optional[str]]:
 
 
 class OllamaAPI:
-    def __init__(self, manager, top_k: int = 60, api_key: Optional[str] = None):
-        # [yuexi] manager is a WorkspaceRAGManager.
-        # self.rag keeps the default instance for LLM-only operations (generate,
-        # bypass mode). For RAG queries (chat endpoint), resolve per-request.
-        self.manager = manager
-        self.rag = manager.get_default()  # default instance, set after manager.init_default()
-        self._rag_initialized = False  # will be true after setup_routes or first request
+    def __init__(self, rag: LightRAG, top_k: int = 60, api_key: Optional[str] = None):
+        self.rag = rag
+        self.ollama_server_infos = rag.ollama_server_infos
         self.top_k = top_k
         self.api_key = api_key
         self.router = APIRouter(tags=["ollama"])
@@ -529,11 +524,7 @@ class OllamaAPI:
                             **self.rag.llm_model_kwargs,
                         )
                     else:
-                        # [yuexi] Resolve workspace-specific instance for RAG query
-                        rag = await self.manager.get(
-                            get_workspace_from_request(raw_request)
-                        )
-                        response = await rag.aquery(
+                        response = await self.rag.aquery(
                             cleaned_query, param=query_param
                         )
 
@@ -696,11 +687,7 @@ class OllamaAPI:
                             **self.rag.llm_model_kwargs,
                         )
                     else:
-                        # [yuexi] Resolve workspace-specific instance for RAG query
-                        rag = await self.manager.get(
-                            get_workspace_from_request(raw_request)
-                        )
-                        response_text = await rag.aquery(
+                        response_text = await self.rag.aquery(
                             cleaned_query, param=query_param
                         )
 

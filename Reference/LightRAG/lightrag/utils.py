@@ -4,7 +4,6 @@ import weakref
 import sys
 
 import asyncio
-import contextvars  # [yuexi] 计量 context 透传（见 docs/lightrag-embed-metering-context-propagation-plan.md）
 import html
 import csv
 import inspect
@@ -737,7 +736,6 @@ def priority_limit_async_func_call(
                                 task_id,
                                 args,
                                 kwargs,
-                                captured_ctx,   # [yuexi] 调用方 context 快照
                             ) = await asyncio.wait_for(queue.get(), timeout=1.0)
                         except asyncio.TimeoutError:
                             continue
@@ -766,20 +764,12 @@ def priority_limit_async_func_call(
 
                         try:
                             # Execute function with timeout protection
-                            # [yuexi] 在调用方 context 快照中执行，使下游 openai_embed/
-                            # openai_complete 能读到入库文档设置的 _yuexi_ctx（tenant/kb/doc/trace）。
-                            # context= 需 Python 3.11+（本项目 3.12）。
                             if max_execution_timeout is not None:
                                 result = await asyncio.wait_for(
-                                    asyncio.create_task(
-                                        func(*args, **kwargs), context=captured_ctx
-                                    ),
-                                    timeout=max_execution_timeout,
+                                    func(*args, **kwargs), timeout=max_execution_timeout
                                 )
                             else:
-                                result = await asyncio.create_task(
-                                    func(*args, **kwargs), context=captured_ctx
-                                )
+                                result = await func(*args, **kwargs)
 
                             # Set result if future is still valid
                             if not task_state.future.done():
@@ -1043,23 +1033,18 @@ def priority_limit_async_func_call(
                     current_count = counter
                     counter += 1
 
-                # [yuexi] 入队前捕获调用方 context 快照（含 process_document 设置的
-                # _yuexi_ctx: tenant/kb/doc）。放元组末尾：PriorityQueue 仅按
-                # (priority, current_count) 排序，current_count 单调唯一，不会比较到 ctx。
-                _captured_ctx = contextvars.copy_context()
-
                 # Queue the task with timeout handling
                 try:
                     if _queue_timeout is not None:
                         await asyncio.wait_for(
                             queue.put(
-                                (_priority, current_count, task_id, args, kwargs, _captured_ctx)
+                                (_priority, current_count, task_id, args, kwargs)
                             ),
                             timeout=_queue_timeout,
                         )
                     else:
                         await queue.put(
-                            (_priority, current_count, task_id, args, kwargs, _captured_ctx)
+                            (_priority, current_count, task_id, args, kwargs)
                         )
                 except asyncio.TimeoutError:
                     raise QueueFullError(
@@ -2077,7 +2062,6 @@ async def use_llm_func_with_cache(
     cache_type: str = "extract",
     chunk_id: str | None = None,
     cache_keys_collector: list = None,
-    _jonex_file_source: str | None = None,           # [yuexi]
 ) -> tuple[str, int]:
     """Call LLM function with cache support and text sanitization
 
@@ -2160,8 +2144,6 @@ async def use_llm_func_with_cache(
             kwargs["history_messages"] = safe_history_messages
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
-        if _jonex_file_source:                              # [yuexi]
-            kwargs["_jonex_file_source"] = _jonex_file_source
 
         res: str = await use_llm_func(
             safe_user_prompt, system_prompt=safe_system_prompt, **kwargs
@@ -2196,8 +2178,6 @@ async def use_llm_func_with_cache(
         kwargs["history_messages"] = safe_history_messages
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
-    if _jonex_file_source:                              # [yuexi]
-        kwargs["_jonex_file_source"] = _jonex_file_source
 
     try:
         res = await use_llm_func(

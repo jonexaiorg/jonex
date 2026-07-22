@@ -1,6 +1,14 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+Jonex platform - Configuration management module
 
-
+Supports:
+- Multi-environment configuration (dev/test/uat/prod)
+- Environment variable override
+- Type safety
+- Hot reload (optional)
+"""
 
 import os
 from functools import lru_cache
@@ -9,23 +17,23 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 try:
-
+    # pydantic v2
     from pydantic.v1 import BaseSettings, Field, validator
 except ImportError:
-
+    # pydantic v1
     from pydantic import BaseSettings, Field, validator
 
 
-
+# ==================== Configuration base classes ====================
 class DatabaseSettings(BaseSettings):
-
+    """Database configuration"""
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
     DB_USERNAME: str = "jonex"
-    DB_PASSWORD: str = ""
+    DB_PASSWORD: str = "jonex123"
     DB_NAME: str = "jonex"
 
-
+    # Connection pool configuration
     DB_POOL_SIZE: int = 50
     DB_MAX_OVERFLOW: int = 100
     DB_POOL_TIMEOUT: int = 30
@@ -37,14 +45,14 @@ class DatabaseSettings(BaseSettings):
 
 
 class RedisSettings(BaseSettings):
-
+    """Redis Configuration"""
     REDIS_URL: Optional[str] = None
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_PASSWORD: Optional[str] = None
 
-
+    # Connection pool configuration
     REDIS_MAX_CONNECTIONS: int = 50
     REDIS_SOCKET_TIMEOUT: int = 10
     REDIS_CONNECT_TIMEOUT: int = 5
@@ -53,7 +61,7 @@ class RedisSettings(BaseSettings):
 
     @validator("REDIS_HOST", "REDIS_PORT", "REDIS_DB", "REDIS_PASSWORD", pre=True)
     def parse_redis_url(cls, v, values, field):
-
+        """Parse connection parameters from REDIS_URL (if provided)"""
         url = values.get("REDIS_URL")
         if url and url.startswith("redis://"):
             try:
@@ -79,30 +87,30 @@ class RedisSettings(BaseSettings):
 
 
 class SecuritySettings(BaseSettings):
-
+    """Security configuration"""
     JWT_SECRET: str = "your_jwt_secret_key_here_please_change_in_production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_DAYS: int = 7
 
-
+    # User authentication configuration
     USER_JWT_EXPIRE_HOURS: int = 24
     USER_JWT_REFRESH_DAYS: int = 7
     BCRYPT_ROUNDS: int = 12
 
-
+    # API Key Configuration
     API_KEY_HEADER: str = "X-API-Key"
     API_KEY_LENGTH: int = 32
 
-
+    # Login ticket configuration
     LOGIN_TICKET_EXPIRE_SECONDS: int = 60
-    AUTH_ALLOWED_REDIRECT_URIS: str = ""
+    AUTH_ALLOWED_REDIRECT_URIS: str = ""  # JSON string: {"appId": ["uri1", "uri2"]}
 
     class Config:
         env_file = ".env"
 
 
 class LoggingSettings(BaseSettings):
-
+    """Logging configuration"""
     LOG_LEVEL: str = "INFO"
     LOG_FILE_PATH: str = "./logs/jonex.log"
     LOG_JSON_FORMAT: bool = False
@@ -111,7 +119,7 @@ class LoggingSettings(BaseSettings):
     def validate_log_level(cls, v):
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         if v.upper() not in valid_levels:
-            raise ValueError(f"LOG_LEVEL 必须是以下之一: {valid_levels}")
+            raise ValueError(f"LOG_LEVEL must be one of: {valid_levels}")
         return v.upper()
 
     class Config:
@@ -119,7 +127,7 @@ class LoggingSettings(BaseSettings):
 
 
 class TCADPSettings(BaseSettings):
-
+    """TCADP platform configuration"""
     TCADP_API_URL: str = "https://tcadp.tencent.com/api"
     TCADP_API_KEY: Optional[str] = None
     TCADP_WEBHOOK_SECRET: Optional[str] = None
@@ -131,19 +139,19 @@ class TCADPSettings(BaseSettings):
 
 
 class MilvusSettings(BaseSettings):
-
+    """Milvus vector database configuration"""
     MILVUS_HOST: str = "localhost"
     MILVUS_PORT: int = 19530
     MILVUS_USER: Optional[str] = None
     MILVUS_PASSWORD: Optional[str] = None
     MILVUS_HTTP_PORT: int = 9091
 
-
+    # Connection configuration
     MILVUS_CONNECT_TIMEOUT: int = 30
     MILVUS_KEEP_ALIVE: bool = True
     MILVUS_ALIAS: str = "default"
 
-
+    # Vector configuration
     MILVUS_DEFAULT_DIM: int = 1536
     MILVUS_DEFAULT_METRIC: str = "COSINE"
     MILVUS_DEFAULT_INDEX: str = "IVF_FLAT"
@@ -153,8 +161,8 @@ class MilvusSettings(BaseSettings):
 
 
 class CorsSettings(BaseSettings):
-
-    AUTH_CORS_ORIGINS: str = ""
+    """CORS and Cookie configuration"""
+    AUTH_CORS_ORIGINS: str = ""  # Comma-separated: "https://a.com,https://b.com"
     AUTH_COOKIE_DOMAIN: str = ""
     AUTH_COOKIE_SECURE: bool = True
     AUTH_COOKIE_SAMESITE: str = "Lax"
@@ -170,51 +178,28 @@ class CorsSettings(BaseSettings):
 
 
 class AppSettings(BaseSettings):
-
+    """Application configuration"""
     APP_NAME: str = "jonex-platform"
     APP_VERSION: str = "0.1.0"
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
 
+    # Environment identifier
+    ENV: str = Field("dev", description="Runtime environment: dev/test/uat/prod")
 
-    ENV: str = Field("dev", description="运行环境: dev/test/uat/prod")
-
-
+    # Rate limit configuration
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_PER_MINUTE: int = 100
 
-
+    # Metering configuration
     METERING_ENABLED: bool = True
 
-
-    CIRCUIT_BREAKER_ENABLED: bool = False
-    CIRCUIT_BREAKER_THRESHOLD: int = 5
-
-
-    AUDIT_LOG_ENABLED: bool = True
-    AUDIT_LOG_ASYNC: bool = True
-    AUDIT_QUEUE_MAX_SIZE: int = 10000
-    AUDIT_FLUSH_BATCH_SIZE: int = 100
-    AUDIT_FLUSH_INTERVAL_MS: int = 200
-    AUDIT_HTTP_METHODS: str = "POST,PUT,PATCH,DELETE"
-    AUDIT_RETENTION_DAYS: int = 90
-    AUDIT_INGEST_URL: str = ""
-
-
-    AUDIT_KEY_ACTION_KEYWORDS: str = (
-        "create,update,delete,remove,save,publish,modify,edit,import,"
-        "review,retry,cancel,approve,reject,bind,unbind,enable,disable,reset,upload"
-    )
-
-
+    # Sidecar service address
     SIDECAR_URL: str = "http://localhost:8001"
-    SIDECAR_API_KEY: str = ""
 
-
+    # Capability service address
     KNOWLEDGE_BASE_URL: str = "http://localhost:8003"
-    BUSINESS_DOMAIN_URL: str = "http://localhost:8005"
     ATOMIC_RAG_URL: str = "http://localhost:8004"
-    PLATFORM_URL: str = "http://localhost:8006"
 
     @property
     def is_production(self) -> bool:
@@ -228,54 +213,7 @@ class AppSettings(BaseSettings):
         env_file = ".env"
 
 
-class LLMGatewaySettings(BaseSettings):
-
-
-    LLMGW_UPSTREAM_LLM_HOST: str = "https://tokenhub.tencentmaas.com/v1"
-    LLMGW_UPSTREAM_LLM_API_KEY: str = ""
-    LLMGW_UPSTREAM_EMBED_HOST: str = "http://host.docker.internal:11434/v1"
-    LLMGW_UPSTREAM_EMBED_API_KEY: str = "ollama"
-
-
-
-    LLMGW_RERANK_BINDING: str = "ollama-generate"
-    LLMGW_RERANK_MODEL: str = "awenleven/Qwen3-Reranker-4B:Q4_K_M"
-    LLMGW_UPSTREAM_RERANK_HOST: str = "http://host.docker.internal:11434"
-    LLMGW_UPSTREAM_RERANK_API_KEY: str = "ollama"
-    LLMGW_RERANK_PROMPT_PROFILE: str = "qwen3"
-    LLMGW_RERANK_MAX_DOCS: int = 12
-    LLMGW_RERANK_CONCURRENCY: int = 4
-    LLMGW_RERANK_TIMEOUT: int = 30
-
-    LLMGW_PORT: int = 8787
-    LLMGW_INTERNAL_TOKENS: str = ""
-    LLMGW_REQUEST_TIMEOUT: int = 600
-
-    LLMGW_METERING_ENABLED: bool = True
-    LLMGW_QUOTA_ENABLED: bool = False
-
-
-
-
-    LLMGW_DISABLE_THINKING_ENABLED: bool = True
-    LLMGW_DISABLE_THINKING_MODELS: str = "deepseek-v4-flash-202605"
-    LLMGW_DISABLE_THINKING_SCENES: str = "lightrag_extract,ontology_extract"
-
-    LLMGW_PG_FLUSH_MAX_ROWS: int = 20
-    LLMGW_PG_FLUSH_MAX_SECONDS: float = 5.0
-
-
-
-    LLMGW_EMBED_AGGREGATE_ENABLED: bool = False
-    LLMGW_EMBED_AGGREGATE_SCENES: str = "lightrag_embed,ontology_embed"
-
-    LLMGW_EMBED_AVG_CHARS_PER_TOKEN: int = 4
-
-    class Config:
-        env_file = ".env"
-
-
-
+# ==================== Main configuration class ====================
 class Settings(
     DatabaseSettings,
     RedisSettings,
@@ -285,22 +223,21 @@ class Settings(
     MilvusSettings,
     CorsSettings,
     AppSettings,
-    LLMGatewaySettings,
 ):
-
+    """Global configuration class"""
 
     class Config:
         env_file = ".env"
         case_sensitive = True
 
 
-
+# ==================== Configuration loading ====================
 def _load_env_file() -> None:
-
-
-
-
-
+    """Load environment variable file"""
+    # Try to load in priority order:
+    # 1. Configuration file specified by environment variable
+    # 2. .env.{environment}
+    # 3. .env
 
     env_specific_file = os.getenv("ENV_FILE")
     env_name = os.getenv("ENV", "dev").lower()
@@ -316,29 +253,38 @@ def _load_env_file() -> None:
 
     for path in search_paths:
         if path.exists():
-            load_dotenv(path, override=False)
+            load_dotenv(path, override=True)
             break
 
 
-
+# Load environment file first
 _load_env_file()
 
 
 @lru_cache(maxsize=None)
 def get_config() -> Settings:
+    """
+    Get global configuration instance (singleton)
 
+    Returns:
+        Settings: Global configuration instance
+    """
     return Settings()
 
 
 def reload_config() -> Settings:
+    """
+    Reload configuration (hot reload)
 
+    Note: Already created objects will not be updated automatically, need to recreate manually
+    """
     _load_env_file()
     get_config.cache_clear()
     return get_config()
 
 
-
-
+# ==================== Configuration export ====================
+# For backward compatibility, export as constants
 config = get_config()
 
 ENV = config.ENV

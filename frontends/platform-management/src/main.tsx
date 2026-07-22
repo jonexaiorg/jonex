@@ -1,9 +1,8 @@
 import { createRoot } from 'react-dom/client'
-import { I18nextProvider } from 'react-i18next'
 import App from './App'
 import mount from './remote/RemoteApp'
 import { bootstrapStandaloneAuth, createStandaloneShellContext } from '@jonex/shell-sdk'
-import i18n from './locales/i18n'
+import './locales/i18n'
 import './styles/index.scss'
 import '@jonex/platform-theme/theme.css'
 import '@jonex/platform-theme/layout.css'
@@ -42,9 +41,5 @@ async function startStandalone() {
   })
 
   ;(window as any).__SHELL_CONTEXT__ = ctx
-  createRoot(root).render(
-    <I18nextProvider i18n={i18n}>
-      <App />
-    </I18nextProvider>,
-  )
+  createRoot(root).render(<App />)
 }

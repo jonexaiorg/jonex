@@ -1,6 +1,5 @@
 import React, { Component, type ReactNode } from 'react'
 import { Button, Result, Spin } from 'antd'
-import i18n from '../../locales/i18n'
 
 interface Props {
   children: ReactNode
@@ -29,7 +28,6 @@ export default class RemoteAppBoundary extends Component<Props, State> {
   }
 
   render() {
-    const t = i18n.t.bind(i18n)
     const { error, retrying } = this.state
     const { children, standaloneUrl, appName, loading } = this.props
 
@@ -41,7 +39,7 @@ export default class RemoteAppBoundary extends Component<Props, State> {
           alignItems: 'center',
           padding: 120,
         }}>
-          <Spin size="large" tip={t('common.loading')} />
+          <Spin size="large" tip="正在加载应用..." />
         </div>
       )
     }
@@ -50,15 +48,15 @@ export default class RemoteAppBoundary extends Component<Props, State> {
       return (
         <Result
           status="warning"
-          title={t('error.requestFailed')}
-          subTitle={appName ? `${t('error.requestFailed')}「${appName}」` : t('error.notFound')}
+          title="应用加载失败"
+          subTitle={appName ? `无法加载「${appName}」` : '无法加载子应用'}
           extra={[
             <Button key="retry" type="primary" onClick={this.handleRetry}>
-              {t('common.retry')}
+              重试
             </Button>,
             standaloneUrl ? (
               <Button key="standalone" onClick={() => { window.open(standaloneUrl, '_self') }}>
-                {t('common.detail')}
+                在新窗口打开
               </Button>
             ) : null,
           ].filter(Boolean)}

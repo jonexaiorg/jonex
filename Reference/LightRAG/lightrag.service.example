@@ -4,13 +4,13 @@ After=network.target
 
 [Service]
 Type=simple
-User=lightrag
+User=netman
 # Memory settings
 MemoryHigh=8G
 MemoryMax=12G
 
 # Set the LightRAG installation directory (change this to match your installation path)
-Environment="LIGHTRAG_HOME=/opt/lightrag"
+Environment="LIGHTRAG_HOME=/home/netman/lightrag-xyj"
 
 # Set Environment to your Python virtual environment
 Environment="PATH=${LIGHTRAG_HOME}/.venv/bin"

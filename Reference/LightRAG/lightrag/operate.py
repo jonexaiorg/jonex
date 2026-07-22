@@ -2967,7 +2967,6 @@ async def extract_entities(
             cache_type="extract",
             chunk_id=chunk_key,
             cache_keys_collector=cache_keys_collector,
-            _jonex_file_source=file_path,                      # [yuexi]
         )
 
         history = pack_user_ass_to_openai_messages(
@@ -3015,7 +3014,6 @@ async def extract_entities(
                     cache_type="extract",
                     chunk_id=chunk_key,
                     cache_keys_collector=cache_keys_collector,
-                    _jonex_file_source=file_path,                # [yuexi]
                 )
 
                 # Process gleaning result separately with file path

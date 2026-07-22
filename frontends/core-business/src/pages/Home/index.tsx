@@ -1,29 +1,29 @@
 import React from 'react'
-import { useTranslation } from 'react-i18next'
 import { Row, Col, Card, Typography, Statistic } from 'antd'
 import { SearchOutlined, AppstoreOutlined, DatabaseOutlined, FileTextOutlined, RightOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { MOCK_DOMAIN_SPACES } from '../../data/mock'
+import type { DomainSpace } from '../../types/viewModels'
 import { colors, radius } from '@jonex/platform-theme/tokens'
 
 const { Title, Text } = Typography
 
-export default function CoreBusinessHome() {
-  const { t } = useTranslation()
-  const navigate = useNavigate()
+const domainSpaces: DomainSpace[] = []
 
-  const STATS = [
-    { title: t('domainSpace.title'), value: 6, icon: <AppstoreOutlined />, color: colors.accent },
-    { title: '知识条目', value: 12890, icon: <DatabaseOutlined />, color: '#10b981' },
-    { title: '文档总数', value: 4720, icon: <FileTextOutlined />, color: '#f59e0b' },
-    { title: '本月检索', value: '38,562', icon: <SearchOutlined />, color: '#8b5cf6' },
-  ]
+const STATS = [
+  { title: '领域空间', value: 6, icon: <AppstoreOutlined />, color: colors.accent },
+  { title: '知识条目', value: 12890, icon: <DatabaseOutlined />, color: '#10b981' },
+  { title: '文档总数', value: 4720, icon: <FileTextOutlined />, color: '#f59e0b' },
+  { title: '本月检索', value: '38,562', icon: <SearchOutlined />, color: '#8b5cf6' },
+]
+
+export default function CoreBusinessHome() {
+  const navigate = useNavigate()
 
   return (
     <div>
       <div className="page-title" style={{ marginBottom: 24 }}>
         <Title level={1} style={{ fontSize: 24, fontWeight: 700, color: colors.brandDark, marginBottom: 4 }}>
-          {t('domainKnowledge.title')}
+          核心业务
         </Title>
         <Text type="secondary" style={{ fontSize: 14 }}>知识检索、领域空间、知识管理与领域配置</Text>
       </div>
@@ -45,14 +45,14 @@ export default function CoreBusinessHome() {
 
       <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Title level={2} style={{ fontSize: 17, fontWeight: 600, color: colors.brandDark, margin: 0 }}>
-          {t('domainSpace.title')}
+          领域空间
         </Title>
         <a onClick={() => navigate('/domain-space')} style={{ fontSize: 13, color: colors.accent, cursor: 'pointer' }}>
-          {t('home.viewDetails')} <RightOutlined style={{ fontSize: 12 }} />
+          查看全部 <RightOutlined style={{ fontSize: 12 }} />
         </a>
       </div>
       <Row gutter={[16, 16]}>
-        {MOCK_DOMAIN_SPACES.slice(0, 4).map((space) => (
+        {domainSpaces.slice(0, 4).map((space) => (
           <Col xs={24} sm={12} lg={6} key={space.id}>
             <Card
               hoverable
@@ -71,7 +71,7 @@ export default function CoreBusinessHome() {
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 600, color: colors.brandDark }}>{space.name}</div>
                   <span className={`yx-status-badge ${space.status}`}>
-                    {space.status === 'active' ? t('status.active') : t('status.inactive')}
+                    {space.status === 'active' ? '运行中' : '已停用'}
                   </span>
                 </div>
               </div>
@@ -86,13 +86,13 @@ export default function CoreBusinessHome() {
 
       <div style={{ marginTop: 32 }}>
         <Title level={2} style={{ fontSize: 17, fontWeight: 600, color: colors.brandDark, marginBottom: 16 }}>
-          {t('home.quickStart')}
+          快捷操作
         </Title>
         <Row gutter={[16, 16]}>
           {[
-            { label: t('knowledgeSearch.title'), desc: t('knowledgeSearch.allDomainDesc'), path: '/knowledge-search', icon: <SearchOutlined /> },
-            { label: t('domainSpace.title'), desc: '管理领域空间', path: '/domain-space', icon: <AppstoreOutlined /> },
-            { label: t('domainKnowledge.title'), desc: '领域知识条目', path: '/domain-knowledge', icon: <DatabaseOutlined /> },
+            { label: '知识检索', desc: '跨领域智能搜索', path: '/knowledge-search', icon: <SearchOutlined /> },
+            { label: '领域空间', desc: '管理领域空间', path: '/domain-space', icon: <AppstoreOutlined /> },
+            { label: '知识管理', desc: '领域知识条目', path: '/domain-knowledge', icon: <DatabaseOutlined /> },
             { label: '领域配置', desc: '领域服务与检索', path: '/domain-management', icon: <AppstoreOutlined /> },
           ].map((action) => (
             <Col xs={24} sm={12} md={6} key={action.label}>

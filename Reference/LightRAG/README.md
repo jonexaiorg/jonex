@@ -112,7 +112,7 @@
 
 > **Note**: You can also use pip if you prefer, but uv is recommended for better performance and more reliable dependency management.
 >
-> **📦 Offline Deployment**: For offline or air-gapped environments, see the [Offline Deployment Guide](https://github.com/HKUDS/LightRAG/blob/main/docs/OfflineDeployment.md) for instructions on pre-installing all dependencies and cache files.
+> **📦 Offline Deployment**: For offline or air-gapped environments, see the [Offline Deployment Guide](./docs/OfflineDeployment.md) for instructions on pre-installing all dependencies and cache files.
 
 ### Install LightRAG Server
 
@@ -129,8 +129,15 @@ uv tool install "lightrag-hku[api]"
 # source .venv/bin/activate  # Windows: .venv\Scripts\activate
 # pip install "lightrag-hku[api]"
 
-# Published server wheels already contain the pre-built WebUI.
-# Launch the server after configuring .env.
+### Build front-end artifacts
+cd lightrag_webui
+bun install --frozen-lockfile
+bun run build
+cd ..
+
+# Setup env file
+# Obtain the env.example file by downloading it from the GitHub repository root
+# or by copying it from a local source checkout.
 cp env.example .env  # Update the .env with your LLM and embedding configurations
 # Launch the server
 lightrag-server
@@ -174,18 +181,6 @@ make env-base  # Or: cp env.example .env and update it manually
 lightrag-server
 ```
 
-### Build a Server Wheel from Source
-
-A plain `uv build` packages only files that already exist and does not compile the frontend. For a distributable server wheel, use the cross-platform release helper:
-
-```bash
-# Requires bun and uv on PATH. Uses bun.lock in frozen mode, builds the WebUI,
-# builds the wheel, and fails unless lightrag/api/webui/index.html is included.
-python scripts/build_server_wheel.py
-```
-
-The generated wheel is written to `dist/`. Docker builds remain reproducible through their existing frontend-builder stage and do not need this helper. A wheel intentionally built without this step is core/API-only and must not be published as a WebUI-enabled server artifact.
-
 * Launching the LightRAG Server with Docker Compose
 
 ```bash
@@ -198,7 +193,7 @@ docker compose up
 
 > Historical versions of LightRAG docker images can be found here: [LightRAG Docker Images]( https://github.com/HKUDS/LightRAG/pkgs/container/lightrag)
 >
-> Official GHCR images published by GitHub Actions are signed with Sigstore Cosign using GitHub OIDC. See [docs/DockerDeployment.md](https://github.com/HKUDS/LightRAG/blob/main/docs/DockerDeployment.md#verify-official-ghcr-images-with-cosign) for verification commands.
+> Official GHCR images published by GitHub Actions are signed with Sigstore Cosign using GitHub OIDC. See [docs/DockerDeployment.md](./docs/DockerDeployment.md#verify-official-ghcr-images-with-cosign) for verification commands.
 
 ### Create .env File With Setup Tool
 
@@ -213,7 +208,7 @@ make env-storage-rewrite # Optional: force-regenerate wizard-managed compose ser
 make env-security-check # Optional: audit the current .env for security risks
 ```
 
-For full description of every target see [docs/InteractiveSetup.md](https://github.com/HKUDS/LightRAG/blob/main/docs/InteractiveSetup.md).
+For full description of every target see [docs/InteractiveSetup.md](./docs/InteractiveSetup.md).
 The setup wizards update configuration only; run `make env-security-check` separately to audit the
 current `.env` for security risks before deployment.
 By default, rerunning the setup preserves unchanged wizard-managed compose service blocks; use a
@@ -262,7 +257,7 @@ LightRAG's demands on the capabilities of Large Language Models (LLMs) are signi
 
 ### Quick Start for LightRAG Server
 
-The LightRAG Server is designed to provide Web UI and API support. The LightRAG Server offers a comprehensive knowledge graph visualization feature. It supports various gravity layouts, node queries, subgraph filtering, and more. For more information about LightRAG Server, please refer to [LightRAG Server](https://github.com/HKUDS/LightRAG/blob/main/docs/LightRAG-API-Server.md).
+The LightRAG Server is designed to provide Web UI and API support. The LightRAG Server offers a comprehensive knowledge graph visualization feature. It supports various gravity layouts, node queries, subgraph filtering, and more. For more information about LightRAG Server, please refer to [LightRAG Server](./docs/LightRAG-API-Server.md).
 
 ![iShot_2025-03-23_12.40.08](./README.assets/iShot_2025-03-23_12.40.08.png)
 
@@ -290,23 +285,23 @@ For a streaming response implementation example, please see `examples/lightrag_o
 
 ## Programming with LightRAG Core
 
-For the complete Core API reference — including init parameters, `QueryParam`, LLM/embedding provider examples (OpenAI, Ollama, Azure, Gemini, HuggingFace, LlamaIndex), reranker injection, insert operations, entity/relation management, and delete/merge — see **[docs/ProgramingWithCore.md](https://github.com/HKUDS/LightRAG/blob/main/docs/ProgramingWithCore.md)**.
+For the complete Core API reference — including init parameters, `QueryParam`, LLM/embedding provider examples (OpenAI, Ollama, Azure, Gemini, HuggingFace, LlamaIndex), reranker injection, insert operations, entity/relation management, and delete/merge — see **[docs/ProgramingWithCore.md](./docs/ProgramingWithCore.md)**.
 
 > ⚠️ **If you would like to integrate LightRAG into your project, we recommend utilizing the REST API provided by the LightRAG Server**. LightRAG Core is typically intended for embedded applications or for researchers who wish to conduct studies and evaluations.
 
 ### Advanced Features
 
-LightRAG provides additional capabilities including token usage tracking, knowledge graph data export, LLM cache management, Langfuse observability integration, and RAGAS-based evaluation. See **[docs/AdvancedFeatures.md](https://github.com/HKUDS/LightRAG/blob/main/docs/AdvancedFeatures.md)**.
+LightRAG provides additional capabilities including token usage tracking, knowledge graph data export, LLM cache management, Langfuse observability integration, and RAGAS-based evaluation. See **[docs/AdvancedFeatures.md](./docs/AdvancedFeatures.md)**.
 
 ### Multimodal Document Processing (RAG-Anything Integration)
 
-LightRAG integrates with [RAG-Anything](https://github.com/HKUDS/RAG-Anything) for end-to-end multimodal RAG across PDFs, Office documents, images, tables, and formulas. For setup and usage examples, see **[docs/AdvancedFeatures.md](https://github.com/HKUDS/LightRAG/blob/main/docs/AdvancedFeatures.md)**.
+LightRAG integrates with [RAG-Anything](https://github.com/HKUDS/RAG-Anything) for end-to-end multimodal RAG across PDFs, Office documents, images, tables, and formulas. For setup and usage examples, see **[docs/AdvancedFeatures.md](./docs/AdvancedFeatures.md)**.
 
 > LightRAG Server will soon integrate RAG-Anything’s multimodal processing capabilities into its file processing pipeline. Stay tuned.
 
 ## Replicating Findings in the Paper
 
-LightRAG consistently outperforms NaiveRAG, RQ-RAG, HyDE, and GraphRAG across agriculture, computer science, legal, and mixed domains. For the full evaluation methodology, prompts, and reproduce steps, see **[docs/Reproduce.md](https://github.com/HKUDS/LightRAG/blob/main/docs/Reproduce.md)**.
+LightRAG consistently outperforms NaiveRAG, RQ-RAG, HyDE, and GraphRAG across agriculture, computer science, legal, and mixed domains. For the full evaluation methodology, prompts, and reproduce steps, see **[docs/Reproduce.md](./docs/Reproduce.md)**.
 
 **Overall Performance Table**
 
