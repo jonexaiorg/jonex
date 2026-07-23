@@ -72,12 +72,14 @@ frontends/**/lerna-debug.log*
 # ===== 环境变量（保留 .env.example） =====
 .env
 .env.*
-!.env.example
-!.env.local.example
 deploy/.env
 deploy/.env.*
 !deploy/.env.example
 !deploy/.env.rag.example
+!docs/env/.env.example
+!docs/env/.env.local.example
+!docs/env/.env.rag.local.example
+!docs/env/.env.server-local.example
 
 # ===== Reference 引用项目（排除非项目文件） =====
 Reference/Rag-anything/.github/

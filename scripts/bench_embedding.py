@@ -84,24 +84,24 @@ async def run_level(concurrency: int, total: int) -> None:
     thr = ok / wall if wall > 0 else 0.0
     chunk_thr = ok * BATCH_NUM / wall if wall > 0 else 0.0
     print(
-        f"并发={concurrency:<3} batch={BATCH_NUM:<2} 请求={total:<3} 成功={ok:<3} "
-        f"墙钟={wall:6.1f}s | 请求吞吐={thr:5.2f} req/s chunk吞吐={chunk_thr:6.2f} chunk/s | "
-        f"单请求 p50={pct(0.5):5.2f}s p95={pct(0.95):5.2f}s "
+        f"concurrency={concurrency:<3} batch={BATCH_NUM:<2} total={total:<3} success={ok:<3} "
+        f"wall={wall:6.1f}s | req_throughput={thr:5.2f} req/s chunk_throughput={chunk_thr:6.2f} chunk/s | "
+        f"p50={pct(0.5):5.2f}s p95={pct(0.95):5.2f}s "
         f"max={max(latencies):5.2f}s | dim={dim_seen}"
     )
     if errors:
-        print(f"    示例错误: {errors}")
+        print(f"    sample errors: {errors}")
 
 
 async def main() -> None:
-    print(f"目标: {ENDPOINT}  模型: {MODEL}")
-    print(f"样本文本长度: {len(SAMPLE_TEXT)} 字符; 每档请求数: {REQUESTS_PER_LEVEL}\n")
+    print(f"Endpoint: {ENDPOINT}  Model: {MODEL}")
+    print(f"Sample text length: {len(SAMPLE_TEXT)} chars; requests per level: {REQUESTS_PER_LEVEL}\n")
 
 
-    print("预热中（加载模型）...")
+    print("Warming up (loading model)...")
     async with httpx.AsyncClient(timeout=httpx.Timeout(600.0)) as client:
         ok, dt, dim, err = await one_request(client, -1)
-        print(f"预热: 成功={ok} 延迟={dt:.2f}s dim={dim} {err}\n")
+        print(f"Warmup: ok={ok} latency={dt:.2f}s dim={dim} {err}\n")
 
     for level in CONCURRENCY_LEVELS:
         await run_level(level, REQUESTS_PER_LEVEL)

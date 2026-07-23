@@ -103,7 +103,7 @@ async def one_request(client: httpx.AsyncClient) -> dict:
         )
         dt = time.perf_counter() - t0
         if resp.status_code == 429:
-            return {"ok": False, "dt": dt, "rate_limited": True, "err": "429 限流"}
+            return {"ok": False, "dt": dt, "rate_limited": True, "err": "429 rate_limited"}
         if resp.status_code != 200:
             return {"ok": False, "dt": dt, "err": f"HTTP {resp.status_code}: {resp.text[:160]}"}
         data = resp.json()
@@ -154,35 +154,35 @@ async def run_level(concurrency: int, total: int) -> None:
     )
 
     print(
-        f"并发={concurrency:<3} 请求={total:<3} 成功={len(ok):<3} 429={rate_limited:<2} "
-        f"墙钟={wall:6.1f}s | 请求吞吐={req_thr:5.2f} req/s 生成吞吐={comp_thr:6.1f} tok/s | "
-        f"单请求 p50={pct(0.5):6.2f}s p95={pct(0.95):6.2f}s max={max(lat or [0]):6.2f}s | "
-        f"单请求decode≈{per_req_tps:5.1f} tok/s | 平均 prompt={prm // max(len(ok),1)} "
+        f"concurrency={concurrency:<3} total={total:<3} success={len(ok):<3} ratelimited={rate_limited:<2} "
+        f"wall={wall:6.1f}s | req_throughput={req_thr:5.2f} req/s gen_throughput={comp_thr:6.1f} tok/s | "
+        f"p50={pct(0.5):6.2f}s p95={pct(0.95):6.2f}s max={max(lat or [0]):6.2f}s | "
+        f"decode_per_req≈{per_req_tps:5.1f} tok/s | avg prompt={prm // max(len(ok),1)} "
         f"completion={comp // max(len(ok),1)}"
     )
     errs = [r.get("err") for r in results if not r["ok"] and r.get("err")][:3]
     if errs:
-        print(f"    示例错误: {errs}")
+        print(f"    sample errors: {errs}")
 
 
 async def main() -> None:
-    print(f"目标: {ENDPOINT}  模型: {MODEL}")
-    print(f"thinking={'disabled(抽取场景)' if THINKING_OFF else 'enabled'} "
-          f"max_tokens={MAX_TOKENS} 每档请求={REQUESTS_PER_LEVEL}")
-    print(f"chunk 长度: {len(CHUNK)} 字符\n")
+    print(f"Endpoint: {ENDPOINT}  Model: {MODEL}")
+    print(f"thinking={'disabled(extraction)' if THINKING_OFF else 'enabled'} "
+          f"max_tokens={MAX_TOKENS} requests_per_level={REQUESTS_PER_LEVEL}")
+    print(f"Chunk length: {len(CHUNK)} chars\n")
     if not API_KEY:
-        print("❌ 缺少 API key：请设置 BENCH_LLM_KEY 或确认 deploy/.env 的 "
-              "LLMGW_UPSTREAM_LLM_API_KEY 有值")
+        print("❌ Missing API key: set BENCH_LLM_KEY or ensure "
+              "LLMGW_UPSTREAM_LLM_API_KEY is set in deploy/.env")
         return
 
-    print("预热（首请求，含可能的连接/排队）...")
+    print("Warming up (first request, may include connection/queue time)...")
     async with httpx.AsyncClient(timeout=httpx.Timeout(600.0)) as client:
         r = await one_request(client)
         if r["ok"]:
-            print(f"预热: 成功 延迟={r['dt']:.2f}s prompt={r.get('prompt_tokens')} "
+            print(f"Warmup: ok  latency={r['dt']:.2f}s prompt={r.get('prompt_tokens')} "
                   f"completion={r.get('completion_tokens')}\n")
         else:
-            print(f"预热失败: {r.get('err')}\n（后续档位可能同样失败，请先排查端点/key/模型名）\n")
+            print(f"Warmup failed: {r.get('err')}\n(Subsequent levels may also fail; check endpoint/key/model first)\n")
 
     for level in CONCURRENCY_LEVELS:
         await run_level(level, REQUESTS_PER_LEVEL)

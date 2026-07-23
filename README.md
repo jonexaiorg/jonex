@@ -159,10 +159,10 @@ Local development uses root-level environment files and VSCode Debug. It is sepa
 ### Initialize the local environment
 
 ```bash
-cp .env.local.example .env.local
-cp .env.rag.local.example .env.rag.local
+cp docs/env/.env.local.example .env.local
+cp docs/env/.env.rag.local.example .env.rag.local
 mkdir -p .vscode
-cp launch.json.example .vscode/launch.json
+cp docs/examples/launch.json.example .vscode/launch.json
 make frontends-install
 ```
 
@@ -183,7 +183,7 @@ make dev-gateway
 make dev-frontend
 ```
 
-Open `http://localhost:8080`. For complete setup, VSCode debugging, frontend startup, RAG, and troubleshooting instructions, see [Local Full-Stack Debugging](local-fullstack-debugging-guide.md).
+Open `http://localhost:8080`.
 
 ## Your First Knowledge Search in Five Minutes
 
