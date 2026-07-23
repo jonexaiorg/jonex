@@ -12,7 +12,7 @@
 
 Please do not open a public issue for a suspected vulnerability.
 
-Use GitHub Private Vulnerability Reporting from the repository's **Security** tab. If that feature is unavailable, email [jonex@yzg.ai](mailto:jonex@yzg.ai) with the subject prefix `[SECURITY]` and ask for a secure channel before sending exploit details. Include:
+Use GitHub Private Vulnerability Reporting from the repository's **Security** tab. If that feature is unavailable, email [jonexai@hotmail.com ](mailto:jonexai@hotmail.com ) with the subject prefix `[SECURITY]` and ask for a secure channel before sending exploit details. Include:
 
 - Affected version or commit
 - A clear description of the impact

@@ -34,7 +34,7 @@ This Code of Conduct applies within all community spaces and when an individual 
 
 ## Enforcement
 
-Report abusive, harassing, or otherwise unacceptable behavior privately to [jonex@yzg.ai](mailto:jonex@yzg.ai) with the subject prefix `[CODE OF CONDUCT]`. Do not use a public issue when a report contains sensitive personal information.
+Report abusive, harassing, or otherwise unacceptable behavior privately to [jonexai@hotmail.com ](mailto:jonexai@hotmail.com ) with the subject prefix `[CODE OF CONDUCT]`. Do not use a public issue when a report contains sensitive personal information.
 
 All complaints will be reviewed and investigated promptly and fairly by maintainers who are not directly involved in the reported incident. Maintainers will respect the privacy and security of the reporter and disclose information only as needed to investigate and resolve the report.
 
