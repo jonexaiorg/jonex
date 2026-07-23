@@ -55,7 +55,7 @@ Docker Compose is the fastest way to run the complete platform.
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YZGlobal/jonex.git
+git clone https://github.com/jonexaiorg/jonex.git
 cd jonex
 ```
 
