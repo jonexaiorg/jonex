@@ -1,0 +1,49 @@
+description: 视频解析 — Ollama Qwen3.5-9B-VLM + TokenHub LLM
+version: "1.0"
+updated_at: "2026-07-08T00:00:00Z"
+updated_by: "admin"
+config:
+  # ── 模型选择 ──
+  # LLM: TokenHub (DeepSeek V4 Flash)
+  # VLM: Ollama Qwen3.5-9B-VLM (视觉)
+  # Embedding: Ollama qwen3-embedding:8b
+  llm: deepseek-v4-flash-202605
+  vlm: qwen3.6:35b
+  embedding: qwen3-embedding:8b
+  asr: openai_compatible:large-v3
+
+  # ── 连接信息（host / api_key）默认从 env 读取，不写入 preset ──
+  # LLM/Embedding: LightRAG server 侧 env；VLM: VLM_BINDING_HOST / VLM_BINDING_API_KEY；ASR: ASR_BASE_URL / ASR_API_KEY
+
+  # ── ASR ──
+  asr_binding: openai_compatible
+  asr_model: large-v3
+
+  # ── 解析与模态 ──
+  parser: mineru
+  modalities:
+    - video
+    - audio
+  output_dir: /data/output
+  profile: dev
+
+  # ── 视频处理调优 ──
+  video_max_frames: 15
+  video_keyframe_interval: 10
+  video_chunk_token_size: 600
+  video_summarize_batch_size: 8
+  video_summarize_max_batches: 20
+  max_parallel_vlm: 1
+  vlm_timeout: 120
+
+  # ── ASR 调优 ──
+  audio_asr_timeout: 1200
+  max_parallel_asr: 1
+
+  # ── 只开视频，关闭其他模态 ──
+  enable_image_processing: false
+  enable_table_processing: false
+  enable_equation_processing: false
+
+  # LightRAG tuning
+  embedding_batch_num: 2

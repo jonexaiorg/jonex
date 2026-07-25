@@ -1,0 +1,46 @@
+description: 完整视频解析链路 — ASR + VLM + 实体提取
+version: "1.0"
+updated_at: "2026-07-08T00:00:00Z"
+updated_by: "admin"
+config:
+  # ── 模型选择 ──
+  # LLM: TokenHub Anthropic-compatible API (DeepSeek V4 Flash)
+  # VLM: vLLM 实例 (Qwen2.5-VL-7B, OpenAI-compatible)
+  # Embedding: LM Studio 本地
+  llm: deepseek-v4-flash-202605
+  vlm: /home/yuexi/Qwen2.5-VL-7B
+  embedding: qwen3-embedding:8b
+  asr: openai_compatible:large-v3
+
+  # ── 连接信息（host / api_key）默认从 env 读取，不写入 preset ──
+  # LLM/Embedding: LightRAG server 侧 env；VLM: VLM_BINDING_HOST / VLM_BINDING_API_KEY；ASR: ASR_BASE_URL / ASR_API_KEY
+
+  # ── ASR ──
+  asr_binding: openai_compatible
+  asr_model: large-v3
+
+  # ── 解析与模态 ──
+  parser: mineru
+  modalities:
+    - video
+    - audio
+  output_dir: /data/output
+  profile: dev
+
+  # ── 视频处理调优 ──
+  video_max_frames: 30
+  video_keyframe_interval: 10
+  video_chunk_token_size: 600
+  video_summarize_batch_size: 8
+  video_summarize_max_batches: 20
+  max_parallel_vlm: 1
+  vlm_timeout: 120
+
+  # ── ASR 调优 ──
+  audio_asr_timeout: 600
+  max_parallel_asr: 1
+
+  # ── 只开视频，关闭其他模态 ──
+  enable_image_processing: false
+  enable_table_processing: false
+  enable_equation_processing: false

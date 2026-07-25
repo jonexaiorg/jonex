@@ -1,0 +1,48 @@
+# Model capabilities — structured declaration (SSOT)
+# Matches model_ids in models.env.
+# Missing keys → safe conservative defaults (ModelCapability()).
+
+models:
+  # ── LLMs ──
+  qwen3-72b:
+    supports_vision: false
+    max_context_tokens: 32768
+    max_output_tokens: 4096
+
+  # ── VLMs ──
+  qwen2.5-vl-7b:
+    supports_vision: true
+    supports_vision_base64: true
+    supports_vision_url: true
+    max_context_tokens: 32768
+
+  qwen3.6:35b:
+    supports_vision: true
+    supports_vision_base64: true
+    supports_vision_url: true
+    max_context_tokens: 262144
+
+  # ── Thinking models ──
+  deepseek-r1:
+    supports_thinking: true
+    max_context_tokens: 131072
+    max_output_tokens: 8192
+
+  # ── Embedding models ──
+  gemma-300m:
+    supports_vision: false
+    max_context_tokens: 8192
+    metadata:
+      embedding_dim: 768
+
+  bge-m3:
+    supports_vision: false
+    max_context_tokens: 8192
+    metadata:
+      embedding_dim: 1024
+
+  qwen3-embedding:8b:
+    supports_vision: false
+    max_context_tokens: 8192
+    metadata:
+      embedding_dim: 4096

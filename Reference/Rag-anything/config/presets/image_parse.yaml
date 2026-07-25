@@ -1,0 +1,32 @@
+description: PDF/文档解析 — MinerU 在线 API + LLM 摘要
+version: "1.0"
+updated_at: "2026-07-08T00:00:00Z"
+updated_by: "admin"
+config:
+  # ── 模型选择 ──
+  llm: deepseek-v4-flash-202605
+  embedding: qwen3-embedding:8b
+
+  # ── 连接信息（host / api_key / token）默认从 env 读取，不写入 preset；如需覆盖可在此显式设置 ──
+
+  # ── MinerU 在线 API ──
+  parser: mineru_online
+  mineru_model_source: modelscope
+  mineru_model_version: vlm
+  mineru_poll_interval: 5
+  mineru_poll_timeout: 1800
+  mineru_parse_max_retries: 3
+  mineru_parse_retry_backoff: 3
+
+  # ── 模态 ──
+  modalities:
+    - image
+  output_dir: /data/output
+  profile: dev
+
+  # ── 只开文档模态 ──
+  enable_audio_processing: false
+  enable_video_processing: false
+
+  # LightRAG tuning
+  embedding_batch_num: 2

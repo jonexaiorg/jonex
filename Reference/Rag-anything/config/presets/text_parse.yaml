@@ -1,0 +1,31 @@
+description: 纯文本解析 — 轻量快速，不经过 MinerU
+version: "1.0"
+updated_at: "2026-07-08T00:00:00Z"
+updated_by: "admin"
+config:
+  # ── 模型选择 ──
+  llm: deepseek-v4-flash-202605
+  embedding: qwen3-embedding:8b
+
+  # ── 连接信息（host / api_key / token）默认从 env 读取，不写入 preset；如需覆盖可在此显式设置 ──
+
+  # ── 解析器 (mineru 用于 .txt/.md 以外的格式兜底) ──
+  parser: mineru_online
+  mineru_model_source: modelscope
+  mineru_model_version: vlm
+
+  # ── 模态 ──
+  modalities:
+    - text
+  output_dir: /data/output
+  profile: dev
+
+  # ── 只开文本 ──
+  enable_image_processing: false
+  enable_table_processing: false
+  enable_equation_processing: false
+  enable_audio_processing: false
+  enable_video_processing: false
+
+  # LightRAG tuning
+  embedding_batch_num: 2

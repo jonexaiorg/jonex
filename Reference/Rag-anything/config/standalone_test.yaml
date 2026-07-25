@@ -1,0 +1,11 @@
+llm: qwen3-72b
+embedding: gemma-300m
+vlm: qwen2.5-vl-7b
+asr: openai_compatible:large-v3
+parser: mineru
+modalities:
+  - video
+  - audio
+output_dir: /tmp/output
+profile: dev
+webhook_url: https://example.com/callback

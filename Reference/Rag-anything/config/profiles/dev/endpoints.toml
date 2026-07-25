@@ -1,0 +1,8 @@
+[ollama]
+default_host = "http://localhost:11434/v1"
+
+[vllm]
+default_host = "http://localhost:8000/v1"
+
+[lmstudio]
+default_host = "http://localhost:1234/v1"

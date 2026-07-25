@@ -1,0 +1,44 @@
+description: 视频解析 — 腾讯云 MPS VideoComprehension（替代本地 ASR+VLM）
+version: "1.0"
+updated_at: "2026-07-23T00:00:00Z"
+updated_by: "admin"
+config:
+  # ── 模型选择 ──
+  # MPS 模式下不需要 VLM 和 ASR 模型（MPS 云端处理）
+  # 仅需 LLM 用于后续文本理解 / 实体抽取
+  llm: deepseek-v4-flash-202605
+  embedding: qwen3-embedding:8b
+
+  # ── 连接信息（host / api_key）默认从 env 读取，不写入 preset ──
+  # LLM/Embedding: LightRAG server 侧 env
+
+  # ── MPS 视频智能分析 ──
+  mps_enabled: true
+  # MPS 凭证和 COS 配置默认从环境变量读取，也可在此显式覆盖
+  # mps_secret_id: ""       # 腾讯云 SecretId
+  # mps_secret_key: ""      # 腾讯云 SecretKey
+  # mps_region: ap-guangzhou
+  # mps_cos_bucket: ""      # COS 桶名
+  # mps_cos_region: ap-guangzhou
+  # mps_definition: 33      # VideoComprehension 任务定义
+  # mps_timeout: 600        # 轮询超时(秒)
+  # mps_poll_interval: 3    # 轮询间隔(秒)
+  # mps_max_retries: 3      # DescribeTaskDetail 最大重试
+  # mps_prompt_category: mps_video_understanding
+
+  # ── 解析与模态 ──
+  parser: mineru
+  modalities:
+    - video
+  output_dir: /data/output
+  profile: dev
+
+  # ── MPS 模式不需要这些调优参数（MPS 云端处理）──
+  # video_max_frames / video_keyframe_interval / max_parallel_vlm / vlm_timeout
+  # asr_binding / asr_model / audio_asr_timeout / max_parallel_asr
+
+  # ── 只开视频，关闭其他模态 ──
+  enable_audio_processing: false
+  enable_image_processing: false
+  enable_table_processing: false
+  enable_equation_processing: false

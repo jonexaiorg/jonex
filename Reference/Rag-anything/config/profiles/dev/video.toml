@@ -1,0 +1,17 @@
+[keyframe]
+algorithm = "interval"
+interval = 10
+max_frames = 30
+
+[extract]
+audio = true
+
+[chunk]
+token_size = 600
+
+[summarize]
+batch_size = 8
+max_batches = 20
+
+[vlm]
+force_time_interval = false

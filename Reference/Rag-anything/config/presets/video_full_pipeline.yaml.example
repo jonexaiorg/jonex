@@ -1,0 +1,46 @@
+# 完整视频解析链路 — 模板
+# 复制为 video_full_pipeline.yaml 并填入实际配置
+description: 完整视频解析链路 — ASR + VLM + 实体提取
+version: "1.0"
+config:
+  # ── 模型选择 ──
+  llm: qwen3-72b
+  vlm: qwen2.5-vl-7b
+  embedding: text-embedding-embeddinggemma-300m
+  asr: openai_compatible:large-v3
+
+  # ── 模型连接信息 (按实际环境填写) ──
+  llm_host: http://your-llm-host:8000/v1
+  llm_api_key: your-api-key
+  vlm_host: http://your-vlm-host:8000/v1
+  vlm_api_key: your-api-key
+  embedding_host: http://localhost:1234/v1
+  embedding_api_key: your-api-key
+
+  # ── ASR ──
+  asr_binding: openai_compatible
+  asr_model: large-v3
+  asr_base_url: http://your-asr-host:9090/v1
+  asr_api_key: your-api-key
+
+  # ── 解析与模态 ──
+  parser: mineru
+  modalities:
+    - video
+    - audio
+  output_dir: /data/output
+  profile: dev
+
+  # ── 视频处理调优 ──
+  video_max_frames: 30
+  video_keyframe_interval: 10
+  video_chunk_token_size: 600
+  video_summarize_batch_size: 8
+  video_summarize_max_batches: 20
+  max_parallel_vlm: 1
+  vlm_timeout: 120
+  audio_asr_timeout: 600
+  max_parallel_asr: 1
+  enable_image_processing: false
+  enable_table_processing: false
+  enable_equation_processing: false
