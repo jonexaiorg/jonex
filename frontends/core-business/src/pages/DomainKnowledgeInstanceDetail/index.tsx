@@ -1,24 +1,20 @@
-import React, { useMemo } from 'react'
-import { Card, Table, Tag, Descriptions, Breadcrumb, Button } from 'antd'
-import {
-  ArrowLeftOutlined,
-  NodeIndexOutlined,
-  LinkOutlined,
-  FileTextOutlined,
-} from '@ant-design/icons'
-import { useNavigate, useParams } from 'react-router-dom'
-import type { GraphInstance } from '@/types/viewModels'
-
-const graphInstances: GraphInstance[] = []
+import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Card, Table, Tag, Descriptions, Breadcrumb, Button } from 'antd';
+import { ArrowLeftOutlined, NodeIndexOutlined, LinkOutlined, FileTextOutlined } from '@ant-design/icons';
+import { useNavigate, useParams } from 'react-router-dom';
+import { MOCK_GRAPH_INSTANCES } from '@/data/mock';
+import type { GraphInstance } from '@/data/mock';
 
 export default function DomainKnowledgeInstanceDetail() {
-  const { id, instanceId } = useParams<{ id: string; instanceId: string }>()
-  const navigate = useNavigate()
+  const { t } = useTranslation();
+  const { id, instanceId } = useParams<{ id: string; instanceId: string }>();
+  const navigate = useNavigate();
 
   const instance: GraphInstance | undefined = useMemo(
-    () => graphInstances.find((inst) => inst.id === instanceId),
+    () => MOCK_GRAPH_INSTANCES.find((inst) => inst.id === instanceId),
     [instanceId],
-  )
+  );
 
   if (!instance) {
     return (
@@ -35,49 +31,41 @@ export default function DomainKnowledgeInstanceDetail() {
             cursor: 'pointer',
           }}
         >
-          <ArrowLeftOutlined /> 返回知识图谱
+          <ArrowLeftOutlined /> {t('domainKnowledge.backToGraph')}
         </a>
         <Card
           className="yx-card"
           style={{ borderRadius: 14, border: '1px solid #eef2f6', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
           styles={{ body: { padding: 48, textAlign: 'center' as const } }}
         >
-          <div style={{ fontSize: 16, color: '#94a3b8' }}>未找到该实体实例</div>
-          <Button
-            type="primary"
-            style={{ marginTop: 16 }}
-            onClick={() => navigate(`/domain-knowledge/${id}/graph`)}
-          >
-            返回知识图谱
+          <div style={{ fontSize: 16, color: '#94a3b8' }}>{t('domainKnowledge.entityNotFound')}</div>
+          <Button type="primary" style={{ marginTop: 16 }} onClick={() => navigate(`/domain-knowledge/${id}/graph`)}>
+            {t('domainKnowledge.backToGraph')}
           </Button>
         </Card>
       </div>
-    )
+    );
   }
 
   const propertyColumns = [
     {
-      title: '属性名',
+      title: t('domainKnowledge.propertyName'),
       dataIndex: 'key',
       key: 'key',
       width: 160,
-      render: (v: string) => (
-        <span style={{ fontWeight: 600, color: '#0b2b5c', fontSize: 13 }}>{v}</span>
-      ),
+      render: (v: string) => <span style={{ fontWeight: 600, color: '#0b2b5c', fontSize: 13 }}>{v}</span>,
     },
     {
-      title: '属性值',
+      title: t('domainKnowledge.propertyValue'),
       dataIndex: 'value',
       key: 'value',
-      render: (v: string) => (
-        <span style={{ color: '#475569', fontSize: 13 }}>{v}</span>
-      ),
+      render: (v: string) => <span style={{ color: '#475569', fontSize: 13 }}>{v}</span>,
     },
-  ]
+  ];
 
   const relationColumns = [
     {
-      title: '关系名称',
+      title: t('compile.relation.name'),
       dataIndex: 'name',
       key: 'name',
       width: 160,
@@ -88,29 +76,22 @@ export default function DomainKnowledgeInstanceDetail() {
       ),
     },
     {
-      title: '关联实体',
+      title: t('domainKnowledge.relatedEntity'),
       dataIndex: 'target',
       key: 'target',
-      render: (v: string) => (
-        <span style={{ color: '#475569', fontSize: 13 }}>{v}</span>
-      ),
+      render: (v: string) => <span style={{ color: '#475569', fontSize: 13 }}>{v}</span>,
     },
     {
-      title: '操作',
+      title: t('common.actions'),
       key: 'actions',
       width: 100,
       render: (_: unknown, record: { id: string }) => (
-        <a
-          className="yx-table-action"
-          onClick={() =>
-            navigate(`/domain-knowledge/${id}/graph/relations/${record.id}`)
-          }
-        >
-          查看详情
+        <a className="yx-table-action" onClick={() => navigate(`/domain-knowledge/${id}/graph/relations/${record.id}`)}>
+          {t('domainKnowledge.viewDetails')}
         </a>
       ),
     },
-  ]
+  ];
 
   return (
     <div>
@@ -121,25 +102,25 @@ export default function DomainKnowledgeInstanceDetail() {
             {
               title: (
                 <a onClick={() => navigate('/domain-knowledge')} style={{ color: '#64748b' }}>
-                  领域知识管理
+                  {t('navigation.domainKnowledge')}
                 </a>
               ),
             },
             {
               title: (
                 <a onClick={() => navigate(`/domain-knowledge/${id}`)} style={{ color: '#64748b' }}>
-                  知识库详情
+                  {t('domainKnowledge.detail')}
                 </a>
               ),
             },
             {
               title: (
                 <a onClick={() => navigate(`/domain-knowledge/${id}/graph`)} style={{ color: '#64748b' }}>
-                  知识图谱
+                  {t('domainKnowledge.graphBreadcrumb')}
                 </a>
               ),
             },
-            { title: <span style={{ color: '#0b2b5c', fontWeight: 500 }}>实体实例详情</span> },
+            { title: <span style={{ color: '#0b2b5c', fontWeight: 500 }}>{t('route.ontologyInstanceDetail')}</span> },
           ]}
         />
       </div>
@@ -157,7 +138,7 @@ export default function DomainKnowledgeInstanceDetail() {
           cursor: 'pointer',
         }}
       >
-        <ArrowLeftOutlined style={{ fontSize: 12 }} /> 返回知识图谱
+        <ArrowLeftOutlined style={{ fontSize: 12 }} /> {t('domainKnowledge.backToGraph')}
       </a>
 
       {/* Page Title */}
@@ -206,7 +187,7 @@ export default function DomainKnowledgeInstanceDetail() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <FileTextOutlined style={{ color: '#3b82f6' }} />
               <span style={{ fontSize: 15, fontWeight: 600, color: '#0b2b5c' }}>
-                实体属性
+                {t('domainKnowledge.entityProperties')}
               </span>
             </div>
           }
@@ -230,7 +211,7 @@ export default function DomainKnowledgeInstanceDetail() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <LinkOutlined style={{ color: '#10b981' }} />
               <span style={{ fontSize: 15, fontWeight: 600, color: '#0b2b5c' }}>
-                关联关系
+                {t('domainKnowledge.relatedRelations')}
               </span>
             </div>
           }
@@ -259,7 +240,7 @@ export default function DomainKnowledgeInstanceDetail() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <FileTextOutlined style={{ color: '#f97316' }} />
             <span style={{ fontSize: 15, fontWeight: 600, color: '#0b2b5c' }}>
-              来源文档
+              {t('domainKnowledge.sourceDocuments')}
             </span>
           </div>
         }
@@ -287,5 +268,5 @@ export default function DomainKnowledgeInstanceDetail() {
         </div>
       </Card>
     </div>
-  )
+  );
 }

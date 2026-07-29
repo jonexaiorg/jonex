@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react'
-import { Modal, Tabs, message } from 'antd'
-import { useTranslation } from 'react-i18next'
+import React, { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Modal, Tabs, message } from 'antd';
 import type {
   OntologyObjectDef,
   OntologyRelationDef,
@@ -11,16 +11,17 @@ import type {
   SaveOntologyRelationPayload,
   SaveOntologyConstraintPayload,
   SaveCompileStepPayload,
-} from '@/types/domainKnowledge'
+} from '@/types/domainKnowledge';
+import { ontologyStatusLabelKey } from '@/types/domainKnowledge';
 import {
   getOntologyObjects,
   createOntologyObject,
   updateOntologyObject,
   deleteOntologyObject,
   getOntologyRelations,
-  createOntologyRelation,
-  updateOntologyRelation,
-  deleteOntologyRelation,
+  createSchemaRelationType,
+  updateSchemaRelationType,
+  deleteSchemaRelationType,
   getOntologyConstraints,
   createOntologyConstraint,
   updateOntologyConstraint,
@@ -33,290 +34,336 @@ import {
   deleteCompileStep,
   getEngineSetting,
   saveEngineSetting,
-} from '@/api/domainKnowledge'
-import OntologyObjectSection from './OntologyObjectSection'
-import OntologyRelationSection from './OntologyRelationSection'
-import OntologyConstraintSection from './OntologyConstraintSection'
-import CompileStepSection from './CompileStepSection'
-import EngineBasicSection from './EngineBasicSection'
-import ObjectFormModal from './ObjectFormModal'
-import RelationFormModal from './RelationFormModal'
-import ConstraintFormModal from './ConstraintFormModal'
-import StepFormModal from './StepFormModal'
-import PromptViewModal from './PromptViewModal'
-import TemplateImportModal from './TemplateImportModal'
+} from '@/api/domainKnowledge';
+import OntologyObjectSection from './OntologyObjectSection';
+import OntologyRelationSection from './OntologyRelationSection';
+import OntologyConstraintSection from './OntologyConstraintSection';
+import CompileStepSection from './CompileStepSection';
+import EngineBasicSection from './EngineBasicSection';
+import ObjectFormModal from './ObjectFormModal';
+import RelationFormModal from './RelationFormModal';
+import ConstraintFormModal from './ConstraintFormModal';
+import StepFormModal from './StepFormModal';
+import PromptViewModal from './PromptViewModal';
+import TemplateImportModal from './TemplateImportModal';
 
 interface Props {
-  kbId: string
+  kbId: string;
 }
 
-const EMPTY_TARGET_OPTIONS: ConstraintTargetOptions = { entity: [], attribute: [], relation: [] }
-const PROMPT_STATUS_TEXT = { active: 'Enabled', inactive: 'Disabled' } as const
-
-function buildObjectPrompt(o: OntologyObjectDef): string {
-  let t = `You are a domain ontology extraction expert. Extract entity instances matching the “${o.name}” ontology definition from the following document.\n\n`
-  t += `Ontology Name: ${o.name}\n`
-  t += `Ontology Description: ${o.description || 'None'}\n`
-  t += `Attribute Definitions:\n`
-  o.attributes.forEach((a, i) => {
-    t += `${i + 1}. ${a.name} (${a.type})${a.isPrimaryKey ? ' [Primary Key]' : ''}\n`
-  })
-  t += `\nAdditional Requirements: ${o.requirement || 'None'}\n`
-  t += `Status: ${PROMPT_STATUS_TEXT[o.status]}`
-  return t
-}
-
-function buildRelationPrompt(r: OntologyRelationDef): string {
-  let t = `You are a domain ontology relation extraction expert. Extract relation instances matching the “${r.name}” definition from the following document.\n\n`
-  t += `Source Object: ${r.sourceObject}\n`
-  t += `Relation Name: ${r.name}\n`
-  t += `Target Object: ${r.targetObject}\n`
-  t += `Relation Description: ${r.description || 'None'}\n`
-  t += `Relation Type: ${r.relationType}\n`
-  t += `Status: ${PROMPT_STATUS_TEXT[r.status]}`
-  return t
-}
+const EMPTY_TARGET_OPTIONS: ConstraintTargetOptions = {
+  entity: [],
+  attribute: [],
+  relation: [],
+};
 
 export default function CompileTab({ kbId }: Props) {
-  const { t } = useTranslation()
-  const [activeSubTab, setActiveSubTab] = useState('obj')
-  const [objects, setObjects] = useState<OntologyObjectDef[]>([])
-  const [relations, setRelations] = useState<OntologyRelationDef[]>([])
-  const [constraints, setConstraints] = useState<OntologyConstraint[]>([])
-  const [targetOptions, setTargetOptions] = useState<ConstraintTargetOptions>(EMPTY_TARGET_OPTIONS)
-  const [steps, setSteps] = useState<CompileStep[]>([])
-  const [engine, setEngine] = useState<EngineSetting | null>(null)
-  const [loadingObjects, setLoadingObjects] = useState(false)
-  const [loadingRelations, setLoadingRelations] = useState(false)
-  const [loadingConstraints, setLoadingConstraints] = useState(false)
-  const [loadingSteps, setLoadingSteps] = useState(false)
-  const [loadingEngine, setLoadingEngine] = useState(false)
+  const { t } = useTranslation();
 
-  const [objectModal, setObjectModal] = useState<{ open: boolean; editing: OntologyObjectDef | null }>({ open: false, editing: null })
-  const [relationModal, setRelationModal] = useState<{ open: boolean; editing: OntologyRelationDef | null }>({ open: false, editing: null })
-  const [constraintModal, setConstraintModal] = useState<{ open: boolean; editing: OntologyConstraint | null }>({ open: false, editing: null })
-  const [stepModal, setStepModal] = useState<{ open: boolean; editing: CompileStep | null }>({ open: false, editing: null })
-  const [promptModal, setPromptModal] = useState<{ open: boolean; title: string; desc: string; content: string }>({ open: false, title: '', desc: '', content: '' })
-  const [importModal, setImportModal] = useState<{ open: boolean; mode: 'object' | 'relation' }>({ open: false, mode: 'object' })
-  const [submitting, setSubmitting] = useState(false)
+  function buildObjectPrompt(o: OntologyObjectDef): string {
+    let prompt = `${t('compile.prompt.objectIntro', { name: o.name })}\n`;
+    prompt += `${t('compile.prompt.objectNameLabel', { name: o.name })}\n`;
+    prompt += `${t('compile.prompt.objectDescLabel', { description: o.description || t('compile.prompt.none') })}\n`;
+    prompt += `${t('compile.prompt.attrDefLabel')}\n`;
+    o.attributes.forEach((a, i) => {
+      const pkTag = a.isPrimaryKey ? t('compile.prompt.primaryKeyBracket') : '';
+      prompt += t('compile.prompt.attrLine', {
+        index: i + 1,
+        name: a.name,
+        type: a.type,
+        primaryKey: pkTag,
+      });
+    });
+    prompt += `\n${t('compile.prompt.moreReqLabel', { requirement: o.requirement || t('compile.prompt.none') })}\n`;
+    prompt += `${t('compile.statusLabel')}${t(ontologyStatusLabelKey[o.status])}`;
+    return prompt;
+  }
+
+  function buildRelationPrompt(r: OntologyRelationDef): string {
+    let prompt = `${t('compile.prompt.relationIntro', { name: r.name })}\n`;
+    prompt += `${t('compile.prompt.sourceObjectLabel', { name: r.sourceObject })}\n`;
+    prompt += `${t('compile.prompt.relationNameLabel', { name: r.name })}\n`;
+    prompt += `${t('compile.prompt.targetObjectLabel', { name: r.targetObject })}\n`;
+    prompt += `${t('compile.prompt.relationDescLabel', { description: r.description || t('compile.prompt.none') })}\n`;
+    prompt += `${t('compile.prompt.relationTypeLabel', { type: r.relationType })}\n`;
+    prompt += `${t('compile.statusLabel')}${t(ontologyStatusLabelKey[r.status])}`;
+    return prompt;
+  }
+  const [activeSubTab, setActiveSubTab] = useState('obj');
+  const [objects, setObjects] = useState<OntologyObjectDef[]>([]);
+  const [relations, setRelations] = useState<OntologyRelationDef[]>([]);
+  const [constraints, setConstraints] = useState<OntologyConstraint[]>([]);
+  const [targetOptions, setTargetOptions] = useState<ConstraintTargetOptions>(EMPTY_TARGET_OPTIONS);
+  const [steps, setSteps] = useState<CompileStep[]>([]);
+  const [engine, setEngine] = useState<EngineSetting | null>(null);
+  const [loadingObjects, setLoadingObjects] = useState(false);
+  const [loadingRelations, setLoadingRelations] = useState(false);
+  const [loadingConstraints, setLoadingConstraints] = useState(false);
+  const [loadingSteps, setLoadingSteps] = useState(false);
+  const [loadingEngine, setLoadingEngine] = useState(false);
+
+  const [objectModal, setObjectModal] = useState<{
+    open: boolean;
+    editing: OntologyObjectDef | null;
+  }>({ open: false, editing: null });
+  const [relationModal, setRelationModal] = useState<{
+    open: boolean;
+    editing: OntologyRelationDef | null;
+  }>({ open: false, editing: null });
+  const [constraintModal, setConstraintModal] = useState<{
+    open: boolean;
+    editing: OntologyConstraint | null;
+  }>({ open: false, editing: null });
+  const [stepModal, setStepModal] = useState<{
+    open: boolean;
+    editing: CompileStep | null;
+  }>({ open: false, editing: null });
+  const [promptModal, setPromptModal] = useState<{
+    open: boolean;
+    title: string;
+    desc: string;
+    content: string;
+  }>({ open: false, title: '', desc: '', content: '' });
+  const [importModal, setImportModal] = useState<{
+    open: boolean;
+    mode: 'object' | 'relation';
+  }>({ open: false, mode: 'object' });
+  const [submitting, setSubmitting] = useState(false);
 
   const loadObjects = useCallback(() => {
-    setLoadingObjects(true)
-    getOntologyObjects(kbId).then(setObjects).catch((e) => message.error(e?.message || t('common.loadFailed'))).finally(() => setLoadingObjects(false))
-  }, [kbId])
+    setLoadingObjects(true);
+    getOntologyObjects(kbId)
+      .then(setObjects)
+      .catch((e) => message.error(e?.message || t('compile.loadObjectsFailed')))
+      .finally(() => setLoadingObjects(false));
+  }, [kbId]);
 
   const loadRelations = useCallback(() => {
-    setLoadingRelations(true)
-    getOntologyRelations(kbId).then(setRelations).catch((e) => message.error(e?.message || t('common.loadFailed'))).finally(() => setLoadingRelations(false))
-  }, [kbId])
+    setLoadingRelations(true);
+    getOntologyRelations(kbId)
+      .then(setRelations)
+      .catch((e) => message.error(e?.message || t('compile.loadRelationsFailed')))
+      .finally(() => setLoadingRelations(false));
+  }, [kbId]);
 
   const loadConstraints = useCallback(() => {
-    setLoadingConstraints(true)
-    getOntologyConstraints(kbId).then(setConstraints).catch((e) => message.error(e?.message || t('common.loadFailed'))).finally(() => setLoadingConstraints(false))
-  }, [kbId])
+    setLoadingConstraints(true);
+    getOntologyConstraints(kbId)
+      .then(setConstraints)
+      .catch((e) => message.error(e?.message || t('compile.loadConstraintsFailed')))
+      .finally(() => setLoadingConstraints(false));
+  }, [kbId]);
 
   const loadTargetOptions = useCallback(() => {
-    getConstraintTargetOptions(kbId).then(setTargetOptions).catch(() => setTargetOptions(EMPTY_TARGET_OPTIONS))
-  }, [kbId])
+    getConstraintTargetOptions(kbId)
+      .then(setTargetOptions)
+      .catch(() => setTargetOptions(EMPTY_TARGET_OPTIONS));
+  }, [kbId]);
 
   const loadSteps = useCallback(() => {
-    setLoadingSteps(true)
-    getCompileSteps(kbId).then(setSteps).catch((e) => message.error(e?.message || t('common.loadFailed'))).finally(() => setLoadingSteps(false))
-  }, [kbId])
+    setLoadingSteps(true);
+    getCompileSteps(kbId)
+      .then(setSteps)
+      .catch((e) => message.error(e?.message || t('compile.loadStepsFailed')))
+      .finally(() => setLoadingSteps(false));
+  }, [kbId]);
 
   const loadEngine = useCallback(() => {
-    setLoadingEngine(true)
-    getEngineSetting(kbId).then(setEngine).catch((e) => message.error(e?.message || t('common.loadFailed'))).finally(() => setLoadingEngine(false))
-  }, [kbId])
+    setLoadingEngine(true);
+    getEngineSetting(kbId)
+      .then(setEngine)
+      .catch((e) => message.error(e?.message || t('compile.loadEngineFailed')))
+      .finally(() => setLoadingEngine(false));
+  }, [kbId]);
 
   useEffect(() => {
-    loadObjects()
-    loadRelations()
-    loadConstraints()
-    loadTargetOptions()
-    loadSteps()
-    loadEngine()
-  }, [loadObjects, loadRelations, loadConstraints, loadTargetOptions, loadSteps, loadEngine])
+    loadObjects();
+    loadRelations();
+    loadConstraints();
+    loadTargetOptions();
+    loadSteps();
+    loadEngine();
+  }, [loadObjects, loadRelations, loadConstraints, loadTargetOptions, loadSteps, loadEngine]);
 
-
+  // 编译 schema 三类共用全量保存，任一保存后同步刷新三类，保证 schema_version 与目标选项一致
   const reloadCompiledSchema = useCallback(() => {
-    loadObjects()
-    loadRelations()
-    loadConstraints()
-    loadTargetOptions()
-  }, [loadObjects, loadRelations, loadConstraints, loadTargetOptions])
+    loadObjects();
+    loadRelations();
+    loadConstraints();
+    loadTargetOptions();
+  }, [loadObjects, loadRelations, loadConstraints, loadTargetOptions]);
 
   const handleSaveError = (e: any, fallback: string) => {
-    const msg = e?.message || fallback
-    message.error(msg)
-
+    const msg = e?.message || fallback;
+    message.error(msg);
+    // 并发版本冲突（后端 409）后，刷新到最新数据
     if (typeof msg === 'string' && msg.includes('已被更新')) {
-      reloadCompiledSchema()
+      reloadCompiledSchema();
     }
-  }
+  };
 
   const submitObject = async (payload: SaveOntologyObjectPayload) => {
-    setSubmitting(true)
+    setSubmitting(true);
     try {
       if (objectModal.editing) {
-        await updateOntologyObject(kbId, objectModal.editing.id, payload)
-        message.success(t('compile.objectUpdated'))
+        await updateOntologyObject(kbId, objectModal.editing.id, payload);
+        message.success(t('compile.objectUpdated'));
       } else {
-        await createOntologyObject(kbId, payload)
-        message.success(t('compile.objectCreated'))
+        await createOntologyObject(kbId, payload);
+        message.success(t('compile.objectCreated'));
       }
-      setObjectModal({ open: false, editing: null })
-      reloadCompiledSchema()
+      setObjectModal({ open: false, editing: null });
+      reloadCompiledSchema();
     } catch (e: any) {
-      handleSaveError(e, t('compile.objectLoadFailed'))
+      handleSaveError(e, t('compile.saveObjectFailed'));
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
-  }
+  };
 
   const removeObject = (o: OntologyObjectDef) => {
     Modal.confirm({
-      title: t('compile.objects'),
-      content: `Delete object “${o.name}”? This cannot be undone. Related relations and constraints will also be removed.`,
-      okText: 'Delete',
-      cancelText: 'Cancel',
+      title: t('compile.deleteObject'),
+      content: t('compile.confirmDeleteObject', { name: o.name }),
+      okText: t('compile.confirmDelete'),
+      cancelText: t('common.cancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await deleteOntologyObject(kbId, o.id)
-          message.success(t('compile.objectDeleted'))
-          reloadCompiledSchema()
+          await deleteOntologyObject(kbId, o.id);
+          message.success(t('compile.objectDeleted'));
+          reloadCompiledSchema();
         } catch (e: any) {
-          handleSaveError(e, t('compile.objectLoadFailed'))
+          handleSaveError(e, t('compile.deleteObjectFailed'));
         }
       },
-    })
-  }
+    });
+  };
 
   const submitRelation = async (payload: SaveOntologyRelationPayload) => {
-    setSubmitting(true)
+    setSubmitting(true);
     try {
       if (relationModal.editing) {
-        await updateOntologyRelation(kbId, relationModal.editing.id, payload)
-        message.success(t('compile.relationUpdated'))
+        await updateSchemaRelationType(kbId, relationModal.editing.id, payload);
+        message.success(t('compile.relationUpdated'));
       } else {
-        await createOntologyRelation(kbId, payload)
-        message.success(t('compile.relationCreated'))
+        await createSchemaRelationType(kbId, payload);
+        message.success(t('compile.relationCreated'));
       }
-      setRelationModal({ open: false, editing: null })
-      reloadCompiledSchema()
+      setRelationModal({ open: false, editing: null });
+      reloadCompiledSchema();
     } catch (e: any) {
-      handleSaveError(e, t('compile.relationLoadFailed'))
+      handleSaveError(e, t('compile.saveRelationFailed'));
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
-  }
+  };
 
   const removeRelation = (r: OntologyRelationDef) => {
     Modal.confirm({
-      title: t('compile.relations'),
-      content: `Delete relation “${r.name}”? This cannot be undone. Related constraints will also be removed.`,
-      okText: 'Delete',
-      cancelText: 'Cancel',
+      title: t('compile.deleteRelation'),
+      content: t('compile.confirmDeleteRelation', { name: r.name }),
+      okText: t('compile.confirmDelete'),
+      cancelText: t('common.cancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await deleteOntologyRelation(kbId, r.id)
-          message.success(t('compile.relationDeleted'))
-          reloadCompiledSchema()
+          await deleteSchemaRelationType(kbId, r.id);
+          message.success(t('compile.relationDeleted'));
+          reloadCompiledSchema();
         } catch (e: any) {
-          handleSaveError(e, t('compile.relationLoadFailed'))
+          handleSaveError(e, t('compile.deleteRelationFailed'));
         }
       },
-    })
-  }
+    });
+  };
 
   const submitConstraint = async (payload: SaveOntologyConstraintPayload) => {
-    setSubmitting(true)
+    setSubmitting(true);
     try {
       if (constraintModal.editing) {
-        await updateOntologyConstraint(kbId, constraintModal.editing.id, payload)
-        message.success(t('compile.constraintUpdated'))
+        await updateOntologyConstraint(kbId, constraintModal.editing.id, payload);
+        message.success(t('compile.constraintUpdated'));
       } else {
-        await createOntologyConstraint(kbId, payload)
-        message.success(t('compile.constraintCreated'))
+        await createOntologyConstraint(kbId, payload);
+        message.success(t('compile.constraintCreated'));
       }
-      setConstraintModal({ open: false, editing: null })
-      loadConstraints()
+      setConstraintModal({ open: false, editing: null });
+      loadConstraints();
     } catch (e: any) {
-      handleSaveError(e, 'Failed to save constraint')
+      handleSaveError(e, t('compile.saveConstraintFailed'));
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
-  }
+  };
 
   const removeConstraint = (c: OntologyConstraint) => {
     Modal.confirm({
-      title: t('compile.constraints'),
-      content: `Delete constraint “${c.name}”? This action cannot be undone.`,
-      okText: 'Delete',
-      cancelText: 'Cancel',
+      title: t('compile.deleteConstraint'),
+      content: t('compile.confirmDeleteConstraint', { name: c.name }),
+      okText: t('compile.confirmDelete'),
+      cancelText: t('common.cancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await deleteOntologyConstraint(kbId, c.id)
-          message.success(t('compile.constraintDeleted'))
-          loadConstraints()
+          await deleteOntologyConstraint(kbId, c.id);
+          message.success(t('compile.constraintDeleted'));
+          loadConstraints();
         } catch (e: any) {
-          handleSaveError(e, 'Failed to delete constraint')
+          handleSaveError(e, t('compile.deleteConstraintFailed'));
         }
       },
-    })
-  }
+    });
+  };
 
   const submitStep = async (payload: SaveCompileStepPayload) => {
-    setSubmitting(true)
+    setSubmitting(true);
     try {
       if (stepModal.editing) {
-        await updateCompileStep(kbId, stepModal.editing.id, payload)
-        message.success(t('compile.stepUpdated'))
+        await updateCompileStep(kbId, stepModal.editing.id, payload);
+        message.success(t('compile.stepUpdated'));
       } else {
-        await createCompileStep(kbId, payload)
-        message.success(t('compile.stepCreated'))
+        await createCompileStep(kbId, payload);
+        message.success(t('compile.stepCreated'));
       }
-      setStepModal({ open: false, editing: null })
-      loadSteps()
+      setStepModal({ open: false, editing: null });
+      loadSteps();
     } catch (e: any) {
-      message.error(e?.message || t('compile.stepSaveFailed'))
+      message.error(e?.message || t('compile.saveStepFailed'));
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
-  }
+  };
 
   const removeStep = (s: CompileStep) => {
     Modal.confirm({
-      title: t('compile.stepDeleted'),
-      content: `Delete step “${s.name}”? This action cannot be undone.`,
-      okText: t('validation.confirmDelete'),
-      cancelText: 'Cancel',
+      title: t('compile.deleteStep'),
+      content: t('compile.confirmDeleteStep', { name: s.name }),
+      okText: t('compile.confirmDelete'),
+      cancelText: t('common.cancel'),
       okButtonProps: { danger: true },
       onOk: async () => {
-        await deleteCompileStep(kbId, s.id)
-        message.success(t('compile.stepDeleted'))
-        loadSteps()
+        await deleteCompileStep(kbId, s.id);
+        message.success(t('compile.stepDeleted'));
+        loadSteps();
       },
-    })
-  }
+    });
+  };
 
   const handleSaveEngine = async (model: string) => {
     try {
-      const next = await saveEngineSetting(kbId, model)
-      setEngine(next)
-      message.success(t('compile.engineSaved'))
+      const next = await saveEngineSetting(kbId, model);
+      setEngine(next);
+      message.success(t('compile.engineSaved'));
     } catch (e: any) {
-      message.error(e?.message || t('common.saveFailed'))
+      message.error(e?.message || t('compile.saveEngineFailed'));
     }
-  }
+  };
 
   const tabItems = [
     {
       key: 'obj',
-      label: 'Ontology Objects',
+      label: t('compile.tabObjectDef'),
       children: (
         <OntologyObjectSection
           data={objects}
@@ -325,13 +372,20 @@ export default function CompileTab({ kbId }: Props) {
           onImport={() => setImportModal({ open: true, mode: 'object' })}
           onEdit={(o) => setObjectModal({ open: true, editing: o })}
           onDelete={removeObject}
-          onPrompt={(o) => setPromptModal({ open: true, title: `Prompt - Ontology Object: ${o.name}`, desc: `System prompt used to extract “${o.name}” entity instances from documents:`, content: buildObjectPrompt(o) })}
+          onPrompt={(o) =>
+            setPromptModal({
+              open: true,
+              title: t('compile.promptModal.objectTitle', { name: o.name }),
+              desc: t('compile.promptModal.objectDesc', { name: o.name }),
+              content: buildObjectPrompt(o),
+            })
+          }
         />
       ),
     },
     {
       key: 'rel',
-      label: 'Ontology Relations',
+      label: t('compile.tabRelationDef'),
       children: (
         <OntologyRelationSection
           data={relations}
@@ -340,13 +394,20 @@ export default function CompileTab({ kbId }: Props) {
           onImport={() => setImportModal({ open: true, mode: 'relation' })}
           onEdit={(r) => setRelationModal({ open: true, editing: r })}
           onDelete={removeRelation}
-          onPrompt={(r) => setPromptModal({ open: true, title: `Prompt - Ontology Relation: ${r.name}`, desc: `System prompt used to extract “${r.name}” relation instances from documents:`, content: buildRelationPrompt(r) })}
+          onPrompt={(r) =>
+            setPromptModal({
+              open: true,
+              title: t('compile.promptModal.relationTitle', { name: r.name }),
+              desc: t('compile.promptModal.relationDesc', { name: r.name }),
+              content: buildRelationPrompt(r),
+            })
+          }
         />
       ),
     },
     {
       key: 'constraint',
-      label: 'Ontology Constraints',
+      label: t('compile.tabConstraintDef'),
       children: (
         <OntologyConstraintSection
           data={constraints}
@@ -357,13 +418,13 @@ export default function CompileTab({ kbId }: Props) {
         />
       ),
     },
-  ]
+  ];
 
   return (
     <div>
       <Tabs activeKey={activeSubTab} onChange={setActiveSubTab} items={tabItems} />
 
-      { }
+      {/* 编译步骤设置、编译设置暂时隐藏（保留代码以便后续再开） */}
       {false && (
         <>
           <CompileStepSection
@@ -421,11 +482,11 @@ export default function CompileTab({ kbId }: Props) {
         kbId={kbId}
         onClose={() => setImportModal((s) => ({ ...s, open: false }))}
         onImported={() => {
-          if (importModal.mode === 'object') loadObjects()
-          else loadRelations()
-          loadTargetOptions()
+          if (importModal.mode === 'object') loadObjects();
+          else loadRelations();
+          loadTargetOptions();
         }}
       />
     </div>
-  )
+  );
 }

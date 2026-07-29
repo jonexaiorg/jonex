@@ -1,5 +1,9 @@
+# -*- coding:utf-8 -*-
+"""
+计量记录器：三路落地（Redis 实时计数 + PG 批量缓冲 + 结构化日志）。
 
-
+Phase G2 完整实现。G1 阶段通过配置开关关闭（LLMGW_METERING_ENABLED=false）。
+"""
 
 import asyncio
 import hashlib
@@ -16,7 +20,7 @@ logger = logging.getLogger("llm_gateway")
 
 @dataclass
 class UsageRecord:
-
+    """单次 LLM/Embedding 调用计量记录"""
     ts: float
     tenant_id: str
     user_id: Optional[str]
@@ -35,7 +39,7 @@ class UsageRecord:
 
 
 class Recorder:
-
+    """计量记录器：三路异步落地"""
 
     def __init__(self, cfg=None):
         self._cfg = cfg or get_config()
@@ -46,20 +50,20 @@ class Recorder:
             self._flush_task = asyncio.create_task(self._periodic_flush())
 
     async def record(self, rec: UsageRecord):
-
+        """三路异步写入（不阻塞调用方）"""
         if not self._cfg.LLMGW_METERING_ENABLED:
             return
         try:
-
+            # 1) Redis 实时计数（异步 create_task）
             asyncio.create_task(self._redis_count(rec))
 
-
+            # 2) PG 批量缓冲
             async with self._lock:
                 self._buf.append(rec)
                 if len(self._buf) >= self._cfg.LLMGW_PG_FLUSH_MAX_ROWS:
                     asyncio.create_task(self._flush_pg())
 
-
+            # 3) 结构化日志（message 内联关键字段，避免 formatter 不渲染 extra 导致只剩 "llm_usage"）
             logger.info(
                 "llm_usage | req_id=%s trace=%s tenant=%s scene=%s model=%s "
                 "prompt=%s completion=%s total=%s stream=%s estimated=%s latency_ms=%s",
@@ -69,37 +73,44 @@ class Recorder:
                 extra=asdict(rec),
             )
         except Exception:
-            logger.exception("Usage metering record failed (exception suppressed; main flow unaffected)")
+            logger.exception("计量记录失败（已吞异常，不影响主流程）")
 
     async def _redis_count(self, rec: UsageRecord):
-
+        """Redis 实时增量计数"""
         try:
             from jonex_core.common.cache import CacheUtil
 
             day = datetime.fromtimestamp(rec.ts).strftime("%Y%m%d")
 
-
+            # 总量 key
             total_key = f"llm:usage:{rec.tenant_id}:{day}"
             await CacheUtil.hincrby(total_key, "total_tokens", rec.total_tokens)
             await CacheUtil.hincrby(total_key, "prompt_tokens", rec.prompt_tokens)
             await CacheUtil.hincrby(total_key, "completion_tokens", rec.completion_tokens)
             await CacheUtil.expire(total_key, 86400 * 400)
 
-
+            # 分维度 key（tenant + scene + model）
             dim_key = f"llm:usage:{rec.tenant_id}:{rec.scene}:{rec.model}:{day}"
             await CacheUtil.hincrby(dim_key, "total_tokens", rec.total_tokens)
             await CacheUtil.expire(dim_key, 86400 * 400)
         except Exception:
-            logger.exception("Redis counter failed (exception suppressed)")
+            logger.exception("Redis 计数失败（已吞异常）")
 
     def _agg_scenes(self) -> set[str]:
-
+        """需聚合写入的 embedding scene 集合（开关关或留空时为空集=不聚合）。"""
         if not self._cfg.LLMGW_EMBED_AGGREGATE_ENABLED:
             return set()
         return {s.strip() for s in (self._cfg.LLMGW_EMBED_AGGREGATE_SCENES or "").split(",") if s.strip()}
 
     async def _flush_pg(self):
+        """批量写入 PG 明细。
 
+        普通行：一次调用一行，INSERT ON CONFLICT (request_id) DO NOTHING（request_id 幂等）。
+        聚合行（scene ∈ LLMGW_EMBED_AGGREGATE_SCENES）：先按 (tenant,scene,model,kb,doc,day)
+          内存预聚合，再以合成稳定键日级 UPSERT 累加——把入库 embedding 从"每 chunk 一行"
+          降到"每文档每天一行"。token 总量守恒（Redis/日志两路在聚合前已按原始 rec 执行）。
+          见 docs/llm-usage-log-optimization-plan.md §4.3。
+        """
         records = []
         async with self._lock:
             records = self._buf[:]
@@ -119,8 +130,8 @@ class Recorder:
                 key = (day, r.tenant_id, r.scene, r.model, kb, doc)
                 agg = agg_map.get(key)
                 if agg is None:
-
-
+                    # request_id 是 VARCHAR(64) 幂等键：合成键含 tenant/model/kb/doc 常超长，
+                    # 故哈希成定长（emb-agg: + sha1 = 48 字符）；同键跨 flush 稳定→UPSERT 累加。
                     _digest = hashlib.sha1(
                         "|".join(key).encode("utf-8")
                     ).hexdigest()
@@ -155,7 +166,7 @@ class Recorder:
                      :total_tokens, :latency_ms, :is_stream, :is_estimated, :trace_id)
                 ON CONFLICT (request_id) DO NOTHING
             """)
-
+            # 聚合行：合成稳定键日级累加。trace/user/latency 不适用（累加汇总），留空。
             upsert_agg = text("""
                 INSERT INTO metering.llm_usage_log
                     (request_id, tenant_id, scene, model, kb_id, doc_id,
@@ -194,12 +205,12 @@ class Recorder:
                 for agg in agg_map.values():
                     await session.execute(upsert_agg, agg)
                 await session.commit()
-            logger.info("PG usage batch write completed | details=%s aggregates=%s", len(normal), len(agg_map))
+            logger.info("PG 计量批量写入完成 | 明细=%s 聚合=%s", len(normal), len(agg_map))
         except Exception:
-            logger.exception("PG batch write failed (exception suppressed)")
+            logger.exception("PG 批量写入失败（已吞异常）")
 
     async def _periodic_flush(self):
-
+        """定时 flush 后台任务"""
         while True:
             await asyncio.sleep(self._cfg.LLMGW_PG_FLUSH_MAX_SECONDS)
             try:
@@ -210,13 +221,13 @@ class Recorder:
                 pass
 
     async def close(self):
-
+        """关闭时 flush 剩余记录"""
         if self._flush_task:
             self._flush_task.cancel()
         await self._flush_pg()
 
 
-
+# 全局单例
 _recorder: Optional[Recorder] = None
 
 

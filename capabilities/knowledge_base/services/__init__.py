@@ -1,8 +1,10 @@
-
+"""Knowledge Base service exports."""
 
 from .data_source_service import DataSourceService
 from .document_service import DocumentService
+from .document_tag_service import DocumentTagService
 from .folder_service import FolderService
+from .tag_service import TagService
 from .parser_setting_service import ParserSettingService
 from .domain_service import DomainServiceService
 from .knowledge_base_service import KnowledgeBaseService
@@ -20,7 +22,9 @@ from .space_service import SpaceService
 __all__ = [
     "DataSourceService",
     "DocumentService",
+    "DocumentTagService",
     "FolderService",
+    "TagService",
     "ParserSettingService",
     "DomainServiceService",
     "KnowledgeBaseService",

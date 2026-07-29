@@ -1,9 +1,10 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""Knowledge Base repository exports."""
 
 from .document_repository import KnowledgeDocumentRepository
 from .data_source_repository import KnowledgeDataSourceRepository
+from .document_tag_repository import DocumentTagRepository
 from .domain_service_repository import (
     DomainServiceRepository,
     ServiceApiKeyRepository,
@@ -11,6 +12,7 @@ from .domain_service_repository import (
     ServicePermissionRepository,
 )
 from .folder_repository import FolderRepository
+from .tag_repository import TagRepository
 from .ontology_graph_repository import OntologyGraphRepository
 from .ontology_schema_repository import OntologySchemaRepository
 from .ontology_synonym_repository import OntologySynonymRepository
@@ -20,8 +22,10 @@ from .search_history_repository import KnowledgeSearchHistoryRepository
 from .space_repository import SpacePermissionRepository, SpaceRepository
 
 __all__ = [
+    "DocumentTagRepository",
     "DomainServiceRepository",
     "FolderRepository",
+    "TagRepository",
     "KnowledgeDataSourceRepository",
     "KnowledgeDocumentRepository",
     "KnowledgeParserSettingRepository",

@@ -2,24 +2,19 @@ import ast
 from pathlib import Path
 
 
-PROCESSOR_SOURCE = (
-    Path(__file__).resolve().parent.parent / "raganything" / "processor.py"
+STAGES_SOURCE = (
+    Path(__file__).resolve().parent.parent / "raganything" / "pipeline" / "stages.py"
 )
 
 
 def _load_merge_logic_function_source():
-    source = PROCESSOR_SOURCE.read_text(encoding="utf-8")
+    source = STAGES_SOURCE.read_text(encoding="utf-8")
     module = ast.parse(source)
 
     for node in module.body:
-        if isinstance(node, ast.ClassDef) and node.name == "ProcessorMixin":
-            for child in node.body:
-                if (
-                    isinstance(child, ast.AsyncFunctionDef)
-                    and child.name == "_store_multimodal_entities_to_full_entities"
-                ):
-                    return ast.get_source_segment(source, child)
-    raise AssertionError("Target function not found in processor.py")
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_store_main_entities":
+            return ast.get_source_segment(source, node)
+    raise AssertionError("Target function _store_main_entities not found in stages.py")
 
 
 def _merge_full_entities(current_doc_entities, entities_to_store, now=1234567890):
@@ -52,8 +47,8 @@ def _merge_full_entities(current_doc_entities, entities_to_store, now=1234567890
 def test_implementation_preserves_existing_metadata_fields():
     function_source = _load_merge_logic_function_source()
     assert "**current_doc_entities" in function_source
-    assert "existing_entity_names = list(" in function_source
-    assert "existing_entity_names.append(entity_name)" in function_source
+    assert "existing_names = list(" in function_source
+    assert "existing_names.append(" in function_source
 
 
 def test_create_new_full_entities_entry():

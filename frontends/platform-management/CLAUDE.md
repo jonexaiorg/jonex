@@ -1,64 +1,33 @@
-# CLAUDE.md
+# Platform Management Frontend Guide
 
-This file provides guidance to Claude Code when working with code in this repository.
+`@jonex/platform-management` 是平台管理子应用，负责用户、角色、权限、菜单、应用注册、审计、任务等管理界面。开发前先阅读根目录 [frontend-development-standard.md](../../frontend-development-standard.md)。
 
-## Commands
+## 应用契约
+
+| 项 | 值 |
+|---|---|
+| App id | `platform-management` |
+| Package | `@jonex/platform-management` |
+| Hosted path | `/apps/platform-management` |
+| Standalone path | `/platform-management/` |
+| Remote entry | `/remotes/platform-management/assets/remoteEntry.js` |
+| Remote scope | `platformManagement` |
+| Dev port | `5177` |
+
+## 开发规则
+
+- Shell 负责登录、导航、权限守卫和应用挂载。
+- 本应用可以展示租户和跨租户管理入口，但必须调用明确的平台管理 API。
+- 普通业务请求 body 不传 `tenant_id`；跨租户管理字段应使用明确名称，例如 `target_tenant_id`。
+- 主题必须使用 `@jonex/platform-theme`。
+- 认证、跳转和 ShellContext 必须使用 `@jonex/shell-sdk`。
+- API 只调用 `/api/v1/platform/**` 或其他标准 `/api/v1/**` 管理接口。
+- 页面必须覆盖 loading、empty、error、success、refresh 状态。
+
+## 命令
 
 ```bash
-pnpm install          # Install dependencies
-pnpm dev              # Start dev server
-pnpm build            # Production build
-pnpm preview          # Preview production build
+pnpm --filter @jonex/platform-management dev
+pnpm --filter @jonex/platform-management typecheck
+pnpm --filter @jonex/platform-management build
 ```
-
-## Architecture
-
-This is a **React 18 + Vite** starter scaffold for building micro-frontend sub-applications in the Jonex Platform. It supports two runtime modes:
-
-- **standalone** — runs independently with its own header, navigation, and auth
-- **hosted** — mounted by the shell via Module Federation, uses shell-provided auth and layout
-
-### Tech Stack
-- React 18, React Router v6 (BrowserRouter for standalone, MemoryRouter for hosted)
-- Ant Design 6 with @ant-design/icons
-- MobX for state management (mobx-react-lite)
-- i18next + react-i18next (Chinese/English)
-- Axios for HTTP requests
-- Module Federation via @originjs/vite-plugin-federation
-
-### Placeholder Variables
-
-Files contain `{{PLACEHOLDER}}` variables that are replaced at onboarding time:
-
-| Placeholder | Example | Description |
-|---|---|---|
-| `` | `@jonex/example-app` | npm package name |
-| `` | `Example App` | Display title |
-| `` | `exampleApp` | Module Federation scope |
-| `` | `/example/` | Vite base path |
-| `` | `example` | Nginx serve directory |
-| `` | `/api/v1/example` | Backend API proxy prefix |
-| `` | `5173` | Vite dev server port |
-| `` | `example` | Shell manifest app ID |
-
-### Directory Structure
-
-- `src/api/` — API endpoint definitions
-- `src/components/` — Reusable components (AppLayout, BasicLayout, HostedLayout, HeaderNav)
-- `src/hooks/` — Custom hooks (useDocumentTitle, usePageMeta, useIsMobile)
-- `src/locales/` — i18n translation files (zh.json, en.json)
-- `src/pages/` — Page components (Home, NotFound)
-- `src/remote/RemoteApp.jsx` — Module Federation mount entry
-- `src/router/` — Route config, menu config, router with auth guard
-- `src/store/` — MobX stores (global locale, userInfo)
-- `src/styles/index.scss` — Global styles
-- `src/utils/` — Utilities (loadable, storage, menu, safeMessage)
-- `src/App.jsx` — Standalone entry point
-- `src/main.jsx` — Dual-mode bootstrap (standalone vs hosted)
-
-### Adding a New Page
-
-1. Create page component in `src/pages/`
-2. Add route in `src/router/routes.config.js`
-3. Add menu item in `src/router/menu.config.js` (if standalone mode)
-4. Add translations to `src/locales/zh.json` and `src/locales/en.json`

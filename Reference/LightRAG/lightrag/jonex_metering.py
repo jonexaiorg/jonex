@@ -1,15 +1,15 @@
-# [yuexi] 悦溪新增文件：LLM/Embedding 计量上下文透传
+# [jonex] 悦溪新增文件：LLM/Embedding 计量上下文透传
 #
-# 作用：让 LightRAG 内部发起的 LLM/Embedding 调用带上 X-Yuexi-* 头，
+# 作用：让 LightRAG 内部发起的 LLM/Embedding 调用带上 X-Jonex-* 头，
 #       使 llm-gateway 能记录 tenant/kb/doc/scene/trace 维度。
 #
-# 两条透传链路（见 YUEXI_CHANGES.md）：
+# 两条透传链路（见 JONEX_CHANGES.md）：
 #   1) 在线查询（/query、/query/stream）：同步 HTTP 请求 —— 用本模块的 contextvar，
-#      由 server 中间件从请求头读 X-Yuexi-* 存入，LLM/embedding 调用时读出注入。
+#      由 server 中间件从请求头读 X-Jonex-* 存入，LLM/embedding 调用时读出注入。
 #   2) 入库抽取（后台 pipeline）：异步 task，contextvar 跨 task 失效 ——
 #      改用数据载体 file_source（kb=|doc=|tenant=|...）透传，见 parse_file_source。
 #
-# 注意：所有改动以 # [yuexi] 标记，便于升级 LightRAG 时定位。
+# 注意：所有改动以 # [jonex] 标记，便于升级 LightRAG 时定位。
 
 from contextvars import ContextVar, Token
 from typing import Optional
@@ -19,7 +19,7 @@ _jonex_ctx: ContextVar[Optional[dict]] = ContextVar("jonex_metering_ctx", defaul
 
 
 def set_jonex_context_from_headers(headers) -> Token:
-    """从 HTTP 请求头提取 X-Yuexi-* 存入 contextvar，返回 reset token。
+    """从 HTTP 请求头提取 X-Jonex-* 存入 contextvar，返回 reset token。
 
     headers: 支持 .get() 的对象（FastAPI/Starlette Headers）。
     """
@@ -37,11 +37,11 @@ def set_jonex_context_from_headers(headers) -> Token:
 
 
 def set_jonex_context_from_file_source(file_source: Optional[str]) -> Optional[Token]:
-    """[yuexi] 入库 pipeline 专用：从 file_source 解析维度并写入 contextvar。
+    """[jonex] 入库 pipeline 专用：从 file_source 解析维度并写入 contextvar。
 
     背景：入库 embedding 在后台 pipeline 的独立 asyncio task 中执行，
     既拿不到请求级 contextvar，调用链也不携带 file_source，导致计量
-    tenant/kb/doc 全空（YUEXI_CHANGES.md 已知约束）。
+    tenant/kb/doc 全空（JONEX_CHANGES.md 已知约束）。
 
     解法：在 LightRAG `process_document` 入口（已解析出携带
     kb=|doc=|tenant= 的 file_path）调用本函数写入 contextvar。由于
@@ -63,7 +63,7 @@ def set_jonex_context_from_file_source(file_source: Optional[str]) -> Optional[T
         "doc_id": fs.get("doc_id", ""),
         "user_id": "",
         # scene 设为 lightrag_extract：入库期间走 contextvar 的 LLM 调用（如
-        # merge/summary，未带 _yuexi_file_source）据此正确归类为抽取场景，
+        # merge/summary，未带 _jonex_file_source）据此正确归类为抽取场景，
         # 避免落到 LLM 路径的 default_scene=lightrag_query 而污染查询统计。
         # embedding 调用方（openai_embed）会再用 lightrag_embed 覆盖；带
         # file_source 的抽取 LLM 走 file_source 分支（同为 lightrag_extract），均不冲突。
@@ -99,7 +99,7 @@ def build_metering_headers(
     file_source: Optional[str] = None,
     default_scene: str = "lightrag",
 ) -> Optional[dict]:
-    """构造注入下游（llm-gateway）的 X-Yuexi-* 头。
+    """构造注入下游（llm-gateway）的 X-Jonex-* 头。
 
     优先级：入库 file_source（若提供）> 在线查询 contextvar。
     - file_source 命中：scene=lightrag_extract（入库抽取）。

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""Repository for KB-level ontology synonyms."""
 
 from sqlalchemy import func, select
 
@@ -47,7 +47,7 @@ class OntologySynonymRepository(BaseRepository[OntologySynonym]):
         tenant_id: str,
         knowledge_base_id: str,
     ) -> list[OntologySynonym]:
-
+        """取该 KB 全部未删组（不分页），用于跨组唯一校验。"""
         tid = require_tenant(tenant_id)
         result = await self.session.execute(
             select(OntologySynonym).where(

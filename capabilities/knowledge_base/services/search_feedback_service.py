@@ -1,10 +1,11 @@
-
+"""Search feedback service for Knowledge Base."""
 
 from collections import defaultdict
 from datetime import datetime
 
 from jonex_core.common.database import get_db_session
 from jonex_core.common.exceptions import ResourceNotFoundError
+from jonex_core.common.i18n import translate
 from jonex_core.common.tenant import require_tenant
 
 from ..repository import KnowledgeSearchFeedbackRepository
@@ -12,7 +13,7 @@ from .document_service import _payload
 
 
 class SearchFeedbackService:
-
+    """搜索结果反馈服务。"""
 
     async def submit_feedback(
         self,
@@ -20,7 +21,7 @@ class SearchFeedbackService:
         user_id: str,
         request: dict,
     ) -> dict:
-
+        """提交反馈。为每个被引用的知识库创建一条记录。"""
         tenant_id = require_tenant(tenant_id)
         session_id = request["session_id"]
         query = request["query"]
@@ -60,7 +61,7 @@ class SearchFeedbackService:
         user_id: str,
         request: dict,
     ) -> dict:
-
+        """取消反馈（软删除，按 session_id + kb_ids 删除）。"""
         tenant_id = require_tenant(tenant_id)
         session_id = request["session_id"]
         feedback_type = request["feedback_type"]
@@ -92,7 +93,7 @@ class SearchFeedbackService:
         tenant_id: str,
         request: dict,
     ) -> dict:
-
+        """查询知识库的反馈列表，含统计。"""
         tenant_id = require_tenant(tenant_id)
         kb_id = request["knowledge_base_id"]
         feedback_type = request.get("feedback_type")
@@ -125,7 +126,7 @@ class SearchFeedbackService:
         tenant_id: str,
         request: dict,
     ) -> dict:
-
+        """切换采纳状态。"""
         tenant_id = require_tenant(tenant_id)
         feedback_id = request["feedback_id"]
 
@@ -133,7 +134,7 @@ class SearchFeedbackService:
             repo = KnowledgeSearchFeedbackRepository(session)
             record = await repo.toggle_adopted(tenant_id, feedback_id)
             if not record:
-                raise ResourceNotFoundError(message="Feedback record not found")
+                raise ResourceNotFoundError(message=translate("err.feedback.not_found", fallback="反馈记录不存在")  )  # 原消息)
         return record.to_dict()
 
     async def get_stats(
@@ -141,7 +142,7 @@ class SearchFeedbackService:
         tenant_id: str,
         request: dict,
     ) -> dict:
-
+        """获取知识库的反馈统计。"""
         tenant_id = require_tenant(tenant_id)
         kb_id = request["knowledge_base_id"]
 

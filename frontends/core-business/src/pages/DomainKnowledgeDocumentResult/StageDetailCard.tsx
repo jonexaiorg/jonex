@@ -1,52 +1,67 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Card, Space, Tag, Spin, Empty } from 'antd'
-import { FileTextOutlined, RightOutlined } from '@ant-design/icons'
-import ReactMarkdown from 'react-markdown'
-import { getDocumentChunks } from '@/api/domainKnowledge'
-import type { DocumentChunk } from '@/types/domainKnowledge'
+import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Button, Card, Space, Tag, Spin, Empty } from 'antd';
+import { FileTextOutlined, RightOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import ReactMarkdown from 'react-markdown';
+import { getDocumentChunks } from '@/api/domainKnowledge';
+import type { DocumentChunk } from '@/types/domainKnowledge';
+
+function formatTimeRange(timeStart: number, timeEnd: number | null): string {
+  const fmt = (sec: number): string => {
+    const s = Math.max(0, Math.floor(sec))
+    const m = Math.floor(s / 60)
+    const r = s % 60
+    return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
+  }
+  if (timeEnd != null && timeEnd > timeStart) {
+    return `${fmt(timeStart)} - ${fmt(timeEnd)}`
+  }
+  return fmt(timeStart)
+}
 
 export interface ProcessingStage {
-  key: string
-  label: string
-  icon: React.ReactNode
+  key: string;
+  label: string;
+  icon: React.ReactNode;
 }
 
 interface StageDetailCardProps {
-  stage: ProcessingStage
-  docId?: string
+  stage: ProcessingStage;
+  docId?: string;
+  mediaType?: 'video' | 'document';
+  onPlayVideo?: () => void;
 }
 
-export default function StageDetailCard({ stage, docId }: StageDetailCardProps) {
-  const { t } = useTranslation()
-  const [chunks, setChunks] = useState<DocumentChunk[]>([])
-  const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null)
-  const [chunksLoading, setChunksLoading] = useState(false)
+export default function StageDetailCard({ stage, docId, mediaType, onPlayVideo }: StageDetailCardProps) {
+  const { t } = useTranslation();
+  const [chunks, setChunks] = useState<DocumentChunk[]>([]);
+  const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
+  const [chunksLoading, setChunksLoading] = useState(false);
 
   const selectedChunk = useMemo(
-    () => chunks.find((c) => c.id === selectedChunkId) ?? chunks[0],
+    () => chunks.find((c) => c.chunk_id === selectedChunkId) ?? chunks[0],
     [chunks, selectedChunkId],
-  )
+  );
 
   const selectedIndex = useMemo(
-    () => (selectedChunk ? chunks.findIndex((c) => c.id === selectedChunk.id) : -1),
+    () => (selectedChunk ? chunks.findIndex((c) => c.chunk_id === selectedChunk.chunk_id) : -1),
     [chunks, selectedChunk],
-  )
+  );
 
   useEffect(() => {
     if (stage.key === 'parse' && docId) {
-      setChunksLoading(true)
+      setChunksLoading(true);
       getDocumentChunks(docId)
         .then((items) => {
-          setChunks(items)
+          setChunks(items);
           if (items.length > 0) {
-            setSelectedChunkId(items[0].id)
+            setSelectedChunkId(items[0].chunk_id);
           }
         })
         .catch(() => {})
-        .finally(() => setChunksLoading(false))
+        .finally(() => setChunksLoading(false));
     }
-  }, [stage.key, docId])
+  }, [stage.key, docId]);
 
   return (
     <Card
@@ -58,7 +73,6 @@ export default function StageDetailCard({ stage, docId }: StageDetailCardProps) 
       styles={{ body: { padding: 24 } }}
     >
       <Space direction="vertical" size={24} style={{ width: '100%' }}>
-
         {/* 文档分段 (chunks) */}
         {stage.key === 'parse' && (
           <div>
@@ -70,7 +84,7 @@ export default function StageDetailCard({ stage, docId }: StageDetailCardProps) 
                 marginBottom: 12,
               }}
             >
-{t('domainKnowledge.documentChunks')}
+              {t('domainKnowledge.documentChunks')}
             </div>
             {chunksLoading ? (
               <div style={{ textAlign: 'center', padding: 24 }}>
@@ -110,16 +124,16 @@ export default function StageDetailCard({ stage, docId }: StageDetailCardProps) 
                       flexShrink: 0,
                     }}
                   >
-{t('domainKnowledge.originalText')}
+                    {t('domainKnowledge.originalText')}
                   </div>
                   <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                     <Space direction="vertical" size={8} style={{ width: '100%' }}>
                       {chunks.map((chunk, idx) => {
-                        const active = selectedChunk?.id === chunk.id
+                        const active = selectedChunk?.chunk_id === chunk.chunk_id;
                         return (
                           <div
-                            key={chunk.id}
-                            onClick={() => setSelectedChunkId(chunk.id)}
+                            key={chunk.chunk_id}
+                            onClick={() => setSelectedChunkId(chunk.chunk_id)}
                             style={{
                               padding: '10px 12px',
                               borderRadius: 8,
@@ -133,17 +147,28 @@ export default function StageDetailCard({ stage, docId }: StageDetailCardProps) 
                               justifyContent: 'space-between',
                             }}
                           >
-                            <span>{t('domainKnowledge.chunkLabel', { index: idx + 1 })}</span>
+                            <span>
+                              {t('domainKnowledge.chunkLabel', {
+                                index: idx + 1,
+                              })}
+                            </span>
                             {active && <RightOutlined style={{ fontSize: 12 }} />}
                           </div>
-                        )
+                        );
                       })}
                     </Space>
                   </div>
                 </div>
 
                 {/* 右侧内容区 */}
-                <div style={{ flex: 1, padding: 24, minWidth: 0, overflowY: 'auto' }}>
+                <div
+                  style={{
+                    flex: 1,
+                    padding: 24,
+                    minWidth: 0,
+                    overflowY: 'auto',
+                  }}
+                >
                   {selectedChunk && (
                     <>
                       <div
@@ -167,7 +192,13 @@ export default function StageDetailCard({ stage, docId }: StageDetailCardProps) 
                             }}
                           >
                             <FileTextOutlined style={{ color: '#3b82f6' }} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <span
+                              style={{
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
                               {getChunkTitle(selectedChunk)}
                             </span>
                           </div>
@@ -180,10 +211,36 @@ export default function StageDetailCard({ stage, docId }: StageDetailCardProps) 
                               fontSize: 12,
                             }}
                           >
-{t('domainKnowledge.chunkInfo', { index: selectedIndex + 1, total: chunks.length, length: selectedChunk.content_length })}
+                            {t('domainKnowledge.chunkInfo', {
+                              index: selectedIndex + 1,
+                              total: chunks.length,
+                              length: selectedChunk.content_length,
+                            })}
                           </Tag>
+                          {selectedChunk.time_start != null && (
+                            <Tag
+                              style={{
+                                border: 'none',
+                                borderRadius: 6,
+                                background: '#ede9fe',
+                                color: '#7c3aed',
+                                fontSize: 12,
+                              }}
+                            >
+                              {formatTimeRange(selectedChunk.time_start, selectedChunk.time_end)}
+                            </Tag>
+                          )}
+                          {mediaType === 'video' && (
+                            <Button
+                              type="primary"
+                              icon={<PlayCircleOutlined />}
+                              onClick={() => onPlayVideo?.()}
+                              style={{ borderRadius: 8, marginLeft: 20 }}
+                            >
+                              {t('domainKnowledge.playVideo')}
+                            </Button>
+                          )}
                         </div>
-
                       </div>
                       <div
                         style={{
@@ -205,16 +262,18 @@ export default function StageDetailCard({ stage, docId }: StageDetailCardProps) 
         )}
       </Space>
     </Card>
-  )
+  );
 }
 
 function getChunkTitle(chunk: DocumentChunk): string {
-  const firstHeading = chunk.content_summary.match(/^#\s+(.+)$/m)?.[1]
-  if (firstHeading) return firstHeading.replace(/\\/g, '')
-  const fileName = chunk.file_path.match(/file=([^|]+)/)?.[1]
+  const firstHeading = chunk.content_summary?.match(/^#\s+(.+)$/m)?.[1];
+  if (firstHeading) return firstHeading.replace(/\\/g, '');
+  const fileName = chunk.file_path.match(/file=([^|]+)/)?.[1];
   if (fileName) {
-    const cleanName = fileName.replace(/\.[^.|]+$/u, '').replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/gi, '')
-    return cleanName.replace(/_+/g, ' ').trim() || 'Unnamed Document'
+    const cleanName = fileName
+      .replace(/\.[^.|]+$/u, '')
+      .replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/gi, '');
+    return cleanName.replace(/_+/g, ' ').trim() || 'Unnamed Document';
   }
-  return `Chunk ${chunk.chunk_id}`
+  return `Chunk ${chunk.chunk_id}`;
 }

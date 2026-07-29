@@ -24,9 +24,22 @@ class FakeLogger:
 
 def install_import_stubs():
     lightrag_module = types.ModuleType("lightrag")
+    lightrag_module.__path__ = []
     lightrag_utils = types.ModuleType("lightrag.utils")
     lightrag_utils.logger = FakeLogger()
     lightrag_utils.compute_mdhash_id = lambda value, prefix="": f"{prefix}test"
+
+    lightrag_kg = types.ModuleType("lightrag.kg")
+    lightrag_kg_shared_storage = types.ModuleType("lightrag.kg.shared_storage")
+    lightrag_kg_shared_storage.get_namespace_data = lambda *args, **kwargs: {}
+    lightrag_kg_shared_storage.get_pipeline_status_lock = lambda: types.SimpleNamespace(
+        __aenter__=lambda: types.SimpleNamespace(__aexit__=lambda *a: None),
+        __aexit__=lambda *a: None,
+    )
+
+    lightrag_operate = types.ModuleType("lightrag.operate")
+    lightrag_operate.extract_entities = lambda *args, **kwargs: None
+    lightrag_operate.merge_nodes_and_edges = lambda *args, **kwargs: None
 
     raganything_pkg = types.ModuleType("raganything")
     raganything_pkg.__path__ = [str(PROJECT_ROOT / "raganything")]
@@ -40,6 +53,9 @@ def install_import_stubs():
 
     sys.modules.setdefault("lightrag", lightrag_module)
     sys.modules.setdefault("lightrag.utils", lightrag_utils)
+    sys.modules.setdefault("lightrag.kg", lightrag_kg)
+    sys.modules.setdefault("lightrag.kg.shared_storage", lightrag_kg_shared_storage)
+    sys.modules.setdefault("lightrag.operate", lightrag_operate)
     sys.modules.setdefault("raganything", raganything_pkg)
     sys.modules.setdefault("raganything.base", raganything_base)
     sys.modules.setdefault("raganything.parser", raganything_parser)
@@ -68,6 +84,9 @@ utils_module = load_project_module(
 processor_module = load_project_module(
     "raganything.processor", PROJECT_ROOT / "raganything" / "processor.py"
 )
+chunk_utils_module = load_project_module(
+    "raganything.chunk_utils", PROJECT_ROOT / "raganything" / "chunk_utils.py"
+)
 
 ProcessorMixin = processor_module.ProcessorMixin
 format_table_body = utils_module.format_table_body
@@ -88,12 +107,17 @@ class ContentListAliasHandlingTests(unittest.TestCase):
 
         _, multimodal = separate_content(content)
 
-        self.assertEqual([item["_content_list_index"] for item in multimodal], [1, 3])
+        # Filter out the _text_meta sentinel appended by separate_content
+        real_multimodal = [
+            m for m in multimodal if "_text_meta" not in m
+        ]
+        self.assertEqual(
+            [item["_content_list_index"] for item in real_multimodal], [1, 3]
+        )
         self.assertNotIn("_content_list_index", content[1])
 
     def test_table_alias_and_string_caption_feed_chunk_template(self):
-        processor = ProcessorMixin()
-        chunk = processor._apply_chunk_template(
+        chunk = chunk_utils_module.apply_chunk_template(
             "table",
             {
                 "table_data": [["Method", "Score"], ["RAGAnything", "95.2"]],
@@ -119,8 +143,6 @@ class ContentListAliasHandlingTests(unittest.TestCase):
         self.assertIn("Synthetic example", chunk)
 
     def test_equation_latex_alias_is_not_dropped_from_chunk_template(self):
-        processor = ProcessorMixin()
-
         text_item = {"text": "E = mc^2", "text_format": "latex"}
         equation_text, equation_format = get_equation_text_and_format(text_item)
         self.assertEqual(equation_text, "E = mc^2")
@@ -131,7 +153,7 @@ class ContentListAliasHandlingTests(unittest.TestCase):
         self.assertEqual(equation_text, "E = mc^2")
         self.assertEqual(equation_format, "latex")
 
-        chunk = processor._apply_chunk_template(
+        chunk = chunk_utils_module.apply_chunk_template(
             "equation", latex_only_item, "A physics equation."
         )
         self.assertIn("E = mc^2", chunk)

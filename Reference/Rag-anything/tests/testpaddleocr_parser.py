@@ -3,8 +3,8 @@ import sys
 
 import pytest
 
-import raganything.parser as parser_module
-from raganything.parser import PaddleOCRParser, SUPPORTED_PARSERS, get_parser
+import raganything.parser as old_parser_module
+from raganything.parsers import PaddleOCRParser, SUPPORTED_PARSERS, get_parser
 
 
 def test_supported_parsers_include_paddleocr():
@@ -23,7 +23,10 @@ def test_get_parser_rejects_unknown_parser():
 
 def test_parser_module_import_does_not_import_paddleocr():
     sys.modules.pop("paddleocr", None)
-    importlib.reload(parser_module)
+    # raganything.parser is a backward-compat shim; it should not trigger
+    # a paddleocr import on its own
+    if "raganything.parser" in sys.modules:
+        importlib.reload(sys.modules["raganything.parser"])
     assert "paddleocr" not in sys.modules
 
 
@@ -63,16 +66,10 @@ def test_parse_pdf_raises_import_error_when_pdf_renderer_missing(monkeypatch, tm
 
     monkeypatch.setattr(parser, "_require_paddleocr", lambda: object())
 
-    import builtins
-
-    real_import = builtins.__import__
-
-    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "pypdfium2":
-            raise ImportError("missing pypdfium2")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
+    # Directly set pdfium to None in the paddleocr module to simulate
+    # missing pypdfium2, since it is already imported in the test env.
+    import raganything.parsers.paddleocr as paddleocr_module
+    monkeypatch.setattr(paddleocr_module, "pdfium", None)
 
     with pytest.raises(ImportError, match="pypdfium2"):
         parser.parse_pdf(fake_pdf)

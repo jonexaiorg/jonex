@@ -2495,6 +2495,54 @@ class PGKVStorage(BaseKVStorage):
             )
             raise
 
+    # ── [jonex] 按 doc= 锚点列出 chunks ──────────────────────────
+    async def get_chunks_by_doc_id(
+        self, doc_id: str, *, limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """List chunks whose file_path contains ``doc=<doc_id>`` anchor.
+
+        Each chunk carries the full file_source string (with time_start/time_end
+        encoded as tstart=/tend=), enabling downstream parsing into timeline
+        location metadata for video/audio documents.
+        """
+        if not doc_id:
+            return []
+        sql = SQL_TEMPLATES["get_chunks_by_doc_id"]
+        params = {
+            "workspace": self.workspace,
+            "pattern": f"%doc={doc_id}%",
+        }
+        rows = await self.db.query(sql, list(params.values()), multirows=True)
+        if not rows:
+            return []
+
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            if row is None:
+                continue
+            llm_cache_list = row.get("llm_cache_list", [])
+            if isinstance(llm_cache_list, str):
+                try:
+                    llm_cache_list = json.loads(llm_cache_list)
+                except json.JSONDecodeError:
+                    llm_cache_list = []
+            create_time = row.get("create_time", 0)
+            update_time = row.get("update_time", 0)
+            out.append({
+                "chunk_id": row.get("chunk_id"),
+                "content": row.get("content", ""),
+                "tokens": row.get("tokens"),
+                "chunk_order_index": row.get("chunk_order_index"),
+                "full_doc_id": row.get("full_doc_id"),
+                "file_path": row.get("file_path", ""),
+                "llm_cache_list": llm_cache_list,
+                "create_time": create_time,
+                "update_time": create_time if update_time == 0 else update_time,
+            })
+            if len(out) >= limit:
+                break
+        return out
+
     ################ INSERT METHODS ################
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         logger.debug(f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
@@ -4158,6 +4206,8 @@ class PGDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        doc_id: str | None = None,
+        file_path: str | None = None,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -4167,6 +4217,9 @@ class PGDocStatusStorage(DocStatusStorage):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', 'id')
             sort_direction: Sort direction ('asc' or 'desc')
+            doc_id: [jonex] Filter by client-side document id via the ``doc=<id>|``
+                anchor in file_path (file_source). None = no filter.
+            file_path: [jonex] Filter by exact file_path. None = no filter.
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
@@ -4217,6 +4270,22 @@ class PGDocStatusStorage(DocStatusStorage):
             params["status"] = status_filter.value
         else:
             where_clause = "WHERE workspace=$1"
+
+        # [jonex] Document-scope filter: match the file_source anchor `doc=<id>|`
+        # and/or an exact file_path. Aligns with the graph endpoints' doc_id/file_path
+        # semantics (see neo4j_impl._jonex_scope_conditions: file_path CONTAINS
+        # 'doc='+id+'|'). Parameterized to prevent injection; appended before
+        # limit/offset so the ${param_count + 1} / ${param_count + 2} placeholders
+        # for LIMIT/OFFSET below shift automatically. The same where_clause feeds
+        # both the total-count CTE and the paged CTE, keeping count and data in sync.
+        if doc_id:
+            param_count += 1
+            where_clause += f" AND file_path LIKE ${param_count}"
+            params["doc_id_anchor"] = f"%doc={doc_id}|%"
+        if file_path:
+            param_count += 1
+            where_clause += f" AND file_path = ${param_count}"
+            params["file_path"] = file_path
 
         # Build ORDER BY clause using validated whitelist values.
         # NULLS LAST is applied in both the inner paged CTE and the outer query so
@@ -6410,7 +6479,7 @@ TABLES = {
         "ddl": """CREATE TABLE LIGHTRAG_DOC_STATUS (
 	               workspace varchar(255) NOT NULL,
 	               id varchar(255) NOT NULL,
-	               content_summary varchar(255) NULL,
+	               content_summary varchar(4096) NULL,
 	               content_length int4 NULL,
 	               chunks_count int4 NULL,
 	               status varchar(64) NULL,
@@ -6676,6 +6745,17 @@ SQL_TEMPLATES = {
               LIMIT $3;
               """,
     # DROP tables
+    # ── [jonex] 按 doc= 锚点枚举 text_chunks ──
+    "get_chunks_by_doc_id": """SELECT id AS chunk_id, tokens,
+                                COALESCE(content, '') as content,
+                                chunk_order_index, full_doc_id, file_path,
+                                COALESCE(llm_cache_list, '[]'::jsonb) as llm_cache_list,
+                                EXTRACT(EPOCH FROM create_time)::BIGINT as create_time,
+                                EXTRACT(EPOCH FROM update_time)::BIGINT as update_time
+                                FROM LIGHTRAG_DOC_CHUNKS
+                                WHERE workspace=$1 AND file_path LIKE $2
+                                ORDER BY chunk_order_index
+                            """,
     "drop_specifiy_table_workspace": """
         DELETE FROM {table_name} WHERE workspace=$1
        """,

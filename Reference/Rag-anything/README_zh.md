@@ -264,28 +264,13 @@ pip install 'raganything[image,text]'       # 多个功能组合
 #### 选项2：从源码安装
 
 ```bash
-# 安装 uv 后克隆项目
 git clone https://github.com/HKUDS/RAG-Anything.git
 cd RAG-Anything
+pip install -e .
 
-# 严格使用仓库提交的锁文件，不进行隐式依赖解析
-uv sync --frozen
-
-# 安装可选依赖时仍使用同一锁文件
-uv sync --frozen --all-extras
-
-# 仅在有意升级依赖时更新锁文件，并提交审查：
-# uv lock --upgrade && uv sync --frozen
+# 安装可选依赖
+pip install -e '.[all]'
 ```
-
-#### 依赖可复现性与 LightRAG 兼容关系
-
-- `uv.lock` 是源码开发和 CI 的标准跨平台锁文件；请使用 `uv sync --frozen`，确保依赖解析不会随时间漂移。
-- RAG-Anything `1.3.1` 固定使用 `lightrag-hku==1.4.16`，这是当前验证的兼容组合。
-- 独立部署的 LightRAG API Server 是另一个进程。相邻目录中的 LightRAG 源码（如 `../LightRAG`）不会被 RAG-Anything 自动导入，因此其本地修改不会影响本环境。
-- `requirements.txt` 只是 pip 便利入口，实际依赖以 `pyproject.toml` 为准；需要完全可复现时必须使用 `uv.lock`。
-
-如需测试其他 LightRAG 源码，应显式修改依赖并重新生成、审查锁文件，不要依赖环境中碰巧存在的 editable 安装。
 
 #### 可选依赖
 

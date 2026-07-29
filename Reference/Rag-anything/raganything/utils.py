@@ -92,35 +92,64 @@ def separate_content(
     """
     Separate text content and multimodal content
 
+    For each text block, computes positional metadata:
+      - page_idx:   page number from parser (0-based)
+      - text_idx:   position index in content_list
+      - line_start: starting line in the concatenated full text (1-based)
+      - line_end:   ending line in the concatenated full text (1-based)
+
     Args:
         content_list: Content list from MinerU parsing
 
     Returns:
-        (text_content, multimodal_items): Pure text content and multimodal items list
+        (text_content, multimodal_items): Pure text content and multimodal items list.
+        The last element of multimodal_items is a sentinel ``{"_text_meta": [...]}``
+        carrying per-block metadata for downstream use.
     """
     text_parts = []
+    text_meta_list: List[Dict[str, Any]] = []
     multimodal_items = []
+    line_cursor = 1  # 1-based document-level line counter
 
     for index, item in enumerate(content_list):
         content_type = item.get("type", "text")
 
         if content_type == "text":
-            # Text content
+            # Text content — preserve positional metadata
             text = item.get("text", "")
             if text.strip():
+                lines_in_block = text.count("\n") + 1
                 text_parts.append(text)
+                # Record per-block metadata for downstream chunk tracking
+                text_meta_list.append({
+                    "content": text,
+                    "page_idx": item.get("page_idx", 0),
+                    "text_idx": index,  # original position in content_list
+                    "line_start": line_cursor,
+                    "line_end": line_cursor + lines_in_block - 1,
+                })
+                # Advance cursor: this block's lines + 1 for the "\n\n" join
+                # separator between blocks (adds one empty line)
+                line_cursor += lines_in_block + 1
         else:
             # Multimodal content (image, table, equation, etc.)
             multimodal_item = dict(item)
             multimodal_item.setdefault("_content_list_index", index)
             multimodal_items.append(multimodal_item)
 
-    # Merge all text content
+    # Merge all text content for backward-compatible full-text reference
     text_content = "\n\n".join(text_parts)
+
+    # Attach metadata list to the return value for callers that need it.
+    # Stored as an attribute on the string is not Pythonic, so we return
+    # the metadata list separately via a sentinel key in multimodal_items.
+    # Backward-compatible callers only use text_content and multimodal_items.
+    multimodal_items.append({"_text_meta": text_meta_list})
 
     logger.info("Content separation complete:")
     logger.info(f"  - Text content length: {len(text_content)} characters")
-    logger.info(f"  - Multimodal items count: {len(multimodal_items)}")
+    logger.info(f"  - Text blocks: {len(text_meta_list)}")
+    logger.info(f"  - Multimodal items count: {len(multimodal_items) - 1}")
 
     # Count multimodal types
     modal_types = {}
@@ -132,6 +161,18 @@ def separate_content(
         logger.info(f"  - Multimodal type distribution: {modal_types}")
 
     return text_content, multimodal_items
+
+
+def extract_text_metadata(multimodal_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Extract text block metadata hidden in multimodal_items by separate_content.
+
+    Returns:
+        List of dicts with keys: content, page_idx, text_idx
+    """
+    for item in multimodal_items:
+        if "_text_meta" in item:
+            return item["_text_meta"]
+    return []
 
 
 def encode_image_to_base64(image_path: str) -> str:
@@ -223,28 +264,64 @@ def validate_image_file(image_path: str, max_size_mb: int = 50) -> bool:
 
 async def insert_text_content(
     lightrag,
-    input: str | list[str],
+    input: str | list[str] | list[dict],
+    file_paths: str | list[str] | None = None,
     split_by_character: str | None = None,
     split_by_character_only: bool = False,
     ids: str | list[str] | None = None,
-    file_paths: str | list[str] | None = None,
 ):
     """
-    Insert pure text content into LightRAG
+    Insert text content into LightRAG with optional per-chunk metadata.
+
+    When *input* is a ``list[dict]``, each dict must have a ``"content"`` key.
+    Extra keys (``page_idx``, ``text_idx``, etc.) are forwarded as chunk metadata
+    via ``lightrag.ainsert_custom_chunks``, bypassing LightRAG's internal
+    token-based splitting.  This preserves positional information through the
+    ingestion pipeline.
+
+    When *input* is a plain ``str`` or ``list[str]``, behaviour is identical to
+    the previous implementation (delegates to ``lightrag.ainsert``).
 
     Args:
-        lightrag: LightRAG instance
-        input: Single document string or list of document strings
-        split_by_character: if split_by_character is not None, split the string by character, if chunk longer than
-        chunk_token_size, it will be split again by token size.
-        split_by_character_only: if split_by_character_only is True, split the string by character only, when
-        split_by_character is None, this parameter is ignored.
-        ids: single string of the document ID or list of unique document IDs, if not provided, MD5 hash IDs will be generated
-        file_paths: single string of the file path or list of file paths, used for citation
+        lightrag: LightRAG instance.
+        input: Text to insert — plain string(s) or pre-chunked metadata dicts.
+        file_paths: File path(s) for reference citation.
+        split_by_character: Character to split on (plain-text mode only).
+        split_by_character_only: Split by character only (plain-text mode only).
+        ids: Document ID(s).
     """
     logger.info("Starting text content insertion into LightRAG...")
 
-    # Use LightRAG's insert method with all parameters
+    # ── Metadata-aware path: list[dict] → ainsert_custom_chunks ─────
+    if isinstance(input, list) and len(input) > 0 and isinstance(input[0], dict):
+        # Build full text from all chunks for document storage
+        full_text = "\n\n".join(
+            item.get("content", "") if isinstance(item, dict) else str(item)
+            for item in input
+        )
+        # Normalize file_paths to a single string for the doc entry
+        fp = file_paths
+        if isinstance(fp, list):
+            fp = fp[0] if fp else ""
+        fp = fp or ""
+
+        doc_id = None
+        if ids:
+            doc_id = ids if isinstance(ids, str) else ids[0] if ids else None
+
+        await lightrag.ainsert_custom_chunks(
+            full_text=full_text,
+            text_chunks=input,
+            doc_id=doc_id,
+            file_path=fp,
+        )
+        logger.info(
+            f"Text content insertion complete "
+            f"({len(input)} chunks with metadata)"
+        )
+        return
+
+    # ── Plain-text path: str | list[str] → ainsert (backward compat) ─
     await lightrag.ainsert(
         input=input,
         file_paths=file_paths,
@@ -389,3 +466,16 @@ def get_processor_supports(proc_type: str) -> List[str]:
         ],
     }
     return supports_map.get(proc_type, ["Basic processing"])
+
+
+# ── Parser kwarg filtering ───────────────────────────────────────────
+
+_PARSER_KWARG_KEYS = frozenset({
+    "lang", "device", "start_page", "end_page",
+    "formula", "table", "backend", "source",
+})
+
+
+def filter_parser_kwargs(kwargs):
+    """Return only kwargs that are relevant parser configuration keys."""
+    return {k: v for k, v in kwargs.items() if k in _PARSER_KWARG_KEYS}

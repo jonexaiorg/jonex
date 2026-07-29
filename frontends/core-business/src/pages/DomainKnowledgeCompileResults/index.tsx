@@ -1,59 +1,235 @@
-import React, { useState } from 'react'
-import { Button, Card, Table, Tag, Input, Select, Space } from 'antd'
-import { PlayCircleOutlined, SearchOutlined } from '@ant-design/icons'
+import { useState, useMemo, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Button, Card, Tag, Tabs, Space, Spin } from 'antd';
+import { ArrowLeftOutlined, DatabaseOutlined } from '@ant-design/icons';
+import type { OntologyStatistics, OntologyInstanceSummary, RelationInstanceSummary } from '@/types/domainKnowledge';
+import { getOntologyStatistics, getOntologyEntityTypes, getOntologyRelationTypes } from '@/api/domainKnowledge';
+import { getSearchFeedbackStats } from '@/api/knowledgeSearch';
+import type { SearchFeedbackStats } from '@/types/knowledgeSearch';
+import { buildTabs, buildStats } from './config';
+import type { TabConfig } from './config';
+import OntologyTab from './OntologyTab';
+import RelationTab from './RelationTab';
+import GraphTab from './GraphTab';
+import LikeTab from './LikeTab';
+import DislikeTab from './DislikeTab';
 
-const compileList = [
-  { kb: '金融产品知识库', version: 'v2.5.1', status: '成功', entities: 12845, relations: 45672, duration: '3分28秒' },
-  { kb: '医学文献知识库', version: 'v2.4.0', status: '成功', entities: 35621, relations: 128430, duration: '8分15秒' },
-  { kb: '设备故障知识库', version: 'v1.9.2', status: '进行中', entities: 8234, relations: 0, duration: '--' },
-  { kb: '课程资源知识库', version: 'v2.1.0', status: '成功', entities: 24310, relations: 89256, duration: '5分42秒' },
-  { kb: '法律法规知识库', version: 'v3.0.1', status: '失败', entities: 0, relations: 0, duration: '1分05秒' },
-]
-
-const statusColor: Record<string, string> = { '成功': 'success', '进行中': 'processing', '失败': 'error' }
+const renderTabLabel = (item: TabConfig) => (
+  <Space size={6}>
+    {item.icon}
+    <span>{item.label}</span>
+    {item.count > 0 && <span style={{ color: '#94a3b8', fontSize: 12 }}>{item.count}</span>}
+  </Space>
+);
 
 export default function DomainKnowledgeCompileResults() {
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('全部状态')
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { id = '' } = useParams<{ id: string }>();
+  const [activeTab, setActiveTab] = useState('ontology');
+  const [statsData, setStatsData] = useState<OntologyStatistics | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
 
-  const columns = [
-    { title: '知识库', dataIndex: 'kb', key: 'kb', width: 180, render: (v: string) => <a className="yx-table-action">{v}</a> },
-    { title: '编译版本', dataIndex: 'version', key: 'version', width: 100 },
-    { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: (v: string) => <Tag color={statusColor[v]}>{v}</Tag> },
-    { title: '实体数', dataIndex: 'entities', key: 'entities', width: 100, render: (v: number) => v ? v.toLocaleString() : '--' },
-    { title: '关系数', dataIndex: 'relations', key: 'relations', width: 100, render: (v: number) => v ? v.toLocaleString() : '--' },
-    { title: '耗时', dataIndex: 'duration', key: 'duration', width: 100 },
-    { title: '操作', key: 'actions', width: 100, render: (_: any, r: any) => (
-      <Space>
-        <a className="yx-table-action">详情</a>
-        {r.status === '成功' ? <a className="yx-table-action">回滚</a> : r.status === '失败' ? <a className="yx-table-action">重试</a> : null}
-      </Space>
-    )},
-  ]
+  const [entityTypes, setEntityTypes] = useState<OntologyInstanceSummary[] | null>(null);
+  const [relationTypes, setRelationTypes] = useState<RelationInstanceSummary[] | null>(null);
+  const [feedbackStats, setFeedbackStats] = useState<SearchFeedbackStats | null>(null);
 
-  const filtered = compileList.filter((c) =>
-    c.kb.includes(search) && (statusFilter === '全部状态' || c.status === statusFilter)
-  )
+  // 进入页面请求统计 + 本体实例 + 关系实例 + 反馈统计
+  useEffect(() => {
+    if (!id) return;
+    setStatsLoading(true);
+    getOntologyStatistics(id)
+      .then(setStatsData)
+      .catch(() => {})
+      .finally(() => setStatsLoading(false));
+
+    getOntologyEntityTypes(id)
+      .then((res) => setEntityTypes(res.items.map((item) => ({ ...item, type: item.name }))))
+      .catch(() => {});
+
+    getOntologyRelationTypes(id)
+      .then((res) => setRelationTypes(res.items))
+      .catch(() => {});
+
+    getSearchFeedbackStats(id)
+      .then(setFeedbackStats)
+      .catch(() => {});
+  }, [id]);
+
+  const tabs = useMemo(
+    () => (statsData ? buildTabs(t, statsData, feedbackStats?.like_count, feedbackStats?.dislike_count) : []),
+    [statsData, feedbackStats, t],
+  );
+  const stats = useMemo(() => (statsData ? buildStats(t, statsData) : []), [statsData, t]);
+
+  const tabContent = useMemo(() => {
+    switch (activeTab) {
+      case 'ontology':
+        return <OntologyTab kbId={id} data={entityTypes} />;
+      case 'relation':
+        return <RelationTab kbId={id} data={relationTypes} />;
+      case 'graph':
+        return <GraphTab kbId={id} />;
+      case 'like':
+        return <LikeTab kbId={id} />;
+      case 'dislike':
+        return <DislikeTab kbId={id} />;
+      default:
+        return null;
+    }
+  }, [activeTab, id, entityTypes, relationTypes]);
 
   return (
     <div>
-      <div className="yx-page-title">
-        <h1>编译结果查看</h1>
+      {/* Header */}
+      <div
+        style={{
+          background: '#fff',
+          borderRadius: 12,
+          padding: '20px 24px',
+          border: '1px solid #eef2f6',
+          marginBottom: 16,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+            marginBottom: 12,
+          }}
+        >
+          <Button
+            icon={<ArrowLeftOutlined />}
+            onClick={() => navigate(`/domain-knowledge/${id}`)}
+            style={{ borderRadius: 8 }}
+          >
+            {t('common.back')}
+          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 10,
+                background: '#eff6ff',
+                color: '#3b82f6',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 20,
+              }}
+            >
+              <DatabaseOutlined />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: '#0b2b5c' }}>
+                  {statsData?.knowledge_base_name || t('domainKnowledge.detail')}
+                </span>
+                <Tag color="success" style={{ margin: 0, borderRadius: 6, fontSize: 12 }}>
+                  {t('status.compiled')}
+                </Tag>
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: '#94a3b8',
+                  marginTop: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                }}
+              >
+                <span>{t('common.fullCompileResults')}</span>
+                {statsData?.last_update_time && <span>{new Date(statsData.last_update_time).toLocaleString()}</span>}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <Card className="yx-card">
-        <div className="yx-toolbar">
-          <Input
-            prefix={<SearchOutlined />} placeholder="搜索知识库..." value={search}
-            onChange={(e) => setSearch(e.target.value)} style={{ width: 240 }}
-          />
-          <Select value={statusFilter} onChange={setStatusFilter} style={{ width: 140 }}
-            options={['全部状态', '成功', '进行中', '失败'].map((s) => ({ value: s, label: s }))}
-          />
-          <Button type="primary" icon={<PlayCircleOutlined />}>执行编译</Button>
+      {/* Stats */}
+      <Spin spinning={statsLoading}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 16,
+            marginBottom: 16,
+          }}
+        >
+          {stats.map((s) => (
+            <Card
+              key={s.label}
+              styles={{
+                body: {
+                  padding: '20px 24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                },
+              }}
+              style={{
+                flex: 1,
+                borderRadius: 12,
+                border: '1px solid #eef2f6',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+              }}
+            >
+              <div
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 12,
+                  background: '#f8fafc',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 22,
+                }}
+              >
+                {s.icon}
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontSize: 24,
+                    fontWeight: 700,
+                    color: '#0b2b5c',
+                    lineHeight: 1,
+                  }}
+                >
+                  {s.value.toLocaleString()}
+                </div>
+                <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>{s.label}</div>
+              </div>
+            </Card>
+          ))}
         </div>
-        <Table columns={columns} dataSource={filtered} rowKey="kb" pagination={{ total: 15, pageSize: 5 }} size="middle" />
+      </Spin>
+
+      {/* Tabs & Table */}
+      <Card
+        style={{
+          borderRadius: 12,
+          border: '1px solid #eef2f6',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+        }}
+        styles={{ body: { padding: 0 } }}
+      >
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={tabs.map((t) => ({
+            key: t.key,
+            label: renderTabLabel(t),
+          }))}
+          style={{ padding: '0 20px' }}
+        />
+
+        {tabContent}
       </Card>
     </div>
-  )
+  );
 }

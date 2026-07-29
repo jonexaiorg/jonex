@@ -1,1 +1,5 @@
 .vite
+
+# Test files — not uploaded to remote
+src/**/*.test.ts
+src/**/*.test.tsx

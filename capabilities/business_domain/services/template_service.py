@@ -1,4 +1,6 @@
-
+"""
+业务领域 — 业务模板服务
+"""
 import uuid
 from typing import Any
 
@@ -6,6 +8,7 @@ from sqlalchemy import or_, select
 
 from jonex_core.common import get_db_session
 from jonex_core.common.exceptions import InvalidParameterError, ResourceNotFoundError
+from jonex_core.common.i18n import translate
 
 from capabilities.business_domain.models.template import (
     TemplateAttribute,
@@ -26,9 +29,9 @@ from capabilities.business_domain.services import _check_tenant
 
 
 class TemplateService:
+    """业务领域模板：模板领域 -> 场景 -> 对象/属性/关系。"""
 
-
-
+    # Template Domains
     async def list_domains(self, tenant_id: str, offset: int = 0, limit: int = 20) -> dict:
         tenant_id = _check_tenant(tenant_id)
         async with get_db_session() as session:
@@ -85,7 +88,7 @@ class TemplateService:
                 if k in ("name", "description", "status") and v is not None
             })
             if obj is None:
-                raise ResourceNotFoundError(message=f"Template domain not found: {domain_id}")
+                raise ResourceNotFoundError(message=translate("err.template.domain_not_found", params={"domain_id": domain_id}, fallback=f"模板领域不存在: {domain_id}"))  # 原消息
             await session.commit()
             return obj.to_dict()
 
@@ -95,11 +98,11 @@ class TemplateService:
             repo = TemplateDomainRepository(session)
             deleted = await repo.delete_soft(domain_id, tenant_id)
             if not deleted:
-                raise ResourceNotFoundError(message=f"Template domain not found: {domain_id}")
+                raise ResourceNotFoundError(message=translate("err.template.domain_not_found", params={"domain_id": domain_id}, fallback=f"模板领域不存在: {domain_id}"))  # 原消息
             await session.commit()
             return True
 
-
+    # Template Scenarios
     async def list_scenarios(
         self,
         tenant_id: str,
@@ -121,7 +124,7 @@ class TemplateService:
         tenant_id = _check_tenant(tenant_id)
         domain_id = data.get("domain_id")
         if not domain_id:
-            raise InvalidParameterError(message="A template scenario must be associated with a template domain")
+            raise InvalidParameterError(message=translate("err.template.scenario_needs_domain", fallback="模板场景必须关联模板领域"))  # 原消息
 
         async with get_db_session() as session:
             await TemplateDomainRepository(session).get_required(domain_id, tenant_id)
@@ -232,7 +235,7 @@ class TemplateService:
             await session.commit()
             return True
 
-
+    # Template Objects
     async def list_objects(self, tenant_id: str, scenario_id: str, offset: int = 0, limit: int = 20) -> dict:
         tenant_id = _check_tenant(tenant_id)
         async with get_db_session() as session:
@@ -283,7 +286,7 @@ class TemplateService:
                 k: v for k, v in data.items()
                 if k in ("name", "description", "status", "ontology_code", "aliases") and v is not None
             })
-
+            # 对象改名 → 同步对象级约束 target_label
             new_name = data.get("name")
             if new_name and new_name != old_name:
                 await self._sync_constraint_labels_by_target(
@@ -323,7 +326,7 @@ class TemplateService:
                     ),
                 ],
             )
-
+            # 级联软删对象级约束
             object_constraints = await constraint_repo.list_all(
                 tenant_id, 0, 10000,
                 extra_conditions=[
@@ -332,7 +335,7 @@ class TemplateService:
                     TemplateConstraint.target_id == obj.id,
                 ],
             )
-
+            # 级联软删属性级约束
             attr_constraints: list = []
             if attr_ids:
                 attr_constraints = await constraint_repo.list_all(
@@ -353,7 +356,7 @@ class TemplateService:
             await session.commit()
             return True
 
-
+    # Template Relations
     async def list_relations(self, tenant_id: str, scenario_id: str, offset: int = 0, limit: int = 20) -> dict:
         tenant_id = _check_tenant(tenant_id)
         async with get_db_session() as session:
@@ -426,7 +429,7 @@ class TemplateService:
                     "aliases",
                 ) and v is not None
             })
-
+            # 关系改名 → 同步关系级约束 target_label
             new_name = data.get("name")
             if new_name and new_name != old_name:
                 await self._sync_constraint_labels_by_target(
@@ -480,7 +483,8 @@ class TemplateService:
         object_id: str,
         attributes: list[dict[str, Any]],
     ) -> list[TemplateAttribute]:
-
+        """按 id upsert 属性：保留传入带 id 的属性（原地更新），新增无 id 的，软删不在列表中的。
+        保持属性 id 稳定，使属性级约束 target_id 可靠。"""
         repo = TemplateAttributeRepository(session)
         constraint_repo = TemplateConstraintRepository(session)
         old_attrs = await repo.list_all(
@@ -495,7 +499,7 @@ class TemplateService:
             attr_data.get("id") for attr_data in attributes
             if attr_data.get("id")
         }
-
+        # 软删不在列表中的旧属性 + 其约束
         removed_ids = set(old_by_id.keys()) - incoming_ids
         if removed_ids:
             removed_attrs = [old_by_id[aid] for aid in removed_ids]
@@ -515,10 +519,10 @@ class TemplateService:
         for index, attr_data in enumerate(attributes):
             attr_name = attr_data.get("attr_name") or attr_data.get("name")
             if not attr_name:
-                raise InvalidParameterError(message="Object attribute name must not be empty")
+                raise InvalidParameterError(message=translate("err.template.attr_name_required", fallback="对象属性名称不能为空"))  # 原消息
             attr_id = attr_data.get("id")
             if attr_id and attr_id in old_by_id:
-
+                # 原地更新保留属性（改名时同步 target_label）
                 old_attr = old_by_id[attr_id]
                 old_name = old_attr.attr_name
                 updated = await repo.update(old_attr, tenant_id, **{
@@ -533,14 +537,14 @@ class TemplateService:
                         "is_required": 1 if attr_data.get("is_required") else 0,
                     }.items() if v is not None
                 })
-
+                # 改名时同步属性级约束 target_label
                 if attr_name != old_name:
                     await self._sync_constraint_labels_by_target(
                         session, tenant_id, "attribute", attr_id, attr_name,
                     )
                 result.append(updated)
             else:
-
+                # 新建属性
                 attr = await repo.create(
                     id=uuid.uuid4().hex,
                     tenant_id=tenant_id,
@@ -577,7 +581,7 @@ class TemplateService:
         target_object_id: str | None,
     ) -> None:
         if not source_object_id or not target_object_id:
-            raise InvalidParameterError(message="A relation must specify source and target objects")
+            raise InvalidParameterError(message=translate("err.template.relation_needs_both", fallback="关系必须指定源对象和目标对象"))  # 原消息
         objects = await TemplateObjectRepository(session).list_all(
             tenant_id,
             0,
@@ -589,7 +593,7 @@ class TemplateService:
         )
         found_ids = {obj.id for obj in objects}
         if source_object_id not in found_ids or target_object_id not in found_ids:
-            raise InvalidParameterError(message="Relation objects must belong to the current template scenario")
+            raise InvalidParameterError(message=translate("err.template.relation_same_scenario", fallback="关系对象必须属于当前模板场景"))  # 原消息
 
     @staticmethod
     def _object_to_dict(obj: TemplateObject, attributes: list[TemplateAttribute]) -> dict:
@@ -604,7 +608,7 @@ class TemplateService:
         data["target_object_name"] = object_names.get(obj.target_object_id)
         return data
 
-
+    # ── Template Constraints ──────────────────────────────────
 
     async def list_constraints(
         self, tenant_id: str, scenario_id: str, offset: int = 0, limit: int = 20,
@@ -635,10 +639,10 @@ class TemplateService:
             target_type = data["target_type"]
             target_id = data["target_id"]
             constraint_type = data["constraint_type"]
-
+            # 表达式必填规则
             if constraint_type in ("conditional", "range") and not data.get("expression"):
                 raise InvalidParameterError(
-                    message=f"Constraint type {constraint_type} requires an expression",
+                    message=translate("err.template.constraint_needs_expression", params={"constraint_type": constraint_type}, fallback=f"约束类型 {constraint_type} 必须填写表达式"),  # 原消息
                 )
             target_label = await self._validate_constraint_target(
                 session, tenant_id, scenario.id, target_type, target_id,
@@ -668,19 +672,19 @@ class TemplateService:
             obj = await repo.get_required(constraint_id, tenant_id)
             await TemplateScenarioRepository(session).get_required(obj.scenario_id, tenant_id)
 
-
+            # PATCH 合并：现值 + patch → 最终值
             merged_target_type = data.get("target_type", obj.target_type)
             merged_target_id = data.get("target_id", obj.target_id)
             merged_constraint_type = data.get("constraint_type", obj.constraint_type)
             merged_expression = data.get("expression", obj.expression) if "expression" in data else obj.expression
 
-
+            # 表达式必填规则（基于合并后的 constraint_type）
             if merged_constraint_type in ("conditional", "range") and not merged_expression:
                 raise InvalidParameterError(
-                    message=f"Constraint type {merged_constraint_type} requires an expression",
+                    message=translate("err.template.constraint_needs_expression", params={"constraint_type": merged_constraint_type}, fallback=f"约束类型 {merged_constraint_type} 必须填写表达式"),  # 原消息
                 )
 
-
+            # 检查目标变化
             target_changed = (
                 merged_target_type != obj.target_type
                 or merged_target_id != obj.target_id
@@ -713,7 +717,7 @@ class TemplateService:
             repo = TemplateConstraintRepository(session)
             deleted = await repo.delete_soft(constraint_id, tenant_id)
             if not deleted:
-                raise ResourceNotFoundError(message=f"Template constraint not found: {constraint_id}")
+                raise ResourceNotFoundError(message=translate("err.template.constraint_not_found", params={"constraint_id": constraint_id}, fallback=f"模板约束不存在: {constraint_id}"))  # 原消息
             await session.commit()
             return True
 
@@ -721,11 +725,11 @@ class TemplateService:
         self, session, tenant_id: str, scenario_id: str,
         target_type: str, target_id: str,
     ) -> str:
-
+        """校验 target_id 归属当前 scenario，返回 target_label 快照。"""
         valid_types = {"object", "attribute", "relation"}
         if target_type not in valid_types:
             raise InvalidParameterError(
-                message=f"Invalid constraint target type: {target_type}. Valid values: {', '.join(sorted(valid_types))}",
+                message=translate("err.template.invalid_constraint_target_type", params={"target_type": target_type, "valid": ', '.join(sorted(valid_types))}, fallback=f"无效的约束目标类型: {target_type}，有效值: {', '.join(sorted(valid_types))}"),  # 原消息
             )
         if target_type == "object":
             objects = await TemplateObjectRepository(session).list_all(
@@ -736,7 +740,7 @@ class TemplateService:
                 ],
             )
             if not objects:
-                raise InvalidParameterError(message="Constraint target object does not belong to the current template scenario")
+                raise InvalidParameterError(message=translate("err.template.constraint_same_scenario", fallback="约束目标对象不属于当前模板场景"))  # 原消息
             return objects[0].name
         if target_type == "relation":
             relations = await TemplateRelationRepository(session).list_all(
@@ -747,9 +751,9 @@ class TemplateService:
                 ],
             )
             if not relations:
-                raise InvalidParameterError(message="Constraint target relation does not belong to the current template scenario")
+                raise InvalidParameterError(message=translate("err.template.constraint_rel_same_scenario", fallback="约束目标关系不属于当前模板场景"))  # 原消息
             return relations[0].name
-
+        # target_type == "attribute": 两级校验
         if target_type == "attribute":
             result = await session.execute(
                 select(TemplateAttribute, TemplateObject)
@@ -767,7 +771,7 @@ class TemplateService:
             row = result.first()
             if not row:
                 raise InvalidParameterError(
-                    message="Constraint target attribute does not exist, or its owning object does not belong to the current template scenario",
+                    message=translate("err.template.constraint_target_invalid", fallback="约束目标属性不存在或所属对象不属于当前模板场景"),  # 原消息
                 )
             return row[0].attr_name
         return ""
@@ -776,7 +780,7 @@ class TemplateService:
         self, session, tenant_id: str,
         target_type: str, target_id: str, new_label: str,
     ) -> None:
-
+        """更新指定 target 的所有约束的 target_label 快照。"""
         constraints = await TemplateConstraintRepository(session).list_all(
             tenant_id, 0, 10000,
             extra_conditions=[

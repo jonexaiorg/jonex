@@ -119,10 +119,15 @@ class TestRAGAnythingConfig:
 
 
 class TestSeparateContent:
+    @staticmethod
+    def _real_multimodal(multimodal):
+        """Filter out the _text_meta sentinel appended by separate_content."""
+        return [m for m in multimodal if "_text_meta" not in m]
+
     def test_empty_list(self):
         text, multimodal = separate_content([])
         assert text == ""
-        assert multimodal == []
+        assert self._real_multimodal(multimodal) == []
 
     def test_text_only(self):
         content = [
@@ -132,7 +137,7 @@ class TestSeparateContent:
         text, multimodal = separate_content(content)
         assert "Hello world" in text
         assert "Second paragraph" in text
-        assert multimodal == []
+        assert self._real_multimodal(multimodal) == []
 
     def test_multimodal_only(self):
         content = [
@@ -140,10 +145,11 @@ class TestSeparateContent:
             {"type": "table", "table_body": "col1|col2"},
         ]
         text, multimodal = separate_content(content)
+        real = self._real_multimodal(multimodal)
         assert text == ""
-        assert len(multimodal) == 2
-        assert multimodal[0]["type"] == "image"
-        assert multimodal[1]["type"] == "table"
+        assert len(real) == 2
+        assert real[0]["type"] == "image"
+        assert real[1]["type"] == "table"
 
     def test_mixed_content(self):
         content = [
@@ -154,9 +160,10 @@ class TestSeparateContent:
             {"type": "equation", "text": "E=mc^2"},
         ]
         text, multimodal = separate_content(content)
+        real = self._real_multimodal(multimodal)
         assert "Introduction" in text
         assert "Discussion" in text
-        assert len(multimodal) == 3
+        assert len(real) == 3
 
     def test_whitespace_text_ignored(self):
         content = [
@@ -221,10 +228,17 @@ class TestValidateImageFile:
         assert validate_image_file(str(img), max_size_mb=50) is False
 
     def test_symlink_blocked(self, tmp_path):
+        import sys
         real = tmp_path / "real.jpg"
         real.write_bytes(b"\xff\xd8\xff" + b"\x00" * 100)
         link = tmp_path / "link.jpg"
-        link.symlink_to(real)
+        try:
+            link.symlink_to(real)
+        except OSError:
+            # Symlink creation requires admin privileges on Windows
+            if sys.platform == "win32":
+                pytest.skip("Symlink creation requires admin on Windows")
+            raise
         assert validate_image_file(str(link)) is False
 
     def test_all_valid_extensions(self, tmp_path):

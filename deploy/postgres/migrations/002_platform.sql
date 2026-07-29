@@ -1,13 +1,13 @@
+-- ============================================================
+-- 悦溪平台数据库初始化 - 平台层 (platform schema) + 计量层 (metering schema)
+-- 版本: 002
+-- 包含：租户、API Key、用户、登录票据
+--       RBAC (角色/权限/角色-权限/用户-角色)
+--       菜单、应用注册、应用路由、系统配置、审计日志、任务调度
+--       LLM 网关计量明细表 metering.llm_usage_log
+-- ============================================================
 
-
-
-
-
-
-
-
-
-
+-- 租户表
 CREATE TABLE IF NOT EXISTS platform.tenants (
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS platform.tenants (
     is_deleted SMALLINT DEFAULT 0
 );
 
-
+-- API Key 表
 CREATE TABLE IF NOT EXISTS platform.api_keys (
     id BIGSERIAL PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS platform.api_keys (
 CREATE INDEX IF NOT EXISTS idx_api_keys_tenant ON platform.api_keys(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_key ON platform.api_keys(api_key);
 
-
+-- 用户表
 CREATE TABLE IF NOT EXISTS platform.users (
     id BIGSERIAL PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -54,14 +54,15 @@ CREATE TABLE IF NOT EXISTS platform.users (
     last_login_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    is_deleted SMALLINT DEFAULT 0,
-    UNIQUE(tenant_id, username)
+    is_deleted SMALLINT DEFAULT 0
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_tenant_id_username_key ON platform.users(tenant_id, username) WHERE is_deleted = 0;
 
 CREATE INDEX IF NOT EXISTS idx_users_tenant ON platform.users(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON platform.users(tenant_id, username);
 
-
+-- 一次性登录票据表（跨域登录 ticket/code 交换）
 CREATE TABLE IF NOT EXISTS platform.login_tickets (
     id BIGSERIAL PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -83,10 +84,10 @@ CREATE INDEX IF NOT EXISTS idx_login_tickets_hash ON platform.login_tickets(tick
 CREATE INDEX IF NOT EXISTS idx_login_tickets_expires ON platform.login_tickets(expires_at);
 CREATE INDEX IF NOT EXISTS idx_login_tickets_app_redirect ON platform.login_tickets(app_id, redirect_uri);
 
+-- 调用计量表已下线：LLM/embedding 出口计量统一由 llm-gateway 写入 metering.llm_usage_log
+-- （表定义见本文件末尾「计量层」段；决策见 docs/llm-gateway-token-metering-execution-plan.md G2c-A）
 
-
-
-
+-- RBAC 角色表
 CREATE TABLE IF NOT EXISTS platform.roles (
     id BIGSERIAL PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -100,7 +101,7 @@ CREATE TABLE IF NOT EXISTS platform.roles (
 
 CREATE INDEX IF NOT EXISTS idx_roles_tenant ON platform.roles(tenant_id);
 
-
+-- 权限表
 CREATE TABLE IF NOT EXISTS platform.permissions (
     id BIGSERIAL PRIMARY KEY,
     code VARCHAR(128) NOT NULL UNIQUE,
@@ -112,7 +113,7 @@ CREATE TABLE IF NOT EXISTS platform.permissions (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-
+-- 角色-权限关联表
 CREATE TABLE IF NOT EXISTS platform.role_permissions (
     id BIGSERIAL PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -126,7 +127,7 @@ CREATE INDEX IF NOT EXISTS idx_rp_tenant ON platform.role_permissions(tenant_id)
 CREATE INDEX IF NOT EXISTS idx_rp_role ON platform.role_permissions(role_id);
 CREATE INDEX IF NOT EXISTS idx_rp_perm ON platform.role_permissions(permission_id);
 
-
+-- 用户-角色关联表
 CREATE TABLE IF NOT EXISTS platform.user_roles (
     id BIGSERIAL PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -140,7 +141,7 @@ CREATE INDEX IF NOT EXISTS idx_ur_tenant ON platform.user_roles(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ur_user ON platform.user_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_ur_role ON platform.user_roles(role_id);
 
-
+-- 菜单表
 CREATE TABLE IF NOT EXISTS platform.menus (
     id BIGSERIAL PRIMARY KEY,
     parent_id BIGINT DEFAULT 0,
@@ -156,7 +157,7 @@ CREATE TABLE IF NOT EXISTS platform.menus (
     is_deleted SMALLINT DEFAULT 0
 );
 
-
+-- 应用注册表
 CREATE TABLE IF NOT EXISTS platform.applications (
     id BIGSERIAL PRIMARY KEY,
     app_code VARCHAR(64) NOT NULL UNIQUE,
@@ -171,7 +172,7 @@ CREATE TABLE IF NOT EXISTS platform.applications (
     is_deleted SMALLINT DEFAULT 0
 );
 
-
+-- 应用路由表
 CREATE TABLE IF NOT EXISTS platform.application_routes (
     id BIGSERIAL PRIMARY KEY,
     app_id BIGINT NOT NULL,
@@ -184,7 +185,7 @@ CREATE TABLE IF NOT EXISTS platform.application_routes (
 
 CREATE INDEX IF NOT EXISTS idx_ar_app ON platform.application_routes(app_id);
 
-
+-- 系统配置表
 CREATE TABLE IF NOT EXISTS platform.system_configs (
     id BIGSERIAL PRIMARY KEY,
     config_group VARCHAR(64) NOT NULL,
@@ -196,10 +197,10 @@ CREATE TABLE IF NOT EXISTS platform.system_configs (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-
+-- 审计日志表
 CREATE TABLE IF NOT EXISTS platform.audit_logs (
     id BIGSERIAL PRIMARY KEY,
-    tenant_id VARCHAR(64),
+    tenant_id VARCHAR(64),                 -- 可空：支持无租户的系统级事件
     user_id BIGINT,
     username VARCHAR(128),
     ip VARCHAR(64),
@@ -212,14 +213,14 @@ CREATE TABLE IF NOT EXISTS platform.audit_logs (
     response_body JSONB,
     error_stack TEXT,
     trace_id VARCHAR(128),
-
-    log_type VARCHAR(32),
-    service_name VARCHAR(64),
-    outcome VARCHAR(16),
-    log_level VARCHAR(16),
+    -- 区分维度字段
+    log_type VARCHAR(32),                  -- OPERATION / TASK / SECURITY 等
+    service_name VARCHAR(64),              -- 来源服务
+    outcome VARCHAR(16),                   -- SUCCESS / FAILED
+    log_level VARCHAR(16),                 -- INFO / WARN / ERROR
     error_message TEXT,
-    method VARCHAR(8),
-    path VARCHAR(512),
+    method VARCHAR(8),                     -- HTTP 方法
+    path VARCHAR(512),                     -- 请求路径
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -231,11 +232,11 @@ CREATE INDEX IF NOT EXISTS idx_audit_time ON platform.audit_logs(created_at DESC
 CREATE INDEX IF NOT EXISTS idx_audit_log_type ON platform.audit_logs(log_type);
 CREATE INDEX IF NOT EXISTS idx_audit_service ON platform.audit_logs(service_name);
 CREATE INDEX IF NOT EXISTS idx_audit_outcome ON platform.audit_logs(outcome);
-
+-- 控制台最常见查询：某租户下某类日志按时间倒序
 CREATE INDEX IF NOT EXISTS idx_audit_tenant_type_time
     ON platform.audit_logs(tenant_id, log_type, created_at DESC);
 
-
+-- 任务调度表
 CREATE TABLE IF NOT EXISTS platform.task_schedules (
     id BIGSERIAL PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -254,29 +255,29 @@ CREATE TABLE IF NOT EXISTS platform.task_schedules (
 CREATE INDEX IF NOT EXISTS idx_task_tenant ON platform.task_schedules(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_task_type ON platform.task_schedules(task_type);
 
-
-
-
-
-
+-- ============================================================
+-- 计量层 (metering schema)
+-- LLM 网关计量明细表：记录所有经 llm-gateway 的 LLM/Embedding 调用 token 用量
+-- 按 tenant/scene/model/kb/doc 粒度统计
+-- ============================================================
 
 CREATE TABLE IF NOT EXISTS metering.llm_usage_log (
     id               BIGSERIAL PRIMARY KEY,
-    request_id       VARCHAR(64) UNIQUE,
-    trace_id         VARCHAR(64),
+    request_id       VARCHAR(64) UNIQUE,          -- 计量幂等键：每次逻辑 LLM 调用唯一、重试稳定
+    trace_id         VARCHAR(64),                 -- 链路追踪 ID：一次用户业务请求一个，用于多次调用归组
     tenant_id        VARCHAR(64) NOT NULL,
     user_id          VARCHAR(64),
-    scene            VARCHAR(64) NOT NULL,
+    scene            VARCHAR(64) NOT NULL,        -- ontology_extract / ontology_qa / lightrag_extract / lightrag_embed / ...
     model            VARCHAR(128) NOT NULL,
     kb_id            VARCHAR(64),
     doc_id           VARCHAR(64),
     prompt_tokens    INTEGER DEFAULT 0,
     completion_tokens INTEGER DEFAULT 0,
     total_tokens     INTEGER DEFAULT 0,
-    latency_ms       INTEGER,
+    latency_ms       INTEGER,                     -- 上游响应延迟
     is_stream        BOOLEAN DEFAULT false,
-    is_estimated     BOOLEAN DEFAULT false,
-    call_count       INTEGER NOT NULL DEFAULT 1,
+    is_estimated     BOOLEAN DEFAULT false,       -- usage 是否为估算
+    call_count       INTEGER NOT NULL DEFAULT 1,  -- 明细行=1；embedding 聚合行累加为 N（Phase 2A，见 docs/llm-usage-log-optimization-plan.md §4.3）
     created_at       TIMESTAMPTZ DEFAULT now()
 );
 
@@ -287,9 +288,9 @@ CREATE INDEX IF NOT EXISTS idx_llm_usage_scene
 CREATE INDEX IF NOT EXISTS idx_llm_usage_trace
     ON metering.llm_usage_log (trace_id);
 
-
-
-
+-- 日汇总表（Phase 3）：明细清理后仍可查长期趋势/对账。由手动 `make metering-rollup`
+-- 用 INSERT...SELECT...ON CONFLICT DO UPDATE（整天重聚合、replace 语义、幂等可重跑）刷新。
+-- 见 docs/llm-usage-log-optimization-plan.md §4.4。
 CREATE TABLE IF NOT EXISTS metering.llm_usage_daily (
     day_local          DATE         NOT NULL,
     tenant_id          VARCHAR(64)  NOT NULL,

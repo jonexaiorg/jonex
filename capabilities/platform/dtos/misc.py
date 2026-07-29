@@ -7,7 +7,7 @@ except ImportError:
     from pydantic import BaseModel, Field
 
 
-
+# ============ 租户管理 ============
 
 class TenantCreateRequest(BaseModel):
     id: str = Field(..., min_length=1, max_length=64)
@@ -44,7 +44,7 @@ class TenantListResponse(BaseModel):
     total: int
 
 
-
+# ============ 系统配置 ============
 
 class SystemConfigUpdateRequest(BaseModel):
     config_value: Optional[str] = None
@@ -67,16 +67,17 @@ class SystemConfigListResponse(BaseModel):
     items: list[SystemConfigResponse]
 
 
-
+# ============ 审计日志 ============
 
 class AuditLogResponse(BaseModel):
     id: int
-    tenant_id: Optional[str] = None
+    tenant_id: Optional[str] = None  # 系统事件时为 None
     user_id: Optional[int] = None
     username: Optional[str] = None
     ip: Optional[str] = None
     action: str
     resource: Optional[str] = None
+    resource_label: Optional[str] = None
     resource_id: Optional[str] = None
     status_code: Optional[int] = None
     duration_ms: Optional[int] = None
@@ -96,7 +97,7 @@ class AuditLogResponse(BaseModel):
 
 
 class AuditLogDetailResponse(AuditLogResponse):
-
+    """详情视图：包含 response_body 和 error_stack"""
     response_body: Optional[Any] = None
     error_stack: Optional[str] = None
 
@@ -106,7 +107,7 @@ class AuditLogListResponse(BaseModel):
     items: list[AuditLogResponse]
 
 
-
+# ============ 任务调度 ============
 
 class TaskScheduleCreateRequest(BaseModel):
     name: str = Field(..., max_length=255)

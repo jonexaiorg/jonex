@@ -1,42 +1,41 @@
-import React, { useEffect, useState } from 'react'
-import { Modal, Form, Input, Select, message } from 'antd'
-import { useTranslation } from 'react-i18next'
+import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Modal, Form, Input, Select, message } from 'antd';
 import {
   PROMPT_CATEGORIES,
+  PROMPT_CATEGORY_LABEL_KEYS,
   type PromptTemplateItem,
   type CreatePromptTemplatePayload,
   type UpdatePromptTemplatePayload,
-} from '../../api/promptTemplates'
+} from '../../api/promptTemplates';
 
-const { TextArea } = Input
+const { TextArea } = Input;
 
 interface CreateEditModalProps {
-  open: boolean
-  mode: 'create' | 'edit' | 'view'
-  template: PromptTemplateItem | null
-  onClose: () => void
-  onSubmit: (data: CreatePromptTemplatePayload | UpdatePromptTemplatePayload) => Promise<void>
+  open: boolean;
+  mode: 'create' | 'edit' | 'view';
+  template: PromptTemplateItem | null;
+  onClose: () => void;
+  onSubmit: (data: CreatePromptTemplatePayload | UpdatePromptTemplatePayload) => Promise<void>;
 }
 
-function getCurrentContent(t: PromptTemplateItem | null): string {
-  if (!t) return ''
-  const versions = t.versions_json || []
-  return versions.length > 0 ? versions[0].content : ''
+function getCurrentContent(item: PromptTemplateItem | null): string {
+  if (!item) return '';
+  const versions = item.versions_json || [];
+  return versions.length > 0 ? versions[0].content : '';
 }
 
-const CreateEditModal: React.FC<CreateEditModalProps> = ({
-  open, mode, template, onClose, onSubmit,
-}) => {
-  const { t } = useTranslation()
-  const [form] = Form.useForm()
-  const [loading, setLoading] = useState(false)
-  const isView = mode === 'view'
+const CreateEditModal: React.FC<CreateEditModalProps> = ({ open, mode, template, onClose, onSubmit }) => {
+  const { t } = useTranslation();
+  const [form] = Form.useForm();
+  const [loading, setLoading] = useState(false);
+  const isView = mode === 'view';
 
   useEffect(() => {
-    if (!open) return
+    if (!open) return;
     if (mode === 'create') {
-      form.resetFields()
-      form.setFieldsValue({ category: 'promptTemplate.categories.general', status: '启用' })
+      form.resetFields();
+      form.setFieldsValue({ category: '通用问答', status: '启用' });
     } else if (template) {
       form.setFieldsValue({
         name: template.name,
@@ -46,31 +45,36 @@ const CreateEditModal: React.FC<CreateEditModalProps> = ({
         status: template.status,
         version_remark: '',
         target_version: '',
-      })
+      });
     }
-  }, [open, mode, template, form])
+  }, [open, mode, template, form]);
 
   const handleOk = async () => {
-    if (isView) { onClose(); return }
-    try {
-      const values = await form.validateFields()
-      setLoading(true)
-      await onSubmit(values)
-      onClose()
-    } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'errorFields' in err) return
-      message.error(err instanceof Error ? err.message : t('common.saveFailed'))
-    } finally {
-      setLoading(false)
+    if (isView) {
+      onClose();
+      return;
     }
-  }
+    try {
+      const values = await form.validateFields();
+      setLoading(true);
+      await onSubmit(values);
+      onClose();
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return; // form validation
+      message.error(err instanceof Error ? err.message : t('promptTemplate.saveFailed'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <Modal
       title={
-        mode === 'create' ? t('promptTemplate.create')
-          : mode === 'edit' ? t('promptTemplate.edit')
-          : t('promptTemplate.view')
+        mode === 'create'
+          ? t('promptTemplate.createTitle')
+          : mode === 'edit'
+            ? t('promptTemplate.editTitle')
+            : t('promptTemplate.viewTitle')
       }
       open={open}
       onOk={handleOk}
@@ -97,22 +101,28 @@ const CreateEditModal: React.FC<CreateEditModalProps> = ({
           rules={[{ required: true, message: t('promptTemplate.categoryRequired') }]}
         >
           <Select placeholder={t('promptTemplate.categoryPlaceholder')}>
-            {PROMPT_CATEGORIES.map(cat => (
-              <Select.Option key={cat} value={cat}>{t(cat)}</Select.Option>
+            {PROMPT_CATEGORIES.map((cat) => (
+              <Select.Option key={cat} value={cat}>
+                {t(PROMPT_CATEGORY_LABEL_KEYS[cat] || cat)}
+              </Select.Option>
             ))}
           </Select>
         </Form.Item>
 
         {mode === 'edit' && (
           <>
-            <Form.Item name="version_remark" label={t('promptTemplate.versionRemark')}>
+            <Form.Item
+              name="version_remark"
+              label={t('promptTemplate.versionRemark')}
+              extra={t('promptTemplate.versionRemarkHint')}
+            >
               <Input placeholder={t('promptTemplate.versionRemarkPlaceholder')} maxLength={512} />
             </Form.Item>
 
             <Form.Item
               name="target_version"
               label={t('promptTemplate.targetVersion')}
-              extra={t('promptTemplate.targetVersionExtra', { current: template?.current_version || '1.1' })}
+              extra={t('promptTemplate.targetVersionExtra')}
             >
               <Input placeholder={t('promptTemplate.targetVersionPlaceholder')} maxLength={32} />
             </Form.Item>
@@ -128,15 +138,21 @@ const CreateEditModal: React.FC<CreateEditModalProps> = ({
           label={t('promptTemplate.content')}
           rules={[{ required: true, message: t('promptTemplate.contentRequired') }]}
           extra={t('promptTemplate.variableHint', {
-            placeholder: '{{variable}}',
-            example: '{{user_question}}',
+            variable: '{{variable}}',
+            userQuestion: '{{user_question}}',
           })}
         >
           <TextArea
             rows={8}
-            placeholder={t('promptTemplate.contentPlaceholder', {
-              placeholder: '{{variable}}',
-            })}
+            placeholder={
+              t('promptTemplate.contentTextareaPlaceholder', {
+                variable: '{{variable}}',
+              }) +
+              t('promptTemplate.contentExample', {
+                retrievedContent: '{{retrieved_content}}',
+                userQuestion: '{{user_question}}',
+              })
+            }
             style={{ fontFamily: "'Courier New', monospace", lineHeight: 1.6 }}
           />
         </Form.Item>
@@ -149,7 +165,7 @@ const CreateEditModal: React.FC<CreateEditModalProps> = ({
         </Form.Item>
       </Form>
     </Modal>
-  )
-}
+  );
+};
 
-export default React.memo(CreateEditModal)
+export default React.memo(CreateEditModal);

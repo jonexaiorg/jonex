@@ -123,6 +123,11 @@ class ProcessingCallback:
     ) -> None:
         """Called after all multimodal content processing completes."""
 
+    # ── Push chunks stage (HTTP mode) ──────────────────────────────
+    # [jonex] 批次 2-A：透出 P3 推送入图阶段信号，供 kb-service 对账置 INGESTING
+    def on_push_chunks_start(self, file_path: str = "", **kwargs: Any) -> None:
+        """Called when chunk push to LightRAG begins (HTTP pipeline only)."""
+
     # ── Query stage ───────────────────────────────────────────────
     def on_query_start(self, query: str, mode: str = "", **kwargs: Any) -> None:
         """Called before a query is executed."""

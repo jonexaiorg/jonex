@@ -1,116 +1,105 @@
-import React, { useEffect, useState } from 'react'
-import { Modal, Input, Button, Tag, Space, message, Spin } from 'antd'
-import { CloseOutlined, PlusOutlined, SaveOutlined, TagOutlined } from '@ant-design/icons'
-import { useTranslation } from 'react-i18next'
-import {
-  getKnowledgeBaseTags,
-  createKnowledgeBaseTag,
-  getDocumentTags,
-  setDocumentTags,
-} from '@/api/domainKnowledge'
-import type { TagItem } from '@/api/domainKnowledge'
-import './index.scss'
+import React, { useEffect, useState } from 'react';
+import { Modal, Input, Button, Tag, Space, message, Spin } from 'antd';
+import { CloseOutlined, PlusOutlined, SaveOutlined, TagOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import { getKnowledgeBaseTags, createKnowledgeBaseTag, getDocumentTags, setDocumentTags } from '@/api/domainKnowledge';
+import type { TagItem } from '@/api/domainKnowledge';
+import './index.scss';
 
-const TAG_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
-  '#8b5cf6', '#ec4899', '#06b6d4', '#f97316',
-]
+const TAG_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
 interface TagModalProps {
-  open: boolean
-  kbId: string
-  docId?: string
-  docName?: string
-  onClose: () => void
+  open: boolean;
+  kbId: string;
+  docId?: string;
+  docName?: string;
+  onClose: () => void;
 }
 
 export default function TagModal({ open, kbId, docId, docName, onClose }: TagModalProps) {
-  const { t } = useTranslation()
-  const [selectedTags, setSelectedTags] = useState<TagItem[]>([])
-  const [commonTags, setCommonTags] = useState<TagItem[]>([])
-  const [inputValue, setInputValue] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const { t } = useTranslation();
+  const [selectedTags, setSelectedTags] = useState<TagItem[]>([]);
+  const [commonTags, setCommonTags] = useState<TagItem[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open && docId) {
-      setInputValue('')
-      setLoading(true)
-      Promise.all([
-        getDocumentTags(docId, kbId),
-        getKnowledgeBaseTags(kbId),
-      ])
+      setInputValue('');
+      setLoading(true);
+      Promise.all([getDocumentTags(docId, kbId), getKnowledgeBaseTags(kbId)])
         .then(([docTags, kbTags]) => {
-          setSelectedTags(docTags)
-          setCommonTags(kbTags)
+          setSelectedTags(docTags);
+          setCommonTags(kbTags);
         })
         .catch(() => {
-          message.error(t('common.loadFailed'))
+          message.error(t('common.loadFailed'));
         })
-        .finally(() => setLoading(false))
+        .finally(() => setLoading(false));
     }
-  }, [open, docId, kbId])
+  }, [open, docId, kbId]);
 
   const handleAdd = async () => {
-    const val = inputValue.trim()
-    if (!val) return
+    const val = inputValue.trim();
+    if (!val) return;
     if (selectedTags.some((t) => t.name === val)) {
-      message.warning(t('common.tagExists'))
-      return
+      message.warning(t('common.tagExists'));
+      return;
     }
 
     // 先创建标签
     try {
-      const randomColor = TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)]
+      const randomColor = TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
       const newTag = await createKnowledgeBaseTag({
         knowledge_base_id: kbId,
         name: val,
         color: randomColor,
-      })
+      });
       // 创建成功后选中
-      setSelectedTags((prev) => [...prev, newTag])
-      setCommonTags((prev) => [...prev, newTag])
-      setInputValue('')
-      message.success(t('common.tagAdded'))
+      setSelectedTags((prev) => [...prev, newTag]);
+      setCommonTags((prev) => [...prev, newTag]);
+      setInputValue('');
+      message.success(t('common.tagAdded'));
     } catch {
-      message.error(t('common.tagCreateFailed'))
+      message.error(t('common.tagCreateFailed'));
     }
-  }
+  };
 
   const handleRemove = (tagId: string) => {
-    setSelectedTags((prev) => prev.filter((t) => t.id !== tagId))
-  }
+    setSelectedTags((prev) => prev.filter((t) => t.id !== tagId));
+  };
 
   const handleCommonTagClick = (tag: TagItem) => {
     if (selectedTags.some((t) => t.id === tag.id)) {
       // 已选中则取消
-      handleRemove(tag.id)
-      return
+      handleRemove(tag.id);
+      return;
     }
-    setSelectedTags((prev) => [...prev, tag])
-  }
+    setSelectedTags((prev) => [...prev, tag]);
+  };
 
   const handlePressEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    e.preventDefault()
-    handleAdd()
-  }
+    e.preventDefault();
+    handleAdd();
+  };
 
   const handleSave = async () => {
-    if (!docId) return
-    setSaving(true)
+    if (!docId) return;
+    setSaving(true);
     try {
       await setDocumentTags(docId, {
         knowledge_base_id: kbId,
         tag_ids: selectedTags.map((t) => t.id),
-      })
-      message.success(t('common.saveSuccess'))
-      onClose()
+      });
+      message.success(t('common.saveSuccess'));
+      onClose();
     } catch {
-      message.error(t('common.saveFailed'))
+      message.error(t('common.saveFailed'));
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
-  }
+  };
 
   return (
     <Modal
@@ -125,7 +114,9 @@ export default function TagModal({ open, kbId, docId, docName, onClose }: TagMod
       onCancel={onClose}
       footer={
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-          <Button onClick={onClose} disabled={saving}>{t('common.cancel')}</Button>
+          <Button onClick={onClose} disabled={saving}>
+            {t('common.cancel')}
+          </Button>
           <Button type="primary" icon={<SaveOutlined />} onClick={handleSave} loading={saving}>
             {t('common.save')}
           </Button>
@@ -136,7 +127,8 @@ export default function TagModal({ open, kbId, docId, docName, onClose }: TagMod
       <Spin spinning={loading}>
         <div className="tag-modal-content">
           <div className="tag-modal-doc">
-            {t('common.documentLabel')}<span>{docName}</span>
+            {t('common.documentLabel')}
+            <span>{docName}</span>
           </div>
 
           <div className="tag-modal-tags">
@@ -171,7 +163,7 @@ export default function TagModal({ open, kbId, docId, docName, onClose }: TagMod
             <div className="tag-modal-common-title">{t('common.commonTags')}</div>
             <Space size={8} wrap>
               {commonTags.map((tag) => {
-                const isActive = selectedTags.some((t) => t.id === tag.id)
+                const isActive = selectedTags.some((t) => t.id === tag.id);
                 return (
                   <Tag
                     key={tag.id}
@@ -181,12 +173,12 @@ export default function TagModal({ open, kbId, docId, docName, onClose }: TagMod
                   >
                     {tag.name}
                   </Tag>
-                )
+                );
               })}
             </Space>
           </div>
         </div>
       </Spin>
     </Modal>
-  )
+  );
 }

@@ -1,4 +1,6 @@
-
+"""
+Knowledge Base 能力 API 路由（注册到自身 FastAPI app）
+"""
 import os
 import uuid
 from pathlib import Path
@@ -7,6 +9,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Body, File, Form, Query, Request, UploadFile
 
 from jonex_core.common.exceptions import InvalidParameterError, JonexException
+from jonex_core.common.i18n import translate
 from jonex_core.common.response import error_response, success_response
 from jonex_core.common.tenant import extract_tenant_id
 
@@ -57,7 +60,7 @@ _service = KnowledgeBaseService()
 _ontology_compiler = OntologyCompiler()
 
 
-
+# ── 文档管理 ──────────────────────────────────────────────
 
 
 @router.post("/documents/upload", summary="上传知识文档")
@@ -71,7 +74,7 @@ async def upload_document(
     tenant_id = extract_tenant_id(request)
     content = await file.read()
     if not content:
-        raise InvalidParameterError(message="The uploaded file must not be empty")
+        raise InvalidParameterError()  # 原消息: 上传文件不能为空（塌缩为 default_message）
 
     payload: dict[str, Any] = {
         "file_name": file.filename or "unnamed",
@@ -165,7 +168,7 @@ async def set_document_folder(
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── 检索 ──────────────────────────────────────────────────
 
 
 @router.post("/search", summary="知识库语义检索")
@@ -203,7 +206,7 @@ async def get_search_overview(
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── 检索历史 ──────────────────────────────────────────────
 
 
 @router.get("/search/history", summary="查询检索历史")
@@ -268,7 +271,7 @@ async def clear_search_history(
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── 搜索结果反馈 ──────────────────────────────────────────
 
 
 @router.post("/search/feedback", summary="提交搜索结果反馈（有帮助/无帮助）")
@@ -345,7 +348,7 @@ async def get_search_feedback_stats(
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── 解析结果 ──────────────────────────────────────────────
 
 
 @router.get("/parse-results/summary", summary="解析结果概要")
@@ -516,7 +519,7 @@ async def retry_ontology_extract(
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── 本体 Schema 绑定与编译 ────────────────────────────────
 
 
 @router.put("/ontology/bindings/{knowledge_base_id}", summary="绑定 KB 到模板")
@@ -534,7 +537,7 @@ async def bind_ontology_template(
             template_scenario_id=payload.template_scenario_id,
             source_type=payload.source_type,
         )
-        return success_response(data=result, message="Template bound successfully")
+        return success_response(data=result, message="模板绑定成功")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -579,7 +582,7 @@ async def compile_ontology(request: Request, payload: CompileRequest = Body(...)
             knowledge_base_id=payload.knowledge_base_id,
             force=False,
         )
-        return success_response(data=result, message="Ontology compilation completed")
+        return success_response(data=result, message="本体编译完成")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -593,7 +596,7 @@ async def recompile_ontology(request: Request, payload: RecompileRequest = Body(
             knowledge_base_id=payload.knowledge_base_id,
             force=True,
         )
-        return success_response(data=result, message="Ontology recompilation completed")
+        return success_response(data=result, message="本体重编译完成")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -615,7 +618,7 @@ async def save_ontology_compiled_schema(request: Request, payload: SaveCompiledS
             ),
             expected_schema_version=payload.expected_schema_version,
         )
-        return success_response(data=result, message="Ontology schema saved successfully")
+        return success_response(data=result, message="本体 schema 已保存")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -631,7 +634,7 @@ async def reseed_ontology_compiled_schema(request: Request, payload: ReseedCompi
             template_scenario_id=payload.template_scenario_id,
             source_type=payload.source_type,
         )
-        return success_response(data=result, message="Ontology schema regenerated from the template")
+        return success_response(data=result, message="已按模板重新生成本体 schema")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -644,6 +647,10 @@ async def get_compiled_schema(
     tenant_id = extract_tenant_id(request)
     try:
         result = await _ontology_compiler.get_compiled_schema(tenant_id, knowledge_base_id)
+        # [jonex] 仅在对外下发（atomic-rag 拉取入口）注入 KB 级同义词，供抽取 prompt 使用；
+        # kb-service 内部调用不注入，避免污染查询链路。写图端归并另走直查 DB。
+        if result:
+            result = await _ontology_compiler.inject_synonyms(tenant_id, knowledge_base_id, result)
         return success_response(data=result)
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
@@ -679,7 +686,7 @@ async def get_relation_types(
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── 知识库信息管理 ──────────────────────────────────────────
 
 
 @router.get("/knowledge-info", summary="知识库列表")
@@ -705,7 +712,7 @@ async def create_knowledge_info(request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.knowledge_infos.create(tenant_id, body)
-        return success_response(data=result, message="Knowledge base created successfully")
+        return success_response(data=result, message="知识库已创建")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -726,7 +733,7 @@ async def update_knowledge_info(kb_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.knowledge_infos.update(kb_id, tenant_id, body)
-        return success_response(data=result, message="Knowledge base updated successfully")
+        return success_response(data=result, message="知识库已更新")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -736,12 +743,12 @@ async def delete_knowledge_info(kb_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         await _service.knowledge_infos.delete(kb_id, tenant_id)
-        return success_response(message="Knowledge base deleted successfully")
+        return success_response(message="知识库已删除")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── Helper ────────────────────────────────────────────────
 
 
 def _extract_user_id_from_request(request: Request) -> str:
@@ -761,11 +768,15 @@ def _extract_user_id_from_request(request: Request) -> str:
 
 def create_router() -> APIRouter:
     root = APIRouter()
-    root.include_router(router)
+    root.include_router(router)  # 原有 knowledge_base 路由
     from .spaces import router as spaces_router
     from .services import router as services_router
     from .folders import router as folders_router
     root.include_router(spaces_router)
     root.include_router(services_router)
     root.include_router(folders_router)
+    from .tags import router as tags_router
+    from .document_tags import router as document_tags_router
+    root.include_router(tags_router)
+    root.include_router(document_tags_router)
     return root

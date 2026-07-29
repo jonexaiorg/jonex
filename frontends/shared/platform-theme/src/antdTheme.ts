@@ -1,4 +1,4 @@
-import { colors, radius, typography } from './tokens'
+import { colors, radius, typography } from './tokens';
 
 export const antdTheme = {
   token: {
@@ -17,16 +17,13 @@ export const antdTheme = {
     fontFamily: typography.fontFamily,
     borderRadius: radius.btn,
     borderRadiusLG: radius.card,
-    borderRadiusSM: radius.tag,
     controlHeight: 36,
     fontSize: typography.bodySize,
     fontSizeLG: typography.bodySize,
     lineHeight: 1.6,
     paddingContentHorizontal: 24,
-    boxShadow:
-      '0 1px 4px rgba(0,0,0,0.04)',
-    boxShadowSecondary:
-      '0 4px 12px rgba(59,130,246,0.06)',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+    boxShadowSecondary: '0 4px 12px rgba(59,130,246,0.06)',
   },
   components: {
     Layout: {
@@ -96,4 +93,4 @@ export const antdTheme = {
       colorPrimary: colors.accent,
     },
   },
-}
+};

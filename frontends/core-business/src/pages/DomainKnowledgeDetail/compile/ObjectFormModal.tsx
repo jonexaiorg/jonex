@@ -1,39 +1,39 @@
-import React, { useEffect } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Modal, Form, Input, Select, Switch, Button } from 'antd'
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
-import type { OntologyAttrType, OntologyObjectDef, SaveOntologyObjectPayload } from '@/types/domainKnowledge'
-import { ATTR_TYPE_OPTIONS } from './constants'
+import React, { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Modal, Form, Input, Select, Switch, Button } from 'antd';
+import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import type { OntologyAttrType, OntologyObjectDef, SaveOntologyObjectPayload } from '@/types/domainKnowledge';
+import { ATTR_TYPE_OPTIONS } from './constants';
 
 interface AttrFormItem {
-  id?: string
-  name?: string
-  description?: string
-  type?: OntologyAttrType
-  isPrimaryKey?: boolean
+  id?: string;
+  name?: string;
+  description?: string;
+  type?: OntologyAttrType;
+  isPrimaryKey?: boolean;
 }
 
 interface ObjectFormValues {
-  name: string
-  description: string
-  requirement: string
-  attributes?: AttrFormItem[]
+  name: string;
+  description: string;
+  requirement: string;
+  attributes?: AttrFormItem[];
 }
 
 interface Props {
-  open: boolean
-  editing: OntologyObjectDef | null
-  submitting: boolean
-  onCancel: () => void
-  onSubmit: (payload: SaveOntologyObjectPayload) => void
+  open: boolean;
+  editing: OntologyObjectDef | null;
+  submitting: boolean;
+  onCancel: () => void;
+  onSubmit: (payload: SaveOntologyObjectPayload) => void;
 }
 
 export default function ObjectFormModal({ open, editing, submitting, onCancel, onSubmit }: Props) {
-  const { t } = useTranslation()
-  const [form] = Form.useForm<ObjectFormValues>()
+  const { t } = useTranslation();
+  const [form] = Form.useForm<ObjectFormValues>();
 
   useEffect(() => {
-    if (!open) return
+    if (!open) return;
     if (editing) {
       form.setFieldsValue({
         name: editing.name,
@@ -46,19 +46,19 @@ export default function ObjectFormModal({ open, editing, submitting, onCancel, o
           type: attr.type,
           isPrimaryKey: attr.isPrimaryKey,
         })),
-      })
-      return
+      });
+      return;
     }
     form.setFieldsValue({
       name: '',
       description: '',
       requirement: '',
       attributes: [{ type: '字符串', isPrimaryKey: false }],
-    })
-  }, [editing, form, open])
+    });
+  }, [editing, form, open]);
 
   async function handleOk() {
-    const values = await form.validateFields()
+    const values = await form.validateFields();
     onSubmit({
       name: values.name.trim(),
       description: (values.description || '').trim(),
@@ -73,62 +73,74 @@ export default function ObjectFormModal({ open, editing, submitting, onCancel, o
           type: item.type || '字符串',
           isPrimaryKey: Boolean(item.isPrimaryKey),
         })),
-    })
+    });
   }
 
   return (
     <Modal
-      title={editing ? t('compile.editObject') : t('compile.createObject')}
+      title={editing ? t('compile.objectEdit') : t('compile.objectNew')}
       open={open}
       onCancel={onCancel}
       onOk={handleOk}
-      okText="Confirm"
-      cancelText="Cancel"
+      okText={t('common.confirm')}
+      cancelText={t('common.cancel')}
       confirmLoading={submitting}
       width={860}
       destroyOnHidden
     >
       <Form form={form} layout="vertical" preserve={false}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Form.Item label="Object Name" name="name" rules={[{ required: true, whitespace: true, message: 'Enter an object name' }]}>
-            <Input placeholder="For example, Financial Product" />
+          <Form.Item
+            label={t('compile.object.name')}
+            name="name"
+            rules={[{ required: true, whitespace: true, message: t('compile.object.nameMessage') }]}
+          >
+            <Input placeholder={t('compile.object.namePlaceholder')} />
           </Form.Item>
-          <Form.Item label="Object Description" name="description">
-            <Input placeholder="Briefly describe the business meaning of this object" />
+          <Form.Item label={t('compile.object.description')} name="description">
+            <Input placeholder={t('compile.object.descriptionPlaceholder')} />
           </Form.Item>
         </div>
-        <Form.Item label="Additional Requirements" name="requirement">
-          <Input.TextArea rows={2} placeholder="Add constraints, extraction requirements, or validation rules" />
+        <Form.Item label={t('compile.object.requirement')} name="requirement">
+          <Input.TextArea rows={2} placeholder={t('compile.object.requirementPlaceholder')} />
         </Form.Item>
         <Form.List name="attributes">
           {(fields, { add, remove }) => (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <label>Attribute Definitions</label>
-                <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={() => add({ type: '字符串', isPrimaryKey: false })}>
-                  Add Attribute
+                <label>{t('compile.object.attributes')}</label>
+                <Button
+                  type="dashed"
+                  size="small"
+                  icon={<PlusOutlined />}
+                  onClick={() => add({ type: '字符串', isPrimaryKey: false })}
+                >
+                  {t('compile.addAttribute')}
                 </Button>
               </div>
               {fields.map((field) => (
-                <div key={field.key} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 130px 90px 40px', gap: 8, marginBottom: 8 }}>
+                <div
+                  key={field.key}
+                  style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 130px 90px 40px', gap: 8, marginBottom: 8 }}
+                >
                   <Form.Item
                     name={[field.name, 'name']}
-                    rules={[{ required: true, whitespace: true, message: 'Attribute name is required' }]}
+                    rules={[{ required: true, whitespace: true, message: t('compile.object.attributeNameRequired') }]}
                     style={{ marginBottom: 0 }}
                   >
-                    <Input placeholder="Attribute Name" />
+                    <Input placeholder={t('compile.object.attributeNamePlaceholder')} />
                   </Form.Item>
                   <Form.Item name={[field.name, 'description']} style={{ marginBottom: 0 }}>
-                    <Input placeholder="Attribute Description" />
+                    <Input placeholder={t('compile.object.attributeDescriptionPlaceholder')} />
                   </Form.Item>
                   <Form.Item name={[field.name, 'type']} style={{ marginBottom: 0 }}>
-                    <Select options={ATTR_TYPE_OPTIONS.map((option) => ({
-                      value: option.value,
-                      label: t(option.labelKey),
-                    }))} />
+                    <Select options={ATTR_TYPE_OPTIONS} />
                   </Form.Item>
                   <Form.Item name={[field.name, 'isPrimaryKey']} valuePropName="checked" style={{ marginBottom: 0 }}>
-                    <Switch checkedChildren="Primary Key" unCheckedChildren="Standard" />
+                    <Switch
+                      checkedChildren={t('compile.object.primaryKey')}
+                      unCheckedChildren={t('compile.object.normal')}
+                    />
                   </Form.Item>
                   <Button danger type="text" icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
                 </div>
@@ -138,5 +150,5 @@ export default function ObjectFormModal({ open, editing, submitting, onCancel, o
         </Form.List>
       </Form>
     </Modal>
-  )
+  );
 }

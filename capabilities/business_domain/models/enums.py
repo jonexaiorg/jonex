@@ -1,4 +1,6 @@
-
+"""
+业务领域 — 枚举定义
+"""
 from enum import Enum
 
 
@@ -15,19 +17,19 @@ class AdapterStatus(str, Enum):
 
 
 class SkillCatalogStatus(str, Enum):
-
+    """系统 Skill 目录状态"""
     PUBLISHED = "published"
     DISABLED = "disabled"
 
 
 class TenantSkillStatus(str, Enum):
-
+    """租户技能启用状态"""
     ENABLED = "enabled"
     DISABLED = "disabled"
 
 
 class SkillCategory(str, Enum):
-
+    """Skill 分类（对应旧 SkillType）"""
     IMAGE = "image"
     VOICE = "voice"
     DOCUMENT = "document"
@@ -36,7 +38,7 @@ class SkillCategory(str, Enum):
     CUSTOM = "custom"
 
 
-
+# 兼容旧代码，DEPRECATED
 class SkillStatus(str, Enum):
     ENABLED = "enabled"
     DISABLED = "disabled"

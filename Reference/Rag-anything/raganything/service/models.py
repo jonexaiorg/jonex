@@ -194,6 +194,7 @@ class TaskInfo(BaseModel):
     new_rag_doc_ids: list[str] = Field(default_factory=list)       # 本次成功推送的新 doc
     delete_pending_ids: list[str] = Field(default_factory=list)    # cleanup 待删旧 doc（old−new）
     compensate_pending_ids: list[str] = Field(default_factory=list)  # 失败补偿待删新 doc（new−old）
+    cleanup_total: int = Field(default=0)  # [jonex] 3-A：进入 cleanup 时的初始待删总量，供 KB 动态超时
 
 
 # ── Request schemas ──────────────────────────────────────────────────────

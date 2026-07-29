@@ -1,10 +1,13 @@
-
+"""
+应用管理 + 权限管理 + 系统配置 + 审计日志 + 任务调度服务。
+"""
 import logging
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jonex_core.common.exceptions import ResourceNotFoundError, ResourceConflictError
+from jonex_core.common.i18n import translate
 from jonex_core.common.tenant import require_tenant
 from capabilities.platform.models.application import Application
 from capabilities.platform.models.permission import Permission
@@ -66,7 +69,7 @@ FRONTEND_ROLES_BY_APP_CODE = {
 }
 
 
-
+# ============ 应用管理 ============
 
 class ApplicationService:
     def __init__(self, session: AsyncSession):
@@ -76,7 +79,9 @@ class ApplicationService:
     async def create(self, req: ApplicationCreateRequest) -> ApplicationResponse:
         existing = await self.repo.get_by_code(req.app_code)
         if existing:
-            raise ResourceConflictError(message=f"Application code already exists: {req.app_code}")
+            raise ResourceConflictError(
+            message=translate("err.app.code_exists", params={"app_code": req.app_code}, fallback=f"应用编码已存在: {req.app_code}")
+        )  # 原消息: 应用编码已存在: {app_code}
         app = Application(
             app_code=req.app_code,
             name=req.name,
@@ -92,7 +97,9 @@ class ApplicationService:
     async def get(self, app_id: int) -> ApplicationResponse:
         app = await self.repo.get_by_id_shared(app_id)
         if not app or app.is_deleted:
-            raise ResourceNotFoundError(message=f"Application not found: {app_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.app.not_found", params={"app_id": str(app_id)}, fallback=f"应用不存在: {app_id}")
+        )  # 原消息: 应用不存在: {app_id}
         return ApplicationResponse.from_orm(app)
 
     async def list_apps(self) -> ApplicationListResponse:
@@ -118,7 +125,9 @@ class ApplicationService:
     async def update(self, app_id: int, req: ApplicationUpdateRequest) -> ApplicationResponse:
         app = await self.repo.get_by_id_shared(app_id)
         if not app or app.is_deleted:
-            raise ResourceNotFoundError(message=f"Application not found: {app_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.app.not_found", params={"app_id": str(app_id)}, fallback=f"应用不存在: {app_id}")
+        )  # 原消息: 应用不存在: {app_id}
         update_data = req.dict(exclude_unset=True)
         for key, val in update_data.items():
             setattr(app, key, val)
@@ -128,7 +137,9 @@ class ApplicationService:
     async def delete(self, app_id: int) -> None:
         app = await self.repo.get_by_id_shared(app_id)
         if not app or app.is_deleted:
-            raise ResourceNotFoundError(message=f"Application not found: {app_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.app.not_found", params={"app_id": str(app_id)}, fallback=f"应用不存在: {app_id}")
+        )  # 原消息: 应用不存在: {app_id}
         await self.repo.delete_soft_shared(app)
 
     def _to_frontend_manifest_entry(self, app: Application) -> FrontendManifestEntry:
@@ -179,7 +190,7 @@ class ApplicationService:
         return parts[0] + "".join(p[:1].upper() + p[1:] for p in parts[1:])
 
 
-
+# ============ 权限管理 ============
 
 class PermissionService:
     def __init__(self, session: AsyncSession):
@@ -195,7 +206,7 @@ class PermissionService:
         )
 
 
-
+# ============ 系统配置 ============
 
 class SystemConfigService:
     def __init__(self, session: AsyncSession):
@@ -211,7 +222,9 @@ class SystemConfigService:
     async def update_config(self, config_key: str, req: SystemConfigUpdateRequest) -> SystemConfigResponse:
         cfg = await self.repo.get_by_key(config_key)
         if not cfg:
-            raise ResourceNotFoundError(message=f"Configuration not found: {config_key}")
+            raise ResourceNotFoundError(
+            message=translate("err.config.not_found", params={"config_key": config_key}, fallback=f"配置不存在: {config_key}")
+        )  # 原消息: 配置不存在: {config_key}
         if req.config_value is not None:
             cfg.config_value = req.config_value
         if req.description is not None:
@@ -220,7 +233,7 @@ class SystemConfigService:
         return SystemConfigResponse.from_orm(cfg)
 
 
-
+# ============ 任务调度 ============
 
 class TaskScheduleService:
     def __init__(self, session: AsyncSession):
@@ -244,7 +257,9 @@ class TaskScheduleService:
         tenant_id = require_tenant(tenant_id)
         task = await self.repo.get_by_id(task_id, tenant_id)
         if not task or task.is_deleted:
-            raise ResourceNotFoundError(message=f"Task not found: {task_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.task.not_found", params={"task_id": str(task_id)}, fallback=f"任务不存在: {task_id}")
+        )  # 原消息: 任务不存在: {task_id}
         return TaskScheduleResponse.from_orm(task)
 
     async def list_tasks(
@@ -264,7 +279,9 @@ class TaskScheduleService:
         tenant_id = require_tenant(tenant_id)
         task = await self.repo.get_by_id(task_id, tenant_id)
         if not task or task.is_deleted:
-            raise ResourceNotFoundError(message=f"Task not found: {task_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.task.not_found", params={"task_id": str(task_id)}, fallback=f"任务不存在: {task_id}")
+        )  # 原消息: 任务不存在: {task_id}
         update_data = req.dict(exclude_unset=True)
         for key, val in update_data.items():
             setattr(task, key, val)
@@ -275,11 +292,13 @@ class TaskScheduleService:
         tenant_id = require_tenant(tenant_id)
         task = await self.repo.get_by_id(task_id, tenant_id)
         if not task or task.is_deleted:
-            raise ResourceNotFoundError(message=f"Task not found: {task_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.task.not_found", params={"task_id": str(task_id)}, fallback=f"任务不存在: {task_id}")
+        )  # 原消息: 任务不存在: {task_id}
         await self.repo.delete_soft(task, tenant_id)
 
 
-
+# ============ 租户管理 ============
 
 class TenantService:
     def __init__(self, db: AsyncSession):
@@ -311,6 +330,11 @@ class TenantService:
         return self._to_dict(t)
 
     async def create(self, req) -> dict:
+        existing = await self.repo.get_by_id_shared(req.id)
+        if existing is not None:
+            raise ResourceConflictError(
+                message=translate("err.tenant.id_exists", params={"tenant_id": req.id}, fallback=f"租户 ID 已存在: {req.id}")
+            )
         t = self.Tenant(
             id=req.id, name=req.name, description=req.description,
             plan_type=req.plan_type, expire_time=req.expire_time,

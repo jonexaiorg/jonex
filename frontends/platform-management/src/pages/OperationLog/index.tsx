@@ -1,47 +1,306 @@
-import React from 'react'
-import { Input, Button, Table, Tag, Select } from 'antd'
-import { SearchOutlined } from '@ant-design/icons'
+import React, { useState, useEffect, useCallback } from 'react';
+import { Input, Button, Table, Tag, Select, Space, Spin, Result, DatePicker } from 'antd';
+import { SearchOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import dayjs from 'dayjs';
+import LogDetailModal from './LogDetailModal';
+import {
+  listAuditLogs,
+  getAuditLog,
+  listAuditActions,
+  listAuditResourceTypes,
+  type AuditLogItem,
+  type AuditActionOption,
+  type AuditResourceType,
+} from '../../api/auditLogs';
 
-const logs = [
-  { time: '2026-05-22 15:30:12', level: 'INFO', module: '知识编译', user: '张明远', message: '金融风控知识编译任务已完成', ip: '192.168.1.100' },
-  { time: '2026-05-22 15:28:45', level: 'WARN', module: '数据解析', user: '系统', message: '设备传感器数据源连接超时，正在进行重试', ip: '--' },
-  { time: '2026-05-22 15:25:30', level: 'ERROR', module: '知识编译', user: '系统', message: '法律法规知识库编译失败：图谱构建引擎异常退出', ip: '--' },
-  { time: '2026-05-22 15:20:18', level: 'INFO', module: '用户管理', user: '张明远', message: '用户「陈伟」角色已变更为观察者', ip: '192.168.1.100' },
-  { time: '2026-05-22 15:15:00', level: 'INFO', module: '数据解析', user: '系统', message: '医学文献知识库增量同步完成，新增 128 篇文档', ip: '--' },
-  { time: '2026-05-22 15:00:00', level: 'DEBUG', module: '系统', user: '系统', message: '定时任务调度器健康检查通过', ip: '127.0.0.1' },
-  { time: '2026-05-22 14:42:33', level: 'INFO', module: '模型适配', user: '张明远', message: 'GPT-4o 模型连接测试成功，延迟 1.2s', ip: '192.168.1.100' },
-  { time: '2026-05-22 14:30:00', level: 'INFO', module: '知识编译', user: '系统', message: '医学文献知识库向量化任务启动', ip: '--' },
-  { time: '2026-05-22 14:28:10', level: 'WARN', module: '系统', user: '系统', message: '存储使用量已达 127 GB（上限 500 GB）', ip: '--' },
-  { time: '2026-05-22 14:25:00', level: 'ERROR', module: '数据解析', user: '系统', message: '法律法规文件存储连接失败：认证凭据已过期', ip: '--' },
-]
+const { RangePicker } = DatePicker;
 
-const levelColor: Record<string, string> = {
-  INFO: 'processing', WARN: 'warning', ERROR: 'error', DEBUG: 'success',
+/** 将原始 action 值转为可读短名（降级显示用）。
+ *  - auth.login → login
+ *  - http.post → POST
+ *  - delete_prompt_template → Delete Prompt Template
+ *  - 无分隔符 → 返回原值 */
+function actionToLabel(action: string): string {
+  if (!action) return action;
+  const parts = action.split('.');
+  const lastPart = parts[parts.length - 1];
+  if (lastPart.includes('_')) {
+    return lastPart
+      .split('_')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+  if (parts.length > 1) return parts[parts.length - 1].toUpperCase();
+  return action;
+}
+
+/** 从 AuditActionOption 中获取当前语言下的显示名。
+ *  降级：后端无映射时用 actionToLabel 生成可读名。 */
+function getOptionLabel(opt: AuditActionOption, locale: string): string {
+  const label = locale.startsWith('zh') ? opt.label_zh : opt.label_en;
+  if (label === opt.action) return actionToLabel(opt.action);
+  return label;
+}
+
+/** 获取操作类型的显示名。
+ *  1. 优先从 actionOptions 中查找 → 中/英文标签
+ *  2. 降级：用 actionToLabel 生成可读名 */
+function getActionLabel(locale: string, options: AuditActionOption[], action: string): string {
+  const found = options.find((o) => o.action === action);
+  if (found) return getOptionLabel(found, locale);
+  return actionToLabel(action);
 }
 
 export default function OperationLog() {
+  const { t, i18n } = useTranslation();
+  const [logs, setLogs] = useState<AuditLogItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [keyword, setKeyword] = useState('');
+  const [action, setAction] = useState<string | undefined>();
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  const [detailItem, setDetailItem] = useState<AuditLogItem | null>(null);
+  const [resource, setResource] = useState<string | undefined>();
+
+  // ---- 操作类型下拉动态数据 ----
+  const [actionOptions, setActionOptions] = useState<AuditActionOption[]>([]);
+  const [actionsLoading, setActionsLoading] = useState(true);
+  const [actionsError, setActionsError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setActionsLoading(true);
+    setActionsError(false);
+    listAuditActions()
+      .then((opts) => {
+        if (!cancelled) setActionOptions(opts);
+      })
+      .catch(() => {
+        if (!cancelled) setActionsError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setActionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ---- 资源类型下拉动态数据 ----
+  const [resourceOptions, setResourceOptions] = useState<AuditResourceType[]>([]);
+  const [resourcesLoading, setResourcesLoading] = useState(true);
+  const [resourcesError, setResourcesError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setResourcesLoading(true);
+    setResourcesError(false);
+    listAuditResourceTypes()
+      .then((opts) => {
+        if (!cancelled) setResourceOptions(opts);
+      })
+      .catch(() => {
+        if (!cancelled) setResourcesError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setResourcesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const load = useCallback(
+    async (p = 1, ps?: number, kw?: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const r = await listAuditLogs({
+          page: p,
+          page_size: ps ?? pageSize,
+          action: action || undefined,
+          resource: resource || undefined,
+          keyword: kw || keyword || undefined,
+          start_time: dateRange?.[0]?.startOf('day').toISOString(),
+          end_time: dateRange?.[1]?.endOf('day').toISOString(),
+        });
+        setLogs(r.items);
+        setTotal(r.total);
+        setPage(p);
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : t('common.loadFailed'));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [action, resource, dateRange, keyword, pageSize, t],
+  );
+
+  useEffect(() => {
+    load(1);
+  }, [load]);
+
+  const showDetail = async (id: number) => {
+    try {
+      const d = await getAuditLog(id);
+      setDetailItem(d);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const locale = i18n.language || 'zh-CN';
+
   const columns = [
-    { title: '时间', dataIndex: 'time', key: 'time', width: 170 },
-    { title: '级别', dataIndex: 'level', key: 'level', width: 70, render: (v: string) => <Tag color={levelColor[v]}>{v}</Tag> },
-    { title: '模块', dataIndex: 'module', key: 'module', width: 90 },
-    { title: '用户', dataIndex: 'user', key: 'user', width: 80 },
-    { title: '消息', dataIndex: 'message', key: 'message' },
-    { title: 'IP', dataIndex: 'ip', key: 'ip', width: 130 },
-  ]
+    {
+      title: t('operationLog.time'),
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 170,
+      render: (v: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '--'),
+    },
+    { title: t('operationLog.user'), dataIndex: 'username', key: 'username', width: 90 },
+    {
+      title: t('operationLog.action'),
+      dataIndex: 'action',
+      key: 'action',
+      width: 90,
+      render: (v: string) => {
+        const label = getActionLabel(locale, actionOptions, v);
+        const color = v.includes('delete')
+          ? 'red'
+          : v.includes('create') || v.includes('upload')
+            ? 'green'
+            : v.includes('login')
+              ? 'cyan'
+              : 'default';
+        return <Tag color={color}>{label}</Tag>;
+      },
+    },
+    {
+      title: t('operationLog.resource'),
+      dataIndex: 'resource',
+      key: 'resource',
+      width: 100,
+      render: (_: unknown, r: AuditLogItem) => {
+        const matched = resourceOptions.find((o) => o.resource === r.resource);
+        if (matched) return locale.startsWith('zh') ? matched.label_zh : matched.label_en;
+        return r.resource_label || r.resource || '--';
+      },
+    },
+    { title: t('operationLog.ip'), dataIndex: 'ip', key: 'ip', width: 120 },
+    {
+      title: t('operationLog.duration'),
+      dataIndex: 'duration_ms',
+      key: 'duration_ms',
+      width: 70,
+      render: (v: number | null) => (v ? `${v}ms` : '--'),
+    },
+    {
+      title: t('common.actions'),
+      key: 'detail',
+      width: 60,
+      render: (_: unknown, r: AuditLogItem) => (
+        <a className="yx-table-action" onClick={() => showDetail(r.id)}>
+          {t('operationLog.detail')}
+        </a>
+      ),
+    },
+  ];
+
+  if (error)
+    return (
+      <Result
+        status="error"
+        title={t('common.loadFailed')}
+        subTitle={error}
+        extra={
+          <Button type="primary" onClick={() => load(1)}>
+            {t('common.retry')}
+          </Button>
+        }
+      />
+    );
 
   return (
     <div>
-      <div className="yx-page-title"><h1>日志管理</h1></div>
-      <div className="yx-card">
-        <div className="yx-toolbar" style={{ flexWrap: 'wrap' }}>
-          <Input prefix={<SearchOutlined />} placeholder="搜索日志..." style={{ width: 200 }} />
-          <Input defaultValue="2026-05-22 ~ 2026-05-22" style={{ width: 200 }} />
-          <Select defaultValue="全部级别" style={{ width: 110 }} options={['全部级别', 'INFO', 'WARN', 'ERROR', 'DEBUG'].map(s => ({ value: s, label: s }))} />
-          <Select defaultValue="全部模块" style={{ width: 110 }} options={['全部模块', '知识编译', '数据解析', '用户管理'].map(s => ({ value: s, label: s }))} />
-          <Button type="primary" icon={<SearchOutlined />}>查询</Button>
-        </div>
-        <Table columns={columns} dataSource={logs} rowKey="time" pagination={{ total: 256, pageSize: 10 }} size="small" />
+      <div className="yx-page-title">
+        <h1>{t('operationLog.title')}</h1>
       </div>
+      <div className="yx-card">
+        <Space style={{ marginBottom: 16 }} wrap>
+          <Input.Search
+            prefix={<SearchOutlined />}
+            placeholder={t('operationLog.searchLog')}
+            style={{ width: 180 }}
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            onSearch={(v) => load(1, v)}
+            allowClear
+          />
+          <Select
+            placeholder={t('operationLog.allActions')}
+            style={{ width: 130 }}
+            value={action}
+            onChange={(v) => setAction(v)}
+            allowClear
+            loading={actionsLoading}
+            options={actionOptions.map((o) => ({
+              label: getOptionLabel(o, locale),
+              value: o.action,
+            }))}
+            notFoundContent={
+              actionsLoading ? t('common.loading') : actionsError ? t('common.loadFailed') : t('common.noData')
+            }
+          />
+          <Select
+            placeholder={t('operationLog.allResources')}
+            style={{ width: 130 }}
+            value={resource}
+            onChange={(v) => setResource(v)}
+            allowClear
+            loading={resourcesLoading}
+            options={resourceOptions.map((o) => ({
+              label: locale.startsWith('zh') ? o.label_zh : o.label_en,
+              value: o.resource,
+            }))}
+            notFoundContent={
+              resourcesLoading ? t('common.loading') : resourcesError ? t('common.loadFailed') : t('common.noData')
+            }
+          />
+          <RangePicker
+            value={dateRange}
+            onChange={(v) => setDateRange(v as [dayjs.Dayjs, dayjs.Dayjs] | null)}
+            allowClear
+            style={{ width: 240 }}
+          />
+          <Button onClick={() => load(1)}>{t('operationLog.refresh')}</Button>
+        </Space>
+        <Table
+          columns={columns}
+          dataSource={logs}
+          rowKey="id"
+          loading={loading}
+          scroll={{ y: 'calc(100vh - 260px)' }}
+          pagination={{
+            current: page,
+            total,
+            pageSize,
+            onChange: (p, ps) => {
+              setPageSize(ps);
+              load(p, ps);
+            },
+            showTotal: (total) => t('common.totalPage', { total }),
+          }}
+          size="small"
+        />
+      </div>
+
+      <LogDetailModal open={!!detailItem} detailItem={detailItem} onClose={() => setDetailItem(null)} />
     </div>
-  )
+  );
 }

@@ -1,43 +1,44 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { SynonymGroup } from '@/types/domainKnowledge'
-import { listSynonyms } from '@/api/ontologySynonym'
-import i18next from '@/locales/i18n'
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { SynonymGroup } from '@/types/domainKnowledge';
+import { listSynonyms } from '@/api/ontologySynonym';
 
 export interface UseSynonymsResult {
-  data: SynonymGroup[]
-  total: number
-  page: number
-  pageSize: number
-  loading: boolean
-  error: string | null
-  refresh: () => void
-  setPage: (page: number) => void
+  data: SynonymGroup[];
+  total: number;
+  page: number;
+  pageSize: number;
+  loading: boolean;
+  error: string | null;
+  refresh: () => void;
+  setPage: (page: number) => void;
 }
 
-
+/** 封装同义词列表的服务端分页请求，暴露稳定结构（前端规范 §9）。 */
 export function useSynonyms(kbId: string, pageSize = 20): UseSynonymsResult {
-  const [data, setData] = useState<SynonymGroup[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { t } = useTranslation();
+  const [data, setData] = useState<SynonymGroup[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    if (!kbId) return
-    setLoading(true)
-    setError(null)
+    if (!kbId) return;
+    setLoading(true);
+    setError(null);
     listSynonyms(kbId, page, pageSize)
       .then((res) => {
-        setData(res.items)
-        setTotal(res.total)
+        setData(res.items);
+        setTotal(res.total);
       })
-      .catch((e: any) => setError(e?.message || i18next.t('common.loadFailed')))
-      .finally(() => setLoading(false))
-  }, [kbId, page, pageSize])
+      .catch((e: any) => setError(e?.message || t('synonym.fetchFailed')))
+      .finally(() => setLoading(false));
+  }, [kbId, page, pageSize, t]);
 
   useEffect(() => {
-    load()
-  }, [load])
+    load();
+  }, [load]);
 
-  return { data, total, page, pageSize, loading, error, refresh: load, setPage }
+  return { data, total, page, pageSize, loading, error, refresh: load, setPage };
 }

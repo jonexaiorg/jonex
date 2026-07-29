@@ -1,16 +1,16 @@
+-- ============================================================
+-- 悦溪平台数据库初始化 - 知识库 (knowledge_base schema)
+-- 版本: 004
+-- 建表顺序按业务层级自顶向下：
+--   领域空间 -> 知识库 -> 领域服务及其关联 ->
+--   知识文档 -> 检索历史 -> 数据源实例 -> 本体模板绑定/编译快照
+-- 说明：knowledge_base 业务层与 LightRAG 内部存储分离，
+--       通过 rag_task_id / rag_doc_ids 做映射。
+-- ============================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
+-- ------------------------------------------------------------
+-- 领域空间
+-- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS knowledge_base.spaces (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS knowledge_base.spaces (
 CREATE INDEX IF NOT EXISTS idx_kb_sp_tenant ON knowledge_base.spaces(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_kb_sp_is_deleted ON knowledge_base.spaces(is_deleted);
 
-
+-- 领域空间权限
 CREATE TABLE IF NOT EXISTS knowledge_base.space_permissions (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -43,9 +43,9 @@ CREATE INDEX IF NOT EXISTS idx_kb_spp_is_deleted ON knowledge_base.space_permiss
 CREATE INDEX IF NOT EXISTS idx_kb_spp_space ON knowledge_base.space_permissions(space_id);
 CREATE INDEX IF NOT EXISTS idx_kb_spp_user ON knowledge_base.space_permissions(user_id);
 
-
-
-
+-- ------------------------------------------------------------
+-- 知识库信息管理
+-- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS knowledge_base.knowledge_info (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -64,9 +64,9 @@ CREATE INDEX IF NOT EXISTS idx_kb_tenant ON knowledge_base.knowledge_info(tenant
 CREATE INDEX IF NOT EXISTS idx_kb_is_deleted ON knowledge_base.knowledge_info(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_kb_space ON knowledge_base.knowledge_info(space_id);
 
-
-
-
+-- ------------------------------------------------------------
+-- 领域服务及其关联
+-- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS knowledge_base.services (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -84,7 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_kb_svc_tenant ON knowledge_base.services(tenant_i
 CREATE INDEX IF NOT EXISTS idx_kb_svc_is_deleted ON knowledge_base.services(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_kb_svc_space ON knowledge_base.services(space_id);
 
-
+-- 领域服务-知识库关联
 CREATE TABLE IF NOT EXISTS knowledge_base.service_knowledge_bases (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -98,7 +98,7 @@ CREATE INDEX IF NOT EXISTS idx_kb_skb_tenant ON knowledge_base.service_knowledge
 CREATE INDEX IF NOT EXISTS idx_kb_skb_is_deleted ON knowledge_base.service_knowledge_bases(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_kb_skb_service ON knowledge_base.service_knowledge_bases(service_id);
 
-
+-- 领域服务配置
 CREATE TABLE IF NOT EXISTS knowledge_base.service_configs (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -114,7 +114,7 @@ CREATE INDEX IF NOT EXISTS idx_kb_sc_tenant ON knowledge_base.service_configs(te
 CREATE INDEX IF NOT EXISTS idx_kb_sc_is_deleted ON knowledge_base.service_configs(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_kb_sc_service ON knowledge_base.service_configs(service_id);
 
-
+-- 领域服务权限
 CREATE TABLE IF NOT EXISTS knowledge_base.service_permissions (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -129,7 +129,7 @@ CREATE INDEX IF NOT EXISTS idx_kb_svcp_tenant ON knowledge_base.service_permissi
 CREATE INDEX IF NOT EXISTS idx_kb_svcp_is_deleted ON knowledge_base.service_permissions(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_kb_svcp_service ON knowledge_base.service_permissions(service_id);
 
-
+-- 领域服务 API Key 管理
 CREATE TABLE IF NOT EXISTS knowledge_base.service_api_keys (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -146,11 +146,11 @@ CREATE INDEX IF NOT EXISTS idx_kb_sak_tenant ON knowledge_base.service_api_keys(
 CREATE INDEX IF NOT EXISTS idx_kb_sak_is_deleted ON knowledge_base.service_api_keys(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_kb_sak_service ON knowledge_base.service_api_keys(service_id);
 
-
-
-
-
-
+-- ------------------------------------------------------------
+-- 知识库文档表（业务层独有，与 LightRAG 内部存储分离）
+-- 状态机：pending → parsing → ready / failed
+--        ready → deleting → deleted
+-- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS knowledge_base.knowledge_documents (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -168,8 +168,12 @@ CREATE TABLE IF NOT EXISTS knowledge_base.knowledge_documents (
     ontology_status VARCHAR(32) DEFAULT 'pending' NOT NULL,
     ontology_error TEXT,
     ontology_retry_count INTEGER NOT NULL DEFAULT 0,
+    content_generation INTEGER NOT NULL DEFAULT 0,          -- reparse 代次：每次 reparse 原子递增，旧代次任务结果作废（P0-I fencing）
+    ontology_target_schema_version INTEGER,                 -- 文档应归类到的目标 compiled schema 版本（新上传/reparse 必写）
+    ontology_applied_schema_version INTEGER,                -- 已写入 Neo4j 的 compiled schema 版本；NULL=未知，only_outdated 视为过期
+    ontology_applied_schema_hash VARCHAR(32),               -- 已应用 schema 的兜底 hash（版本号相同但内容变更时区分，可选）
     extra_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    data_source_type VARCHAR(32),
+    data_source_type VARCHAR(32),          -- 文档来源方式：api / api_push / storage / file（统计按此列分组）
     folder_id VARCHAR(64),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -188,14 +192,18 @@ CREATE INDEX IF NOT EXISTS idx_kb_doc_tenant_kb
     ON knowledge_base.knowledge_documents(tenant_id, knowledge_base_id);
 CREATE INDEX IF NOT EXISTS idx_kb_doc_rag_task
     ON knowledge_base.knowledge_documents(rag_task_id);
-
+-- 按 KB + 来源方式 分组统计 document_count 的加速索引
 CREATE INDEX IF NOT EXISTS idx_kb_doc_tenant_kb_type
     ON knowledge_base.knowledge_documents(tenant_id, knowledge_base_id, data_source_type)
     WHERE is_deleted = 0;
+-- only_outdated 扫描加速：按 KB + 本体状态 + 已应用 schema 版本筛选（reparse/recompile 批量重抽）
+CREATE INDEX IF NOT EXISTS idx_kb_doc_ontology_outdated
+    ON knowledge_base.knowledge_documents(tenant_id, knowledge_base_id, ontology_status, ontology_applied_schema_version)
+    WHERE is_deleted = 0;
 
-
-
-
+-- ------------------------------------------------------------
+-- 检索历史表（按 tenant+user+query+knowledge_base 去重，软删除）
+-- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS knowledge_base.knowledge_search_history (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -203,6 +211,7 @@ CREATE TABLE IF NOT EXISTS knowledge_base.knowledge_search_history (
     query TEXT NOT NULL,
     query_hash VARCHAR(64) NOT NULL,
     knowledge_base_id VARCHAR(128) NOT NULL,
+    domain_space_id VARCHAR(64),
     mode VARCHAR(32) NOT NULL DEFAULT 'hybrid',
     top_k INTEGER NOT NULL DEFAULT 5,
     status VARCHAR(32) NOT NULL DEFAULT 'done',
@@ -230,24 +239,26 @@ CREATE INDEX IF NOT EXISTS idx_kb_hist_tenant_user_deleted
     ON knowledge_base.knowledge_search_history(tenant_id, user_id, is_deleted);
 CREATE INDEX IF NOT EXISTS idx_kb_hist_tenant_user_kb_time
     ON knowledge_base.knowledge_search_history(tenant_id, user_id, knowledge_base_id, searched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kb_hist_domain_space_id
+    ON knowledge_base.knowledge_search_history(domain_space_id) WHERE domain_space_id IS NOT NULL;
 
-
-
-
+-- ------------------------------------------------------------
+-- KB 数据源实例表（access_type: api / api_push / storage / file）
+-- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS knowledge_base.knowledge_data_sources (
     id                VARCHAR(64) PRIMARY KEY,
     tenant_id         VARCHAR(64)  NOT NULL,
     knowledge_base_id VARCHAR(128) NOT NULL,
-    access_method_id  VARCHAR(64),
-    access_type       VARCHAR(32)  NOT NULL,
+    access_method_id  VARCHAR(64),                       -- 引用 business_domain.data_access_methods.id（只读引用）
+    access_type       VARCHAR(32)  NOT NULL,             -- api / api_push / storage / file
     name              VARCHAR(255) NOT NULL,
-    config_json       JSONB        NOT NULL DEFAULT '{}',
-    sync_mode         VARCHAR(16)  NOT NULL DEFAULT 'manual',
+    config_json       JSONB        NOT NULL DEFAULT '{}', -- 连接配置；凭据字段存密文
+    sync_mode         VARCHAR(16)  NOT NULL DEFAULT 'manual',  -- manual / scheduled（一期仅 manual）
     cron_expr         VARCHAR(128),
     schedule_task_id  INTEGER,
-    status            VARCHAR(32)  NOT NULL DEFAULT 'active',
+    status            VARCHAR(32)  NOT NULL DEFAULT 'active',   -- active / paused / error
     last_sync_at      TIMESTAMPTZ,
-    last_sync_status  VARCHAR(32),
+    last_sync_status  VARCHAR(32),                       -- success / failed / running
     last_sync_message TEXT,
     document_count    INTEGER      NOT NULL DEFAULT 0,
     is_deleted        SMALLINT     NOT NULL DEFAULT 0,
@@ -256,14 +267,14 @@ CREATE TABLE IF NOT EXISTS knowledge_base.knowledge_data_sources (
 );
 CREATE INDEX IF NOT EXISTS idx_kb_data_sources_kb
     ON knowledge_base.knowledge_data_sources (tenant_id, knowledge_base_id, is_deleted);
-
+-- 每个 KB 至多一个有效的 file（文件上传）数据源：归属与统计无歧义、并发兜底
 CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_ds_file_per_kb
     ON knowledge_base.knowledge_data_sources (tenant_id, knowledge_base_id)
     WHERE access_type = 'file' AND is_deleted = 0;
 
-
-
-
+-- ------------------------------------------------------------
+-- 知识库-模板绑定表：记录每个 KB 绑定的模板领域和场景
+-- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS knowledge_base.ontology_template_bindings (
     id                   BIGSERIAL       PRIMARY KEY,
     tenant_id            VARCHAR(64)     NOT NULL,
@@ -279,10 +290,10 @@ CREATE TABLE IF NOT EXISTS knowledge_base.ontology_template_bindings (
 CREATE INDEX IF NOT EXISTS idx_otb_tenant_template
     ON knowledge_base.ontology_template_bindings (tenant_id, template_domain_id, template_scenario_id);
 
-
-
-
-
+-- ------------------------------------------------------------
+-- 知识库级本体编译快照：缓存从业务模板编译出的 ontology schema
+-- （含 KB 侧可编辑状态字段 schema_mode / sync_status / edited_*）
+-- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS knowledge_base.ontology_compiled_schemas (
     id                    BIGSERIAL       PRIMARY KEY,
     tenant_id             VARCHAR(64)     NOT NULL,
@@ -298,8 +309,8 @@ CREATE TABLE IF NOT EXISTS knowledge_base.ontology_compiled_schemas (
     constraints           JSONB           NOT NULL DEFAULT '[]'::jsonb,
     disambiguation        JSONB           NOT NULL DEFAULT '{"case_insensitive": true, "alias_merge": true}'::jsonb,
     prompt_schema         JSONB           NOT NULL DEFAULT '{}'::jsonb,
-    schema_mode           VARCHAR(32)     NOT NULL DEFAULT 'template_seeded',
-    sync_status           VARCHAR(32)     NOT NULL DEFAULT 'synced',
+    schema_mode           VARCHAR(32)     NOT NULL DEFAULT 'template_seeded',  -- template_seeded / manual_edited
+    sync_status           VARCHAR(32)     NOT NULL DEFAULT 'synced',           -- synced / outdated
     edited_at             TIMESTAMPTZ,
     edited_by             VARCHAR(128),
     status                VARCHAR(32)     NOT NULL DEFAULT 'active',
@@ -313,17 +324,17 @@ CREATE INDEX IF NOT EXISTS idx_ocs_tenant_kb
 CREATE INDEX IF NOT EXISTS idx_ocs_source
     ON knowledge_base.ontology_compiled_schemas (tenant_id, template_domain_id, template_scenario_id, source_hash);
 
-
-
-
-
-
+-- ------------------------------------------------------------
+-- 知识库级同义词组（KB 级、独立于具体实体的等价词组）
+-- 用途：知识编译与查询时把同义词统一映射为标准实体（本期仅存储 + 管理）
+-- 时间列用不带时区的 timestamp，与 ORM TimestampMixin(DateTime + datetime.utcnow) 一致
+-- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS knowledge_base.ontology_synonyms (
     id                VARCHAR(64) PRIMARY KEY,
     tenant_id         VARCHAR(64) NOT NULL,
     knowledge_base_id VARCHAR(128) NOT NULL,
-    terms             JSONB NOT NULL DEFAULT '[]'::jsonb,
-    canonical         VARCHAR(255),
+    terms             JSONB NOT NULL DEFAULT '[]'::jsonb,   -- string[]，同义词列表
+    canonical         VARCHAR(255),                          -- 标准词，默认取 terms[0]
     created_at        TIMESTAMP NOT NULL DEFAULT now(),
     updated_at        TIMESTAMP NOT NULL DEFAULT now(),
     is_deleted        SMALLINT NOT NULL DEFAULT 0
@@ -331,20 +342,20 @@ CREATE TABLE IF NOT EXISTS knowledge_base.ontology_synonyms (
 CREATE INDEX IF NOT EXISTS idx_kb_synonyms_tenant_kb
     ON knowledge_base.ontology_synonyms (tenant_id, knowledge_base_id, is_deleted);
 
-
-
-
-
-
-
+-- ============================================================
+-- 悦溪平台数据库迁移 - 知识库解析引擎设置
+-- 版本: 008
+-- 包含: knowledge_base.knowledge_parser_settings 表
+-- 说明: KB 级文件类解析配置，引用 business_domain.parser_configs
+-- ============================================================
 
 CREATE TABLE IF NOT EXISTS knowledge_base.knowledge_parser_settings (
     id                         VARCHAR(64) PRIMARY KEY,
     tenant_id                  VARCHAR(64)  NOT NULL,
     knowledge_base_id          VARCHAR(128) NOT NULL,
-    file_type                  VARCHAR(64)  NOT NULL,
-    file_type_label            VARCHAR(128) NOT NULL,
+    parser_type                VARCHAR(64)  NOT NULL,
     parser_config_id           VARCHAR(64),
+    prompt_config_id           VARCHAR(64),                       -- 主解析提示词在 atomic-rag 的 prompt 配置 id（下发 prompt_ids 用；空=未关联）
     preprocessing_json         JSONB        NOT NULL DEFAULT '[]'::jsonb,
     postprocessing_json        JSONB        NOT NULL DEFAULT '[]'::jsonb,
     prompt_text                TEXT,
@@ -369,19 +380,26 @@ CREATE INDEX IF NOT EXISTS idx_kps_parser
     ON knowledge_base.knowledge_parser_settings (tenant_id, parser_config_id)
     WHERE parser_config_id IS NOT NULL AND is_deleted = 0;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_kps_file_type_per_kb
-    ON knowledge_base.knowledge_parser_settings (tenant_id, knowledge_base_id, file_type)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_kps_parser_type_per_kb
+    ON knowledge_base.knowledge_parser_settings (tenant_id, knowledge_base_id, parser_type)
     WHERE is_deleted = 0;
 
-COMMENT ON TABLE knowledge_base.knowledge_parser_settings IS 'Knowledge parser settings table.';
-COMMENT ON COLUMN knowledge_base.knowledge_parser_settings.parser_config_id IS 'Parser config id column on knowledge_base.knowledge_parser_settings.';
-COMMENT ON COLUMN knowledge_base.knowledge_parser_settings.prompt_template_id IS 'Prompt template id column on knowledge_base.knowledge_parser_settings.';
-COMMENT ON COLUMN knowledge_base.knowledge_parser_settings.summary_template_id IS 'Summary template id column on knowledge_base.knowledge_parser_settings.';
-COMMENT ON COLUMN knowledge_base.knowledge_parser_settings.tag_template_id IS 'Tag template id column on knowledge_base.knowledge_parser_settings.';
+COMMENT ON TABLE knowledge_base.knowledge_parser_settings IS
+'KB 级解析引擎设置表：每个知识库按解析器类目(parser_type)绑定一个 parser_config，并保存提示词与模板来源快照';
+COMMENT ON COLUMN knowledge_base.knowledge_parser_settings.parser_type IS
+'解析器类目（= business_domain.parser_configs.parser_type，如 document/video/audio/image/txt/web/cad），KB 内每类唯一，作为上传路由键';
+COMMENT ON COLUMN knowledge_base.knowledge_parser_settings.parser_config_id IS
+'引用 business_domain.parser_configs.id，表示该类目下选中的解析器定义；上传时按文件后缀匹配其 file_types 命中';
+COMMENT ON COLUMN knowledge_base.knowledge_parser_settings.prompt_template_id IS
+'主解析提示词来源模板 ID，仅用于追溯；实际运行使用 prompt_text 快照';
+COMMENT ON COLUMN knowledge_base.knowledge_parser_settings.summary_template_id IS
+'自动摘要提示词来源模板 ID，仅用于追溯；实际运行使用 summary_prompt_text 快照';
+COMMENT ON COLUMN knowledge_base.knowledge_parser_settings.tag_template_id IS
+'自动标签提示词来源模板 ID，仅用于追溯；实际运行使用 tag_prompt_text 快照';
 
-
-
-
+-- ------------------------------------------------------------
+-- 文件夹（一层层级，无嵌套）
+-- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS knowledge_base.folders (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id VARCHAR(64) NOT NULL,
@@ -400,11 +418,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_folders_name_per_kb
     ON knowledge_base.folders (tenant_id, knowledge_base_id, name)
     WHERE is_deleted = 0;
 
-
+-- knowledge_documents.folder_id 查询索引（列已于建表时创建）
 CREATE INDEX IF NOT EXISTS idx_kb_doc_folder
     ON knowledge_base.knowledge_documents (tenant_id, knowledge_base_id, folder_id)
     WHERE is_deleted = 0 AND folder_id IS NOT NULL;
-COMMENT ON TABLE knowledge_base.folders IS 'Folders table.';
+COMMENT ON TABLE knowledge_base.folders IS 'KB 级一层文件夹，用户可按文件夹组织文档。预设文件夹（is_preset=TRUE）按中文拼音排序，用户新建文件夹按创建时间降序排在预设之后。';
 
 CREATE TABLE IF NOT EXISTS knowledge_base.knowledge_search_feedback (
     id              VARCHAR(64) PRIMARY KEY,
@@ -423,7 +441,7 @@ CREATE TABLE IF NOT EXISTS knowledge_base.knowledge_search_feedback (
     is_deleted      INTEGER NOT NULL DEFAULT 0
 );
 
-
+-- 索引
 CREATE INDEX IF NOT EXISTS idx_kb_feedback_tenant_kb_time
     ON knowledge_base.knowledge_search_feedback (tenant_id, knowledge_base_id, searched_at);
 
@@ -435,3 +453,36 @@ CREATE INDEX IF NOT EXISTS idx_kb_feedback_session
 
 CREATE INDEX IF NOT EXISTS idx_kb_feedback_user_id
     ON knowledge_base.knowledge_search_feedback (user_id);
+
+-- ------------------------------------------------------------
+-- 标签（KB 级，同 KB 内名称唯一）
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS knowledge_base.tags (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL,
+    knowledge_base_id VARCHAR(128) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    color VARCHAR(32),
+    created_by VARCHAR(64),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_deleted SMALLINT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_kb_tags_tenant_kb
+    ON knowledge_base.tags (tenant_id, knowledge_base_id, is_deleted);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_tags_name_per_kb
+    ON knowledge_base.tags (tenant_id, knowledge_base_id, name)
+    WHERE is_deleted = 0;
+COMMENT ON TABLE knowledge_base.tags IS 'KB 级标签，支持文档分类与筛选。同知识库内标签名称唯一。';
+
+-- ------------------------------------------------------------
+-- 文档-标签多对多关联
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS knowledge_base.document_tags (
+    document_id VARCHAR(64) NOT NULL REFERENCES knowledge_base.knowledge_documents(id) ON DELETE CASCADE,
+    tag_id VARCHAR(64) NOT NULL REFERENCES knowledge_base.tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (document_id, tag_id)
+);
+CREATE INDEX IF NOT EXISTS idx_kb_doc_tags_tag
+    ON knowledge_base.document_tags (tag_id);
+COMMENT ON TABLE knowledge_base.document_tags IS '文档与标签的多对多关联，级联删除。';

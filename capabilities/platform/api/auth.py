@@ -1,9 +1,14 @@
+"""
+认证 API 路由（platform 容器内部）
 
+由 Sidecar 代理调用，不直接对外暴露。
+"""
 from fastapi import APIRouter, Depends, Header, Request
 
 from jonex_core.common.database import get_db
 from jonex_core.common.response import success_response
-from jonex_core.common.exceptions import TokenExpiredError
+from jonex_core.common.exceptions import InvalidParameterError
+from jonex_core.common.i18n import translate
 from capabilities.platform.auth.auth_service import AuthService
 from capabilities.platform.dtos.auth import (
     LoginRequest,
@@ -23,20 +28,20 @@ async def login(
     db=Depends(get_db),
 ):
     svc = AuthService(db)
-
+    # 提取真实客户端 IP（Sidecar 转发的 X-Forwarded-For），fallback 到直连 IP
     client_ip = (
         request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
         or (request.client.host if request.client else None)
     )
     result = await svc.login(tenant_id, req, client_ip=client_ip)
-    message = "Select a tenant" if isinstance(result, TenantSelectionRequiredResponse) else "success"
+    message = "请选择租户" if isinstance(result, TenantSelectionRequiredResponse) else "success"
     return success_response(data=result.dict(), message=message)
 
 
 @router.get("/me")
 async def me(authorization: str = Header(...), db=Depends(get_db)):
     if not authorization.startswith("Bearer "):
-        raise TokenExpiredError(message="Missing Bearer token")
+        raise InvalidParameterError(message=translate("err.auth.missing_bearer_token", fallback="缺少 Bearer token"))  # 原消息: 缺少 Bearer token
     token = authorization[7:]
     svc = AuthService(db)
     result = await svc.me(token)
@@ -46,7 +51,7 @@ async def me(authorization: str = Header(...), db=Depends(get_db)):
 @router.post("/refresh")
 async def refresh(authorization: str = Header(...), db=Depends(get_db)):
     if not authorization.startswith("Bearer "):
-        raise TokenExpiredError(message="Missing Bearer token")
+        raise InvalidParameterError(message=translate("err.auth.missing_bearer_token", fallback="缺少 Bearer token"))  # 原消息: 缺少 Bearer token
     token = authorization[7:]
     svc = AuthService(db)
     result = await svc.refresh(token)
@@ -61,7 +66,7 @@ async def login_ticket(
     db=Depends(get_db),
 ):
     if not authorization.startswith("Bearer "):
-        raise TokenExpiredError(message="Missing Bearer token")
+        raise InvalidParameterError(message=translate("err.auth.missing_bearer_token", fallback="缺少 Bearer token"))  # 原消息: 缺少 Bearer token
     token = authorization[7:]
     client_ip = request.client.host if request and request.client else None
     user_agent = request.headers.get("User-Agent", "")[:1024] if request else None
@@ -79,4 +84,4 @@ async def exchange_ticket(req: ExchangeTicketRequest, db=Depends(get_db)):
 
 @router.post("/logout")
 async def logout():
-    return success_response(message="Logged out successfully")
+    return success_response(message="已登出")

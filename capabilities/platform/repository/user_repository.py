@@ -17,7 +17,6 @@ class UserRepository(BaseRepository[User]):
             select(User).where(
                 User.tenant_id == tenant_id,
                 User.username == username,
-                User.status == 1,
                 User.is_deleted == 0,
             )
         )

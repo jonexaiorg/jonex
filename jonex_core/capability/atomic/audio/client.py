@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 """
-ASR Client Abstract + Factory
+ASR Client 抽象 + 工厂
 """
 
 from __future__ import annotations
@@ -10,7 +10,8 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
 from jonex_core.capability.locator import CapabilityMode, get_locator
-from jonex_core.common import get_config, get_logger
+from jonex_core.common import get_config, get_logger, require_tenant
+from jonex_core.common.i18n import translate
 
 logger = get_logger("capability.client.asr")
 
@@ -18,7 +19,7 @@ ASR_CAPABILITY_ID = "atomic.audio.asr.v1"
 
 
 class ASRClient(ABC):
-    """ASR Client contract"""
+    """ASR Client 契约"""
 
     @abstractmethod
     async def transcribe(self, audio_url: str) -> str:
@@ -53,13 +54,13 @@ class RemoteASRClient(ASRClient):
     def __init__(
         self,
         endpoint: str,
+        tenant_id: str,
         capability_id: str = ASR_CAPABILITY_ID,
-        tenant_id: str = "system",
         options: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._endpoint = endpoint.rstrip("/")
         self._capability_id = capability_id
-        self._tenant_id = tenant_id
+        self._tenant_id = require_tenant(tenant_id)
         self._timeout = (options or {}).get("timeout", 60.0)
 
     async def transcribe(self, audio_url: str) -> str:
@@ -78,6 +79,8 @@ class RemoteASRClient(ASRClient):
             UpstreamServiceError,
         )
 
+        payload = dict(payload)
+        payload["tenant_id"] = self._tenant_id
         body = {
             "capability_id": self._capability_id,
             "tenant_id": self._tenant_id,
@@ -85,18 +88,22 @@ class RemoteASRClient(ASRClient):
         }
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.post(f"{self._endpoint}/invoke", json=body)
+                resp = await client.post(
+                    f"{self._endpoint}/invoke",
+                    json=body,
+                    headers={"X-Tenant-ID": self._tenant_id},
+                )
                 resp.raise_for_status()
                 return resp.json()
         except httpx.TimeoutException as e:
             raise CapabilityTimeoutError(
-                message=f"ASR remote invocation timed out: {self._capability_id}",
+                message=translate("err.capability.asr_timeout", params={"capability_id": self._capability_id}, fallback=f"ASR 远程调用超时: {self._capability_id}"),
                 details={"endpoint": self._endpoint},
                 cause=e,
             )
         except httpx.HTTPStatusError as e:
             raise UpstreamServiceError(
-                message=f"ASR remote invocation failed: HTTP {e.response.status_code}",
+                message=translate("err.capability.asr_upstream_error", params={"status": str(e.response.status_code)}, fallback=f"ASR 远程调用失败: HTTP {e.response.status_code}"),
                 details={
                     "capability_id": self._capability_id,
                     "upstream_status": e.response.status_code,
@@ -118,12 +125,12 @@ class MockASRClient(ASRClient):
 
 
 # ============================================================
-# Factory
+# 工厂
 # ============================================================
 def get_asr_client(
     *,
     capability_id: str = ASR_CAPABILITY_ID,
-    tenant_id: str = "system",
+    tenant_id: Optional[str] = None,
 ) -> ASRClient:
     spec = get_locator().get_spec(capability_id)
 
@@ -132,12 +139,13 @@ def get_asr_client(
         return MockASRClient()
 
     if spec.mode == CapabilityMode.REMOTE:
+        tenant_id = require_tenant(tenant_id)
         endpoint = spec.endpoint or get_config().SIDECAR_URL
         logger.debug(f"ASR client = REMOTE ({capability_id}, endpoint={endpoint})")
         return RemoteASRClient(
             endpoint=endpoint,
-            capability_id=capability_id,
             tenant_id=tenant_id,
+            capability_id=capability_id,
             options=spec.options,
         )
 

@@ -1,55 +1,55 @@
-import React, { useEffect, useState } from 'react'
-import { Modal, Form, Input, Select, InputNumber, Typography, message, Alert } from 'antd'
-import { useTranslation } from 'react-i18next'
-import { listAccessMethods, createDataSource } from '@/api/dataSource'
-import type { AccessMethodItem, DataSourceInstance } from '@/types/dataSource'
+import React, { useEffect, useState } from 'react';
+import { Modal, Form, Input, Select, InputNumber, Typography, message, Alert, Table } from 'antd';
+import { useTranslation } from 'react-i18next';
+import { listAccessMethods, createDataSource } from '@/api/dataSource';
+import type { AccessMethodItem, DataSourceInstance } from '@/types/dataSource';
+import { EXTENSIONS_NO_DOT } from '@/constants/upload';
+import { accessMethodDisplayName } from '@/utils/dataSourceDisplay';
 
 interface Props {
-  open: boolean
-  kbId: string
-
-  existingTypes: string[]
-  onClose: () => void
-  onCreated: (ds: DataSourceInstance) => void
+  open: boolean;
+  kbId: string;
+  /** 已有数据源的 access_type 集合，用于禁止重复添加同类型 */
+  existingTypes: string[];
+  onClose: () => void;
+  onCreated: (ds: DataSourceInstance) => void;
 }
 
-const RAG_ANYTHING_EXTS = 'pdf,doc,docx,ppt,pptx,xls,xlsx,txt,md,jpg,jpeg,png,gif,bmp,tiff,tif,webp,mp3,wav,flac,aac,m4a,ogg,wma,opus,amr,mp4,avi,mov,mkv,flv,wmv,webm,m4v,mpg,mpeg,3gp'
-
 export default function AddDataSourceModal({ open, kbId, existingTypes, onClose, onCreated }: Props) {
-  const { t } = useTranslation()
-  const [methods, setMethods] = useState<AccessMethodItem[]>([])
-  const [loading, setLoading] = useState(false)
-  const [showApiHelp, setShowApiHelp] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [selected, setSelected] = useState<AccessMethodItem | null>(null)
-  const [created, setCreated] = useState<DataSourceInstance | null>(null)
-  const [form] = Form.useForm()
+  const { t } = useTranslation();
+  const [methods, setMethods] = useState<AccessMethodItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showApiHelp, setShowApiHelp] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [selected, setSelected] = useState<AccessMethodItem | null>(null);
+  const [created, setCreated] = useState<DataSourceInstance | null>(null);
+  const [form] = Form.useForm();
 
   useEffect(() => {
-    if (!open) return
-    setSelected(null)
-    setCreated(null)
-    setShowApiHelp(false)
-    form.resetFields()
-    setLoading(true)
+    if (!open) return;
+    setSelected(null);
+    setCreated(null);
+    setShowApiHelp(false);
+    form.resetFields();
+    setLoading(true);
     listAccessMethods()
       .then(setMethods)
-      .catch((e: any) => message.error(e?.message || t('dataSource.methodLoadFailed')))
-      .finally(() => setLoading(false))
-  }, [open, form])
+      .catch((e: any) => message.error(e?.message || t('dataSource.loadMethodsFailed')))
+      .finally(() => setLoading(false));
+  }, [open, form, t]);
 
-
+  // 选择接入方式后自动填写默认名称
   useEffect(() => {
     if (selected) {
-      form.setFieldsValue({ name: selected.name })
+      form.setFieldsValue({ name: accessMethodDisplayName(selected, t) });
     }
-  }, [selected, form])
+  }, [selected, form, t]);
 
+  // 过滤已添加的类型
+  const existingSet = new Set(existingTypes);
+  const availableMethods = methods.filter((m) => !existingSet.has(m.accessType));
 
-  const existingSet = new Set(existingTypes)
-  const availableMethods = methods.filter((m) => !existingSet.has(m.accessType))
-
-  const accessType = selected?.accessType
+  const accessType = selected?.accessType;
 
   function buildConfig(v: any): Record<string, any> {
     if (accessType === 'api') {
@@ -60,7 +60,7 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
         list_path: v.listPath || '$.data.items',
         file_url_field: v.fileUrlField || 'url',
         file_name_field: v.fileNameField || 'name',
-      }
+      };
     }
     if (accessType === 'storage') {
       return {
@@ -70,28 +70,34 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
         prefix: v.prefix || '',
         region: v.region || undefined,
         credential: v.credential || undefined,
-        include_ext: (v.includeExt || '').split(',').map((s: string) => s.trim()).filter(Boolean),
-      }
+        include_ext: (v.includeExt || '')
+          .split(',')
+          .map((s: string) => s.trim())
+          .filter(Boolean),
+      };
     }
     if (accessType === 'api_push') {
       return {
-        allowed_ext: (v.allowedExt || 'pdf,docx,md,txt').split(',').map((s: string) => s.trim()).filter(Boolean),
+        allowed_ext: (v.allowedExt || 'pdf,docx,md,txt')
+          .split(',')
+          .map((s: string) => s.trim())
+          .filter(Boolean),
         max_file_mb: v.maxFileMb || 50,
-      }
+      };
     }
     if (accessType === 'file') {
-      return {}
+      return {};
     }
-    return {}
+    return {};
   }
 
   async function handleCreate() {
     if (!selected) {
-      message.warning(t('dataSource.selectMethod'))
-      return
+      message.warning(t('dataSource.selectFirst'));
+      return;
     }
-    const v = await form.validateFields()
-    setSubmitting(true)
+    const v = await form.validateFields();
+    setSubmitting(true);
     try {
       const ds = await createDataSource({
         knowledge_base_id: kbId,
@@ -99,27 +105,27 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
         access_type: selected.accessType,
         name: v.name,
         config_json: buildConfig(v),
-      })
+      });
       if (ds.accessType === 'api_push' && ds.ingestKey) {
-        setCreated(ds)
+        setCreated(ds); // 展示一次性 key，不立即关闭
       } else {
-        message.success(t('dataSource.methodCreateSuccess'))
-        onCreated(ds)
-        onClose()
+        message.success(t('dataSource.createdSuccess'));
+        onCreated(ds);
+        onClose();
       }
     } catch (e: any) {
-      message.error(e?.message || t('dataSource.methodCreateFailed'))
+      message.error(e?.message || t('dataSource.createFailed'));
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
   }
 
   function handleOk() {
     if (created) {
-      onCreated(created)
-      onClose()
+      onCreated(created);
+      onClose();
     } else {
-      void handleCreate()
+      void handleCreate();
     }
   }
 
@@ -129,7 +135,7 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
       open={open}
       onCancel={onClose}
       onOk={handleOk}
-      okText={created ? t('common.operationSuccessful') : t('domainSpace.create')}
+      okText={created ? t('dataSource.done') : t('common.create')}
       confirmLoading={submitting}
       width={640}
       destroyOnHidden
@@ -137,21 +143,25 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
       <Select
         style={{ width: '100%', marginBottom: 16 }}
         loading={loading}
-        placeholder={t('dataSource.selectMethod')}
+        placeholder={t('dataSource.selectAccessMethod')}
         value={selected?.id}
         disabled={!!created}
-        notFoundContent={loading ? t('dataSource.loading') : t('dataSource.noMethod')}
+        notFoundContent={loading ? t('common.loading') : t('dataSource.noAvailableMethods')}
         onChange={(id) => setSelected(methods.find((m) => m.id === id) || null)}
         options={availableMethods.map((m) => ({
-          label: `${m.name}`,
+          label: accessMethodDisplayName(m, t),
           value: m.id,
         }))}
       />
 
       {!created && selected && (
         <Form form={form} layout="vertical">
-          <Form.Item label={t('dataSource.name')} name="name" rules={[{ required: true, whitespace: true, message: t('validation.nameRequired') }]}>
-            <Input placeholder="For example: Financial Products API" />
+          <Form.Item
+            label={t('domainKnowledge.dataSourceName')}
+            name="name"
+            rules={[{ required: true, whitespace: true, message: t('common.nameRequired') }]}
+          >
+            <Input placeholder={t('dataSource.namePlaceholder')} />
           </Form.Item>
 
           {accessType === 'api' && (
@@ -159,12 +169,14 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
               <div
                 onClick={() => setShowApiHelp((prev) => !prev)}
                 style={{
-                  cursor: 'pointer', color: '#3b82f6', fontSize: 13,
+                  cursor: 'pointer',
+                  color: '#3b82f6',
+                  fontSize: 13,
                   marginBottom: showApiHelp ? 8 : 16,
                   userSelect: 'none',
                 }}
               >
-                {showApiHelp ? '▼' : '▶'} {t('dataSource.apiSync')}{t('common.config')}
+                {showApiHelp ? '▼' : '▶'} {t('dataSource.apiPullTitle')}
               </div>
               {showApiHelp && (
                 <Alert
@@ -173,56 +185,88 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
                   style={{ marginBottom: 16 }}
                   description={
                     <div style={{ fontSize: 13 }}>
-                      <p style={{ margin: '4px 0' }}>
-                        Jonex periodically calls the configured endpoint to retrieve and ingest documents.
-                      </p>
-                      <p style={{ margin: '4px 0' }}>
-                        The endpoint must return a <strong>JSON array</strong> whose items include a download URL and file name.
-                      </p>
+                      <p style={{ margin: '4px 0' }}>{t('dataSource.apiPullDesc1')}</p>
+                      <p style={{ margin: '4px 0' }}>{t('dataSource.apiPullDesc2')}</p>
                       <p style={{ margin: '4px 0', color: '#94a3b8' }}>
-                        Example response: {`{"code":0,"data":{"items":[{"url":"https://...","name":"report.pdf"},{"url":"https://...","name":"contract.docx"}]}}`}
+                        {t('dataSource.apiPullDesc3')}
+                        {`{"code":0,"data":{"items":[{"url":"https://...","name":"report.pdf"},{"url":"https://...","name":"contract.docx"}]}}`}
                       </p>
                     </div>
                   }
                 />
               )}
-              <Form.Item label={t('dataSource.endpoint')} name="endpoint" rules={[{ required: true, message: t('validation.nameRequired') }]}
-                tooltip="Document list endpoint URL. HTTP GET and POST are supported.">
-                <Input placeholder="https://api.example.com/documents" />
+              <Form.Item
+                label={t('domainKnowledge.apiEndpoint')}
+                name="endpoint"
+                rules={[{ required: true, message: t('dataSource.endpointRequired') }]}
+                tooltip={t('dataSource.endpointTooltip')}
+              >
+                <Input placeholder={t('dataSource.endpointPlaceholder')} />
               </Form.Item>
-              <Form.Item label="HTTP Method" name="method" initialValue="GET"
-                tooltip="Use GET for most endpoints, or POST when request parameters are required.">
-                <Select options={[{ value: 'GET', label: 'GET' }, { value: 'POST', label: 'POST' }]} />
-              </Form.Item>
-              <Form.Item label={t('dataSource.authType')} name="authType" initialValue="none"
-                tooltip="Select the authentication method required by the external endpoint.">
+              <Form.Item
+                label={t('domainKnowledge.httpMethod')}
+                name="method"
+                initialValue="GET"
+                tooltip={t('dataSource.methodTooltip')}
+              >
                 <Select
                   options={[
-                    { value: 'none', label: t('dataSource.noAuth') },
-                    { value: 'bearer', label: t('dataSource.bearerAuth') },
-                    { value: 'api_key', label: t('dataSource.apiKeyAuth') },
-                    { value: 'basic', label: t('dataSource.basicAuth') },
+                    { value: 'GET', label: 'GET' },
+                    { value: 'POST', label: 'POST' },
                   ]}
                 />
               </Form.Item>
-              <Form.Item label="Credential / Token" name="token"
-                tooltip="For Bearer use a JWT, for API Key enter the key, and for Basic use user:pass. Credentials are encrypted.">
-                <Input.Password placeholder="Enter a credential when required; leave blank for no authentication" />
+              <Form.Item
+                label={t('domainKnowledge.authMethod')}
+                name="authType"
+                initialValue="none"
+                tooltip={t('dataSource.authMethodTooltip')}
+              >
+                <Select
+                  options={[
+                    { value: 'none', label: t('domainKnowledge.noAuth') },
+                    { value: 'bearer', label: t('domainKnowledge.bearerToken') },
+                    { value: 'api_key', label: t('domainKnowledge.apiKey') },
+                    { value: 'basic', label: t('domainKnowledge.basicAuth') },
+                  ]}
+                />
               </Form.Item>
-              <Form.Item label="API Key Header Name" name="headerName"
-                tooltip="Required only for API Key authentication. Enter the header expected by the endpoint.">
+              <Form.Item
+                label={t('domainKnowledge.credentialToken')}
+                name="token"
+                tooltip={t('dataSource.credentialTooltipAdd')}
+              >
+                <Input.Password placeholder={t('dataSource.credentialPlaceholderAdd')} />
+              </Form.Item>
+              <Form.Item
+                label={t('domainKnowledge.apiKeyHeaderName')}
+                name="headerName"
+                tooltip={t('dataSource.headerNameTooltip')}
+              >
                 <Input placeholder="X-API-Key" />
               </Form.Item>
-              <Form.Item label="Document List Path (JSONPath)" name="listPath" initialValue="$.data.items"
-                tooltip="Path to the document array in the response. The default $.data.items selects data.items.">
+              <Form.Item
+                label={t('domainKnowledge.docListJsonPath')}
+                name="listPath"
+                initialValue="$.data.items"
+                tooltip={t('dataSource.jsonPathTooltip')}
+              >
                 <Input placeholder="$.data.items" />
               </Form.Item>
-              <Form.Item label="Download URL Field" name="fileUrlField" initialValue="url"
-                tooltip="Field containing the file download URL.">
+              <Form.Item
+                label={t('domainKnowledge.downloadUrlField')}
+                name="fileUrlField"
+                initialValue="url"
+                tooltip={t('dataSource.urlFieldTooltip')}
+              >
                 <Input placeholder="url" />
               </Form.Item>
-              <Form.Item label="File Name Field" name="fileNameField" initialValue="name"
-                tooltip="Field containing the file name and extension.">
+              <Form.Item
+                label={t('domainKnowledge.fileNameField')}
+                name="fileNameField"
+                initialValue="name"
+                tooltip={t('dataSource.nameFieldTooltip')}
+              >
                 <Input placeholder="name" />
               </Form.Item>
             </>
@@ -230,31 +274,45 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
 
           {accessType === 'storage' && (
             <>
-              <Form.Item label={t('dataSource.storageType')} name="backend" initialValue="minio">
-                <Select options={[
+              <Form.Item label={t('domainKnowledge.storageBackend')} name="backend" initialValue="minio">
+                <Select
+                  options={[
                     { value: 'minio', label: 'MinIO' },
                     { value: 's3', label: 'AWS S3' },
-                    { value: 'cos', label: t('dataSource.cos') },
-                    { value: 'oss', label: t('dataSource.oss') },
-                  ]} />
+                    { value: 'cos', label: t('domainKnowledge.tencentCos') },
+                    { value: 'oss', label: t('domainKnowledge.aliyunOss') },
+                  ]}
+                />
               </Form.Item>
-              <Form.Item label="Endpoint" name="endpoint" tooltip="For MinIO enter http(s)://host:9000. Leave blank for AWS S3.">
+              <Form.Item
+                label={t('dataSource.endpoint')}
+                name="endpoint"
+                tooltip={t('dataSource.storageEndpointTooltip')}
+              >
                 <Input placeholder="http://minio:9000" />
               </Form.Item>
-              <Form.Item label={t('dataSource.bucket')} name="bucket" rules={[{ required: true, message: t('validation.nameRequired') }]}>
+              <Form.Item
+                label={t('domainKnowledge.bucket')}
+                name="bucket"
+                rules={[{ required: true, message: t('dataSource.bucketRequired') }]}
+              >
                 <Input placeholder="product-files" />
               </Form.Item>
-              <Form.Item label="Prefix" name="prefix">
+              <Form.Item label={t('domainKnowledge.prefix')} name="prefix">
                 <Input placeholder="kb/finance/" />
               </Form.Item>
-              <Form.Item label="Region" name="region">
-                <Input placeholder={t('domainKnowledge.noSpace')} />
+              <Form.Item label={t('dataSource.region')} name="region">
+                <Input placeholder={t('dataSource.regionPlaceholder')} />
               </Form.Item>
-              <Form.Item label={t('dataSource.credential')} name="credential" rules={[{ required: true, message: t('validation.nameRequired') }]}>
+              <Form.Item
+                label={t('domainKnowledge.credential')}
+                name="credential"
+                rules={[{ required: true, message: t('dataSource.credentialRequired') }]}
+              >
                 <Input.Password placeholder="accessKey:secretKey" />
               </Form.Item>
-              <Form.Item label="Included Extensions (comma-separated)" name="includeExt" initialValue={RAG_ANYTHING_EXTS}>
-                <Input.TextArea rows={2} placeholder={RAG_ANYTHING_EXTS} />
+              <Form.Item label={t('domainKnowledge.includeExt')} name="includeExt" initialValue={EXTENSIONS_NO_DOT}>
+                <Input.TextArea rows={2} placeholder={EXTENSIONS_NO_DOT} />
               </Form.Item>
             </>
           )}
@@ -266,27 +324,32 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
               style={{ marginBottom: 16 }}
               description={
                 <div style={{ fontSize: 13 }}>
-                  <p style={{ margin: '0 0 8px' }}>File upload supports the following formats, detected automatically by the parser:</p>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <tbody>
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#64748b', whiteSpace: 'nowrap', verticalAlign: 'top' }}>Documents</td>
-                        <td style={{ padding: '2px 0', fontFamily: 'monospace', fontSize: 12 }}>PDF · DOC · DOCX · PPT · PPTX · XLS · XLSX · TXT · MD</td>
-                      </tr>
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#64748b', whiteSpace: 'nowrap', verticalAlign: 'top' }}>Images</td>
-                        <td style={{ padding: '2px 0', fontFamily: 'monospace', fontSize: 12 }}>JPG · JPEG · PNG · GIF · BMP · TIFF · TIF · WEBP</td>
-                      </tr>
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#64748b', whiteSpace: 'nowrap', verticalAlign: 'top' }}>Audio</td>
-                        <td style={{ padding: '2px 0', fontFamily: 'monospace', fontSize: 12 }}>MP3 · WAV · FLAC · AAC · M4A · OGG · WMA · OPUS · AMR</td>
-                      </tr>
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#64748b', whiteSpace: 'nowrap', verticalAlign: 'top' }}>Video</td>
-                        <td style={{ padding: '2px 0', fontFamily: 'monospace', fontSize: 12 }}>MP4 · AVI · MOV · MKV · FLV · WMV · WEBM · M4V · MPG · MPEG · 3GP</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                  <p style={{ margin: '0 0 8px' }}>{t('dataSource.fileUploadDesc')}</p>
+                  <Table
+                    dataSource={[
+                      {
+                        type: t('dataSource.fileTypeDoc'),
+                        exts: 'PDF · DOC · DOCX · PPT · PPTX · XLS · XLSX · TXT · MD',
+                      },
+                      { type: t('dataSource.fileTypeImage'), exts: 'JPG · JPEG · PNG · GIF · BMP · TIFF · TIF · WEBP' },
+                      {
+                        type: t('dataSource.fileTypeAudio'),
+                        exts: 'MP3 · WAV · FLAC · AAC · M4A · OGG · WMA · OPUS · AMR',
+                      },
+                      {
+                        type: t('dataSource.fileTypeVideo'),
+                        exts: 'MP4 · AVI · MOV · MKV · FLV · WMV · WEBM · M4V · MPG · MPEG · 3GP',
+                      },
+                    ]}
+                    columns={[
+                      { title: t('dataSource.fileType'), dataIndex: 'type', key: 'type', width: 80 },
+                      { title: t('dataSource.extensions'), dataIndex: 'exts', key: 'exts' },
+                    ]}
+                    rowKey="type"
+                    pagination={false}
+                    size="small"
+                    bordered
+                  />
                 </div>
               }
             />
@@ -294,10 +357,10 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
 
           {accessType === 'api_push' && (
             <>
-              <Form.Item label="Allowed File Types (comma-separated)" name="allowedExt" initialValue={RAG_ANYTHING_EXTS}>
-                <Input.TextArea rows={2} placeholder={RAG_ANYTHING_EXTS} />
+              <Form.Item label={t('domainKnowledge.allowedExt')} name="allowedExt" initialValue={EXTENSIONS_NO_DOT}>
+                <Input.TextArea rows={2} placeholder={EXTENSIONS_NO_DOT} />
               </Form.Item>
-              <Form.Item label="Maximum File Size (MB)" name="maxFileMb" initialValue={50}>
+              <Form.Item label={t('domainKnowledge.maxFileSize')} name="maxFileMb" initialValue={50}>
                 <InputNumber min={1} max={500} style={{ width: '100%' }} />
               </Form.Item>
             </>
@@ -309,15 +372,15 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
         <Alert
           type="success"
           showIcon
-          title={t('dataSource.methodCreateSuccess')}
+          title={t('dataSource.createdTitle')}
           description={
             <div>
               <div style={{ marginBottom: 8 }}>
-                {t('dataSource.endpoint')}：
+                {t('dataSource.ingestEndpoint')}
                 <Typography.Text copyable>{created.ingestUrl}</Typography.Text>
               </div>
               <div>
-                {t('dataSource.keyValueDisplay')}：
+                {t('dataSource.apiKeyLabel')}
                 <Typography.Text copyable code>
                   {created.ingestKey}
                 </Typography.Text>
@@ -327,5 +390,5 @@ export default function AddDataSourceModal({ open, kbId, existingTypes, onClose,
         />
       )}
     </Modal>
-  )
+  );
 }

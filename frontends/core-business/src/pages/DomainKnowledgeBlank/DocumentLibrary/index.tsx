@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
-import { Input, Button, Table, Space, Modal, Dropdown, message, Menu } from "antd";
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Input, Button, Table, Space, Modal, Dropdown, message, Menu } from 'antd';
 import {
   SearchOutlined,
   PlusOutlined,
@@ -12,9 +12,9 @@ import {
   DeleteOutlined,
   CaretDownOutlined,
   CaretRightOutlined,
-} from "@ant-design/icons";
-import { useTranslation } from "react-i18next";
-import { createColumns } from "./config";
+} from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import { createColumns } from './config';
 import {
   getManualDocList,
   getFolderList,
@@ -24,17 +24,17 @@ import {
   reparseDocument,
   retryDocumentOntology,
   deleteManualDocument,
-} from "@/api/domainKnowledge";
-import { listAccessMethods } from "@/api/dataSource";
-import type { ManualDocItem, FolderItem } from "@/types/domainKnowledge";
-import type { AccessMethodItem } from "@/types/dataSource";
-import type { DocPhase } from "@/utils/docPhase";
-import { useDocumentViewer } from "@/components/DocumentViewer";
-import DocumentStatusFilter from "@/components/DocumentStatusFilter";
-import UploadModal from "./UploadModal";
-import FolderNameModal from "./FolderNameModal";
-import TagModal from "./TagModal";
-import "./index.scss";
+} from '@/api/domainKnowledge';
+import { listAccessMethods } from '@/api/dataSource';
+import type { ManualDocItem, FolderItem } from '@/types/domainKnowledge';
+import type { AccessMethodItem } from '@/types/dataSource';
+import type { DocPhase } from '@/utils/docPhase';
+import { useDocumentViewer } from '@/components/DocumentViewer';
+import DocumentStatusFilter from '@/components/DocumentStatusFilter';
+import UploadModal from './UploadModal';
+import FolderNameModal from './FolderNameModal';
+import TagModal from './TagModal';
+import './index.scss';
 
 const PAGE_SIZE = 10;
 
@@ -45,7 +45,7 @@ interface DocumentLibraryProps {
 export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [selectedKeys, setSelectedKeys] = useState<string[]>(["all"]);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(['all']);
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [data, setData] = useState<ManualDocItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -53,16 +53,14 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [folderModalOpen, setFolderModalOpen] = useState(false);
-  const [folderModalValue, setFolderModalValue] = useState("");
+  const [folderModalValue, setFolderModalValue] = useState('');
   const [folderModalLoading, setFolderModalLoading] = useState(false);
-  const [folderModalMode, setFolderModalMode] = useState<"create" | "rename">(
-    "create",
-  );
-  const [editingFolderId, setEditingFolderId] = useState("");
+  const [folderModalMode, setFolderModalMode] = useState<'create' | 'rename'>('create');
+  const [editingFolderId, setEditingFolderId] = useState('');
   const [reloadFlag, setReloadFlag] = useState(0);
   const [foldersCollapsed, setFoldersCollapsed] = useState(false);
-  const [keyword, setKeyword] = useState("");
-  const [inputValue, setInputValue] = useState("");
+  const [keyword, setKeyword] = useState('');
+  const [inputValue, setInputValue] = useState('');
   const [statusFilter, setStatusFilter] = useState<DocPhase[]>([]);
   const [tagModalOpen, setTagModalOpen] = useState(false);
   const [tagDoc, setTagDoc] = useState<ManualDocItem | null>(null);
@@ -73,7 +71,7 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
     if (!kbId) return;
     getFolderList(kbId)
       .then((res) => setFolders(res.items))
-      .catch(() => message.error(t("common.folderListLoadFailed")));
+      .catch(() => message.error(t('common.folderListLoadFailed')));
   }, [kbId]);
 
   useEffect(() => {
@@ -91,27 +89,25 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
   const handleFolderModalOk = async () => {
     const name = folderModalValue.trim();
     if (!name) {
-      message.warning(t("common.folderNameRequired"));
+      message.warning(t('common.folderNameRequired'));
       return;
     }
     setFolderModalLoading(true);
     try {
-      if (folderModalMode === "create") {
+      if (folderModalMode === 'create') {
         await createFolder(kbId, name);
-        message.success(t("common.folderCreateSuccess"));
+        message.success(t('common.folderCreateSuccess'));
       } else {
         await renameFolder(editingFolderId, kbId, name);
-        message.success(t("common.folderRenameSuccess"));
+        message.success(t('common.folderRenameSuccess'));
       }
       setFolderModalOpen(false);
-      setFolderModalValue("");
+      setFolderModalValue('');
       fetchFolders();
     } catch (err: any) {
       message.error(
         err?.message ||
-          (folderModalMode === "create"
-            ? t("common.folderCreateFailed")
-            : t("common.folderRenameFailed")),
+          (folderModalMode === 'create' ? t('common.folderCreateFailed') : t('common.folderRenameFailed')),
       );
     } finally {
       setFolderModalLoading(false);
@@ -120,21 +116,21 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
 
   const handleDeleteFolder = async (folderId: string, name: string) => {
     Modal.confirm({
-      title: t("common.delete"),
-      content: t("common.confirmDeleteMessage", { name }),
-      okText: t("common.delete"),
-      okType: "danger",
-      cancelText: t("common.cancel"),
+      title: t('common.delete'),
+      content: t('common.confirmDeleteMessage', { name }),
+      okText: t('common.delete'),
+      okType: 'danger',
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           await deleteFolder(folderId, kbId);
-          message.success(t("common.folderDeleted"));
+          message.success(t('common.folderDeleted'));
           if (selectedKeys[0] === folderId) {
-            setSelectedKeys(["all"]);
+            setSelectedKeys(['all']);
           }
           fetchFolders();
         } catch (err: any) {
-          message.error(err?.message || t("common.folderDeleteFailed"));
+          message.error(err?.message || t('common.folderDeleteFailed'));
         }
       },
     });
@@ -150,12 +146,12 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
         pageSize: PAGE_SIZE,
         keyword: keyword || undefined,
         phase: statusFilter.length ? statusFilter : undefined,
-        folder_id: currentKey !== "all" ? String(currentKey) : undefined,
+        folder_id: currentKey !== 'all' ? String(currentKey) : undefined,
       });
       setData(result.list);
       setTotal(result.pagination.total);
     } catch (err: any) {
-      message.error(err?.message || t("common.docListLoadFailed"));
+      message.error(err?.message || t('common.docListLoadFailed'));
     } finally {
       setLoading(false);
     }
@@ -215,10 +211,10 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
   const handleReparse = useCallback(async (record: ManualDocItem) => {
     try {
       await reparseDocument(record.id);
-      message.success(t("common.retryTriggered"));
+      message.success(t('common.retryTriggered'));
       setReloadFlag((f) => f + 1);
     } catch (err: any) {
-      message.error(err?.message || t("common.retryFailed"));
+      message.error(err?.message || t('common.retryFailed'));
     }
   }, []);
 
@@ -226,10 +222,10 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
     async (record: ManualDocItem) => {
       try {
         await retryDocumentOntology(kbId, record.id);
-        message.success(t("common.recompileTriggered"));
+        message.success(t('common.recompileTriggered'));
         setReloadFlag((f) => f + 1);
       } catch (err: any) {
-        message.error(err?.message || t("common.recompileFailed"));
+        message.error(err?.message || t('common.recompileFailed'));
       }
     },
     [kbId],
@@ -238,17 +234,17 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
   const handleDelete = useCallback(
     (record: ManualDocItem) => {
       Modal.confirm({
-        title: t("common.confirmDelete"),
-        content: t("common.confirmDeleteDoc", { name: record.name }),
-        okText: t("common.delete"),
-        okType: "danger",
+        title: t('common.confirmDelete'),
+        content: t('common.confirmDeleteDoc', { name: record.name }),
+        okText: t('common.delete'),
+        okType: 'danger',
         onOk: async () => {
           try {
             await deleteManualDocument(kbId, record.id);
-            message.success(t("common.deleteSuccess"));
+            message.success(t('common.deleteSuccess'));
             setReloadFlag((f) => f + 1);
           } catch (err: any) {
-            message.error(err?.message || t("common.deleteFailed"));
+            message.error(err?.message || t('common.deleteFailed'));
           }
         },
       });
@@ -273,15 +269,15 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
       <div className="doc-library-sidebar-header">
         <Space>
           <FileOutlined />
-          <span>{t("common.documentDirectory")}</span>
+          <span>{t('common.documentDirectory')}</span>
         </Space>
         <Button
           type="text"
           icon={<PlusOutlined />}
           size="small"
           onClick={() => {
-            setFolderModalMode("create");
-            setFolderModalValue("");
+            setFolderModalMode('create');
+            setFolderModalValue('');
             setFolderModalOpen(true);
           }}
         />
@@ -297,9 +293,15 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
             icon: <FolderOutlined />,
             label: (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                <span>{t("common.allDocuments")}</span>
+                <span>{t('common.allDocuments')}</span>
                 <span
-                  style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', fontSize: 12, color: '#64748b' }}
+                  style={{
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    fontSize: 12,
+                    color: '#64748b',
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
@@ -313,12 +315,14 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
             ),
           },
           ...(!foldersCollapsed
-            ? folders.map(f => ({
+            ? folders.map((f) => ({
                 key: f.id,
                 icon: <FolderOutlined />,
                 className: f.is_preset ? 'doc-library-menu-item--preset' : '',
                 label: (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                  <div
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}
+                  >
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                       {f.name}
                     </span>
@@ -326,21 +330,21 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
                       menu={{
                         items: [
                           {
-                            key: "rename",
+                            key: 'rename',
                             icon: <EditOutlined />,
-                            label: t("common.rename"),
+                            label: t('common.rename'),
                             onClick: ({ domEvent }) => {
                               domEvent.stopPropagation();
-                              setFolderModalMode("rename");
+                              setFolderModalMode('rename');
                               setEditingFolderId(f.id);
                               setFolderModalValue(f.name);
                               setFolderModalOpen(true);
                             },
                           },
                           {
-                            key: "delete",
+                            key: 'delete',
                             icon: <DeleteOutlined />,
-                            label: t("common.delete"),
+                            label: t('common.delete'),
                             danger: true,
                             onClick: ({ domEvent }) => {
                               domEvent.stopPropagation();
@@ -349,10 +353,9 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
                           },
                         ],
                       }}
-                      trigger={["click"]}>
-                      <span
-                        className="doc-library-nav-more"
-                        onClick={(e) => e.stopPropagation()}>
+                      trigger={['click']}
+                    >
+                      <span className="doc-library-nav-more" onClick={(e) => e.stopPropagation()}>
                         <MoreOutlined style={{ fontSize: 12 }} />
                       </span>
                     </Dropdown>
@@ -367,43 +370,31 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
 
   return (
     <div className="doc-library">
-      <div className="doc-library-sidebar">
-        {sidebarContent}
-      </div>
+      <div className="doc-library-sidebar">{sidebarContent}</div>
 
       <div className="doc-library-main">
         <div className="doc-library-toolbar">
           <Space size={12}>
             <Input
-              prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
-              placeholder={t("common.keywordSearch")}
+              prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+              placeholder={t('common.keywordSearch')}
               style={{ width: 240 }}
               value={inputValue}
               onChange={handleKeywordChange}
               allowClear
               onClear={() => {
-                setInputValue("");
-                setKeyword("");
+                setInputValue('');
+                setKeyword('');
               }}
             />
-            <DocumentStatusFilter
-              value={statusFilter}
-              onChange={(p) => setStatusFilter(p)}
-            />
+            <DocumentStatusFilter value={statusFilter} onChange={(p) => setStatusFilter(p)} />
           </Space>
           <Space size={12}>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => setModalOpen(true)}>
-              {t("common.addDocument")}
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
+              {t('common.addDocument')}
             </Button>
-            <Button
-              icon={<SyncOutlined />}
-              onClick={() =>
-                navigate(`/domain-knowledge/${kbId}/compile-results`)
-              }>
-              {t("common.fullCompileResults")}
+            <Button icon={<SyncOutlined />} onClick={() => navigate(`/domain-knowledge/${kbId}/compile-results`)}>
+              {t('common.fullCompileResults')}
             </Button>
           </Space>
         </div>
@@ -418,39 +409,26 @@ export default function DocumentLibrary({ kbId }: DocumentLibraryProps) {
             pageSize: PAGE_SIZE,
             total,
             showSizeChanger: false,
-            showTotal: (total) => t("common.totalItems", { total }),
+            showTotal: (total) => t('common.totalItems', { total }),
             onChange: (p) => setPage(p),
           }}
-          rowSelection={{ type: "checkbox" }}
+          rowSelection={{ type: 'checkbox' }}
           size="middle"
           className="doc-library-table"
           scroll={{ y: 400, x: 1100 }}
         />
       </div>
-      <UploadModal
-        kbId={kbId}
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSuccess={handleUploadSuccess}
-      />
+      <UploadModal kbId={kbId} open={modalOpen} onClose={() => setModalOpen(false)} onSuccess={handleUploadSuccess} />
       <FolderNameModal
-        title={
-          folderModalMode === "create"
-            ? t("common.newFolder")
-            : t("common.renameFolder")
-        }
-        placeholder={
-          folderModalMode === "create"
-            ? t("common.folderNamePlaceholder")
-            : t("common.renamePlaceholder")
-        }
+        title={folderModalMode === 'create' ? t('common.newFolder') : t('common.renameFolder')}
+        placeholder={folderModalMode === 'create' ? t('common.folderNamePlaceholder') : t('common.renamePlaceholder')}
         open={folderModalOpen}
         value={folderModalValue}
         confirmLoading={folderModalLoading}
         onOk={handleFolderModalOk}
         onCancel={() => {
           setFolderModalOpen(false);
-          setFolderModalValue("");
+          setFolderModalValue('');
         }}
         onChange={setFolderModalValue}
       />

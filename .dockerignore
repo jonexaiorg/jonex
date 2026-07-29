@@ -2,13 +2,12 @@
 # Docker 忽略文件
 # ============================================================
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+# Python（缓存与编译产物 — 递归匹配各层级，收窄构建上下文）
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
 *.so
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -21,17 +20,32 @@ parts/
 sdist/
 var/
 wheels/
-*.egg-info/
+**/*.egg-info/
 .installed.cfg
 *.egg
-.pytest_cache/
+
+# 测试 / 覆盖率 / 工具缓存（递归匹配各层级）
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
 .coverage
+.coverage.*
+coverage.xml
+htmlcov/
 .tox/
 .hypothesis/
 
-# IDE
+# 虚拟环境（根级与各层级，避免把本地 venv 传入构建上下文）
+.venv/
+venv/
+env/
+**/.venv/
+**/venv/
+
+# IDE / 编辑器 / 规格工具目录
 .vscode/
 .idea/
+.kiro/
 *.swp
 *.swo
 
@@ -62,11 +76,13 @@ pytest.ini
 # RAG数据
 data/
 
-# 文档
+# 文档（递归匹配各层级 README/说明文档）
 docs/
+**/docs/
 *.md
+**/*.md
 
-# Reference 引用项目 — 放行必要文件
+# Reference 引用项目 — 放行必要文件（覆盖上方 *.md / docs 的排除）
 !Reference/**/*.md
 !Reference/**/docs/
 

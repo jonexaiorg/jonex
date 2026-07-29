@@ -1,12 +1,12 @@
-import React from 'react'
-import KnowledgeGraphPanel from '@/components/KnowledgeGraphPanel'
+import React from 'react';
+import KnowledgeGraphPanel from '@/components/KnowledgeGraphPanel';
 
 interface GraphTabProps {
-  kbId: string
+  kbId: string;
 }
 
 const GraphTab: React.FC<GraphTabProps> = ({ kbId }) => {
-  return <KnowledgeGraphPanel kbId={kbId} />
-}
+  return <KnowledgeGraphPanel kbId={kbId} />;
+};
 
-export default GraphTab
+export default GraphTab;

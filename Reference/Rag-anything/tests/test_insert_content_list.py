@@ -124,9 +124,6 @@ class DummyProcessor(ProcessorMixin):
     def _generate_content_based_doc_id(self, content_list):
         return "doc-content-list"
 
-    async def _process_multimodal_content(self, multimodal_items, file_ref, doc_id):
-        self.events.append(("multimodal", doc_id, file_ref))
-
 
 def test_insert_content_list_defers_status_until_after_text_insert():
     processor = DummyProcessor()
@@ -176,7 +173,7 @@ def test_process_document_complete_defers_status_until_after_text_insert():
     )
 
 
-def test_process_document_complete_keeps_status_for_multimodal_only_content():
+def test_process_document_complete_skips_multimodal_without_pipeline():
     processor = DummyProcessor()
     processor.parsed_content_list = [
         {"type": "image", "img_path": "/tmp/image.png", "page_idx": 0}
@@ -190,10 +187,11 @@ def test_process_document_complete_keeps_status_for_multimodal_only_content():
         "doc-complete",
         DocStatus.HANDLING,
     )
-    assert processor.events[2] == ("multimodal", "doc-complete", "source.pdf")
+    # Without a pipeline, multimodal processing is skipped
+    assert len(processor.events) == 2
 
 
-def test_insert_content_list_keeps_status_for_multimodal_only_content():
+def test_insert_content_list_skips_multimodal_without_pipeline():
     processor = DummyProcessor()
 
     asyncio.run(
@@ -213,4 +211,5 @@ def test_insert_content_list_keeps_status_for_multimodal_only_content():
         "doc-content-list",
         DocStatus.HANDLING,
     )
-    assert processor.events[2] == ("multimodal", "doc-content-list", "source.pdf")
+    # Without a pipeline, multimodal processing is skipped — no third event
+    assert len(processor.events) == 2

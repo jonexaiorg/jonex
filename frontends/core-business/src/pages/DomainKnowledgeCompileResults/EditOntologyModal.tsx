@@ -1,28 +1,28 @@
-import { useState, useEffect } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Modal, Button, Input, Select, message } from 'antd'
-import { SaveOutlined, PlusOutlined, CloseOutlined } from '@ant-design/icons'
+import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Modal, Button, Input, Select, message } from 'antd';
+import { SaveOutlined, PlusOutlined, CloseOutlined } from '@ant-design/icons';
 
 interface EditOntologyModalProps {
-  open: boolean
-  mode?: 'create' | 'edit'
+  open: boolean;
+  mode?: 'create' | 'edit';
   /** 编辑模式时传入实例数据 */
   record: {
-    name: string
-    type: string
-    aliases?: string[]
-    description?: string
-    attributes?: Record<string, unknown> | null
-  } | null
-  ontologyOptions: Array<{ value: string; label: string }>
+    name: string;
+    type: string;
+    aliases?: string[];
+    description?: string;
+    attributes?: Record<string, unknown> | null;
+  } | null;
+  ontologyOptions: Array<{ value: string; label: string }>;
   onSave: (data: {
-    name: string
-    type: string
-    aliases?: string[]
-    description?: string
-    attributes?: Record<string, unknown>
-  }) => void
-  onCancel: () => void
+    name: string;
+    type: string;
+    aliases?: string[];
+    description?: string;
+    attributes?: Record<string, unknown>;
+  }) => void;
+  onCancel: () => void;
 }
 
 export default function EditOntologyModal({
@@ -33,118 +33,118 @@ export default function EditOntologyModal({
   onSave,
   onCancel,
 }: EditOntologyModalProps) {
-  const { t } = useTranslation()
-  const isCreate = mode === 'create'
+  const { t } = useTranslation();
+  const isCreate = mode === 'create';
 
-  const [entityType, setEntityType] = useState('')
-  const [name, setName] = useState('')
-  const [aliases, setAliases] = useState<string[]>([])
-  const [aliasInput, setAliasInput] = useState('')
-  const [desc, setDesc] = useState('')
-  const [attributes, setAttributes] = useState<Record<string, string>>({})
-  const [attrKey, setAttrKey] = useState('')
-  const [attrValue, setAttrValue] = useState('')
+  const [entityType, setEntityType] = useState('');
+  const [name, setName] = useState('');
+  const [aliases, setAliases] = useState<string[]>([]);
+  const [aliasInput, setAliasInput] = useState('');
+  const [desc, setDesc] = useState('');
+  const [attributes, setAttributes] = useState<Record<string, string>>({});
+  const [attrKey, setAttrKey] = useState('');
+  const [attrValue, setAttrValue] = useState('');
 
   useEffect(() => {
     if (open) {
       if (isCreate) {
-        setEntityType('')
-        setName('')
-        setAliases([])
-        setDesc('')
-        setAttributes({})
+        setEntityType('');
+        setName('');
+        setAliases([]);
+        setDesc('');
+        setAttributes({});
       } else if (record) {
-        setEntityType(record.type)
-        setName(record.name)
-        setAliases(record.aliases ?? [])
-        setDesc(record.description ?? '')
+        setEntityType(record.type);
+        setName(record.name);
+        setAliases(record.aliases ?? []);
+        setDesc(record.description ?? '');
         setAttributes(
           record.attributes
             ? Object.fromEntries(
-                Object.entries(record.attributes).map(([k, v]) => [
-                  k,
-                  typeof v === 'string' ? v : JSON.stringify(v),
-                ]),
+                Object.entries(record.attributes).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]),
               )
             : {},
-        )
+        );
       }
-      setAliasInput('')
-      setAttrKey('')
-      setAttrValue('')
+      setAliasInput('');
+      setAttrKey('');
+      setAttrValue('');
     }
-  }, [open, record, isCreate])
+  }, [open, record, isCreate]);
 
   const resetForm = () => {
-    setEntityType('')
-    setName('')
-    setAliases([])
-    setAliasInput('')
-    setDesc('')
-    setAttributes({})
-    setAttrKey('')
-    setAttrValue('')
-  }
+    setEntityType('');
+    setName('');
+    setAliases([]);
+    setAliasInput('');
+    setDesc('');
+    setAttributes({});
+    setAttrKey('');
+    setAttrValue('');
+  };
 
   const handleSave = () => {
-    if (!name.trim()) { message.warning(t('common.nameRequired')); return }
-    if (!entityType) { message.warning(t('common.required')); return }
+    if (!name.trim()) {
+      message.warning(t('common.nameRequired'));
+      return;
+    }
+    if (!entityType) {
+      message.warning(t('common.required'));
+      return;
+    }
 
     const payload = {
       name: name.trim(),
       type: entityType,
       aliases: aliases.length > 0 ? aliases : undefined,
       description: desc.trim() || undefined,
-      attributes: Object.keys(attributes).length > 0
-        ? Object.fromEntries(
-            Object.entries(attributes).filter(([, v]) => v !== ''),
-          )
-        : undefined,
-    }
+      attributes:
+        Object.keys(attributes).length > 0
+          ? Object.fromEntries(Object.entries(attributes).filter(([, v]) => v !== ''))
+          : undefined,
+    };
 
-    onSave(payload)
-    resetForm()
-  }
+    onSave(payload);
+    resetForm();
+  };
 
   const handleCancel = () => {
-    resetForm()
-    onCancel()
-  }
+    resetForm();
+    onCancel();
+  };
 
   const addAlias = () => {
-    const val = aliasInput.trim()
+    const val = aliasInput.trim();
     if (val && !aliases.includes(val)) {
-      setAliases([...aliases, val])
+      setAliases([...aliases, val]);
     }
-    setAliasInput('')
-  }
+    setAliasInput('');
+  };
 
   const removeAlias = (alias: string) => {
-    setAliases(aliases.filter((a) => a !== alias))
-  }
+    setAliases(aliases.filter((a) => a !== alias));
+  };
 
   const addAttributeItem = () => {
-    const key = attrKey.trim()
+    const key = attrKey.trim();
     if (key && !(key in attributes)) {
-      setAttributes({ ...attributes, [key]: attrValue })
+      setAttributes({ ...attributes, [key]: attrValue });
     }
-    setAttrKey('')
-    setAttrValue('')
-  }
+    setAttrKey('');
+    setAttrValue('');
+  };
 
   const removeAttributeItem = (key: string) => {
-    const next = { ...attributes }
-    delete next[key]
-    setAttributes(next)
-  }
+    const next = { ...attributes };
+    delete next[key];
+    setAttributes(next);
+  };
 
   return (
     <Modal
       title={
         <span style={{ fontSize: 18, fontWeight: 700, color: '#0b2b5c' }}>
-          {isCreate
-            ? t('compile.createInstance')
-            : t('compile.editInstance', { name: record?.name || '' })}
+          {isCreate ? t('compile.createInstance') : t('compile.editInstance', { name: record?.name || '' })}
         </span>
       }
       open={open}
@@ -156,17 +156,14 @@ export default function EditOntologyModal({
           <Button size="middle" onClick={handleCancel}>
             {t('common.cancel')}
           </Button>
-          <Button
-            type="primary"
-            size="middle"
-            icon={<SaveOutlined />}
-            onClick={handleSave}>
+          <Button type="primary" size="middle" icon={<SaveOutlined />} onClick={handleSave}>
             {t('common.save')}
           </Button>
         </div>
       }
       styles={{ body: { padding: '24px 24px 12px' } }}
-      closeIcon={<CloseOutlined style={{ color: '#64748b' }} />}>
+      closeIcon={<CloseOutlined style={{ color: '#64748b' }} />}
+    >
       {/* 实体类型 */}
       <div style={{ marginBottom: 16 }}>
         <div
@@ -175,9 +172,9 @@ export default function EditOntologyModal({
             fontWeight: 600,
             color: '#0b2b5c',
             marginBottom: 8,
-          }}>
-          {t('domainKnowledge.entityType')}{' '}
-          <span style={{ color: '#ef4444' }}>*</span>
+          }}
+        >
+          {t('domainKnowledge.entityType')} <span style={{ color: '#ef4444' }}>*</span>
         </div>
         <Select
           value={entityType || undefined}
@@ -197,9 +194,9 @@ export default function EditOntologyModal({
             fontWeight: 600,
             color: '#0b2b5c',
             marginBottom: 8,
-          }}>
-          {t('compile.instanceName')}{' '}
-          <span style={{ color: '#ef4444' }}>*</span>
+          }}
+        >
+          {t('compile.instanceName')} <span style={{ color: '#ef4444' }}>*</span>
         </div>
         <Input
           value={name}
@@ -217,7 +214,8 @@ export default function EditOntologyModal({
             fontWeight: 600,
             color: '#0b2b5c',
             marginBottom: 8,
-          }}>
+          }}
+        >
           {t('domainKnowledge.alias')}
         </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -226,8 +224,8 @@ export default function EditOntologyModal({
             value={aliasInput}
             onChange={(e) => setAliasInput(e.target.value)}
             onPressEnter={(e) => {
-              e.preventDefault()
-              addAlias()
+              e.preventDefault();
+              addAlias();
             }}
             style={{ flex: 1 }}
             size="middle"
@@ -248,12 +246,10 @@ export default function EditOntologyModal({
                   background: '#eff6ff',
                   color: '#3b82f6',
                   fontSize: 12,
-                }}>
+                }}
+              >
                 {alias}
-                <CloseOutlined
-                  style={{ fontSize: 10, cursor: 'pointer' }}
-                  onClick={() => removeAlias(alias)}
-                />
+                <CloseOutlined style={{ fontSize: 10, cursor: 'pointer' }} onClick={() => removeAlias(alias)} />
               </span>
             ))}
           </div>
@@ -268,7 +264,8 @@ export default function EditOntologyModal({
             fontWeight: 600,
             color: '#0b2b5c',
             marginBottom: 8,
-          }}>
+          }}
+        >
           {t('common.description')}
         </div>
         <Input.TextArea
@@ -287,7 +284,8 @@ export default function EditOntologyModal({
             fontWeight: 600,
             color: '#0b2b5c',
             marginBottom: 8,
-          }}>
+          }}
+        >
           {t('compile.customAttributes')}
         </div>
         <div
@@ -296,7 +294,8 @@ export default function EditOntologyModal({
             borderRadius: 12,
             padding: 16,
             border: '1px solid #eef2f6',
-          }}>
+          }}
+        >
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <Input
               placeholder={t('compile.attrKeyPlaceholder')}
@@ -310,8 +309,8 @@ export default function EditOntologyModal({
               value={attrValue}
               onChange={(e) => setAttrValue(e.target.value)}
               onPressEnter={(e) => {
-                e.preventDefault()
-                addAttributeItem()
+                e.preventDefault();
+                addAttributeItem();
               }}
               style={{ flex: 1 }}
               size="middle"
@@ -332,16 +331,16 @@ export default function EditOntologyModal({
                     background: '#fff',
                     border: '1px solid #e2e8f0',
                     fontSize: 13,
-                  }}>
-                  <span style={{ fontWeight: 500, color: '#0b2b5c' }}>
-                    {k}
-                  </span>
+                  }}
+                >
+                  <span style={{ fontWeight: 500, color: '#0b2b5c' }}>{k}</span>
                   <span
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       gap: 8,
-                    }}>
+                    }}
+                  >
                     <span style={{ color: '#64748b' }}>{v}</span>
                     <CloseOutlined
                       style={{
@@ -359,5 +358,5 @@ export default function EditOntologyModal({
         </div>
       </div>
     </Modal>
-  )
+  );
 }

@@ -1,41 +1,246 @@
-import React from 'react'
-import { Input, Button, Table, Tag, Select } from 'antd'
-import { SearchOutlined, PlusOutlined } from '@ant-design/icons'
-
-const users = [
-  { username: 'zhangmy', name: '张明远', email: 'zhangmy@jonex.com', role: '系统管理员', tenant: '--', status: '启用', lastLogin: '2026-05-22 09:15' },
-  { username: 'lim', name: '李明', email: 'lim@fintech.com', role: '领域服务管理员', tenant: '金融科技', status: '启用', lastLogin: '2026-05-21 16:30' },
-  { username: 'wangf', name: '王芳', email: 'wangf@med.com', role: '领域服务管理员', tenant: '医疗健康', status: '启用', lastLogin: '2026-05-21 14:20' },
-  { username: 'zhaoq', name: '赵强', email: 'zhaoq@smartmfg.com', role: '知识编辑者', tenant: '智造科技', status: '启用', lastLogin: '2026-05-20 11:45' },
-  { username: 'sunl', name: '孙丽', email: 'sunl@edu.com', role: '知识编辑者', tenant: '教育投资', status: '已停用', lastLogin: '2026-05-15 09:00' },
-  { username: 'zhoul', name: '周磊', email: 'zhoul@law.com', role: '领域服务管理员', tenant: '法律咨询', status: '启用', lastLogin: '2026-05-22 08:30' },
-  { username: 'chenwei', name: '陈伟', email: 'chenw@fintech.com', role: '观察者', tenant: '金融科技', status: '启用', lastLogin: '2026-05-19 10:00' },
-  { username: 'liuyan', name: '刘艳', email: 'liuy@med.com', role: '观察者', tenant: '医疗健康', status: '已停用', lastLogin: '2026-05-10 15:20' },
-]
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Input, Button, Table, Tag, Select, Spin, Result } from 'antd';
+import { SearchOutlined, PlusOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import { listAllUsers, type UserItem } from '../../api/users';
+import { listTenants, getTenantUserCounts, type TenantItem } from '../../api/tenants';
+import { tenantDisplay } from '../../utils/tenantDisplay';
+import UserFormModal, { type UserFormModalHandle } from './UserFormModal';
+import ToggleStatusModal, { type ToggleStatusModalHandle } from './ToggleStatusModal';
+import DeleteConfirmModal, { type DeleteConfirmModalHandle } from './DeleteConfirmModal';
+import './index.css';
 
 export default function UserManagement() {
+  const { t } = useTranslation();
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [tenants, setTenants] = useState<(TenantItem & { userCount: number })[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('');
+  const [activeTenant, setActiveTenant] = useState('all');
+
+  const formModalRef = useRef<UserFormModalHandle>(null);
+  const toggleStatusModalRef = useRef<ToggleStatusModalHandle>(null);
+  const deleteConfirmModalRef = useRef<DeleteConfirmModalHandle>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [ur, tr, counts] = await Promise.all([listAllUsers(), listTenants(1, 100), getTenantUserCounts()]);
+      setUsers(ur.items);
+      setTenants(tr.items.map((t) => ({ ...t, userCount: counts[t.id] || 0 })));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : t('common.loadFailed'));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filtered = users.filter((u) => {
+    if (activeTenant !== 'all' && u.tenant_id !== activeTenant) return false;
+    if (roleFilter && u.role !== roleFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!u.username.includes(q) && !(u.display_name || '').includes(q) && !(u.email || '').includes(q)) return false;
+    }
+    return true;
+  });
+
+  const openCreate = () => formModalRef.current?.open();
+  const openEdit = (u: UserItem) => formModalRef.current?.open(u);
+
+  const displayName = (user: UserItem) => {
+    const builtIns: Record<string, { raw: string; key: string }> = {
+      'tenant_jonex_demo|admin': {
+        raw: '系统管理员',
+        key: 'userManagement.builtInUsers.systemAdmin',
+      },
+      'tenant_jonex_demo|multi_same_pass': {
+        raw: '同名同密用户 - 演示租户',
+        key: 'userManagement.builtInUsers.multiSameDemo',
+      },
+      'tenant_jonex_alpha|multi_same_pass': {
+        raw: '同名同密用户 - Alpha 租户',
+        key: 'userManagement.builtInUsers.multiSameAlpha',
+      },
+      'tenant_jonex_demo|multi_one_match': {
+        raw: '单租户密码匹配用户 - 演示租户',
+        key: 'userManagement.builtInUsers.oneMatchDemo',
+      },
+      'tenant_jonex_alpha|multi_one_match': {
+        raw: '单租户密码匹配用户 - Alpha 租户',
+        key: 'userManagement.builtInUsers.oneMatchAlpha',
+      },
+      'tenant_jonex_beta|tenant_header_user': {
+        raw: '指定租户登录测试用户 - Beta 租户',
+        key: 'userManagement.builtInUsers.tenantHeaderBeta',
+      },
+    };
+    const builtIn = builtIns[`${user.tenant_id}|${user.username}`];
+    return builtIn && user.display_name === builtIn.raw ? t(builtIn.key) : user.display_name;
+  };
+
+  const roleLabel = (v: string) => {
+    if (v === 'admin') return t('auth.systemAdmin');
+    if (v === 'user') return t('userManagement.roleUser');
+    return v;
+  };
+
+  const statusLabel = (v: number) => (v === 1 ? t('status.enabled') : t('status.disabled'));
+  const statusColor = (v: number) => (v === 1 ? 'success' : 'error');
+
   const columns = [
-    { title: '用户名', dataIndex: 'username', key: 'username', render: (v: string) => <a className="yx-table-action">{v}</a> },
-    { title: '姓名', dataIndex: 'name', key: 'name' },
-    { title: '邮箱', dataIndex: 'email', key: 'email' },
-    { title: '角色', dataIndex: 'role', key: 'role' },
-    { title: '所属租户', dataIndex: 'tenant', key: 'tenant' },
-    { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: (v: string) => <Tag color={v === '启用' ? 'success' : 'error'}>{v}</Tag> },
-    { title: '最后登录', dataIndex: 'lastLogin', key: 'lastLogin', width: 150 },
-    { title: '操作', key: 'actions', width: 140, render: () => <span><a className="yx-table-action">编辑</a><a className="yx-table-action" style={{ marginLeft: 8 }}>重置密码</a></span> },
-  ]
+    { title: t('userManagement.username'), dataIndex: 'username', key: 'username', width: 120 },
+    {
+      title: t('userManagement.displayName'),
+      dataIndex: 'display_name',
+      key: 'display_name',
+      width: 160,
+      render: (_: string | null, user: UserItem) => displayName(user),
+    },
+    { title: t('userManagement.email'), dataIndex: 'email', key: 'email' },
+    {
+      title: t('userManagement.role'),
+      dataIndex: 'role',
+      key: 'role',
+      width: 120,
+      render: (v: string) => roleLabel(v),
+    },
+    {
+      title: t('common.status'),
+      dataIndex: 'status',
+      key: 'status',
+      width: 70,
+      render: (v: number) => <Tag color={statusColor(v)}>{statusLabel(v)}</Tag>,
+    },
+    {
+      title: t('common.actions'),
+      key: 'actions',
+      width: 200,
+      render: (_: unknown, r: UserItem) => (
+        <span>
+          <a className="yx-table-action" onClick={() => openEdit(r)}>
+            {t('common.edit')}
+          </a>
+          <a
+            className="yx-table-action"
+            style={{ marginLeft: 8 }}
+            onClick={() => toggleStatusModalRef.current?.open(r)}
+          >
+            {r.status === 1 ? t('userManagement.disable') : t('userManagement.enable')}
+          </a>
+          <a
+            className="yx-table-action"
+            style={{ marginLeft: 8, color: '#dc2626' }}
+            onClick={() => deleteConfirmModalRef.current?.open(r)}
+          >
+            {t('common.delete')}
+          </a>
+        </span>
+      ),
+    },
+  ];
+
+  if (loading)
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', minHeight: 300, alignItems: 'center' }}>
+        <Spin size="large" />
+      </div>
+    );
+  if (error)
+    return (
+      <Result
+        status="error"
+        title={t('common.loadFailed')}
+        subTitle={error}
+        extra={
+          <Button type="primary" onClick={load}>
+            {t('common.retry')}
+          </Button>
+        }
+      />
+    );
 
   return (
     <div>
-      <div className="yx-page-title"><h1>用户管理</h1></div>
-      <div className="yx-card">
-        <div className="yx-toolbar">
-          <Input prefix={<SearchOutlined />} placeholder="搜索用户..." style={{ width: 240 }} />
-          <Select defaultValue="全部角色" style={{ width: 140 }} options={['全部角色', '系统管理员', '领域服务管理员', '知识编辑者'].map(s => ({ value: s, label: s }))} />
-          <Button type="primary" icon={<PlusOutlined />}>新建用户</Button>
-        </div>
-        <Table columns={columns} dataSource={users} rowKey="username" pagination={{ total: 16, pageSize: 10 }} size="middle" />
+      <div className="yx-page-title">
+        <h1>{t('userManagement.title')}</h1>
       </div>
+
+      <div className="user-layout">
+        <div className="tenant-panel">
+          <div className="tenant-panel-header">{t('userManagement.tenantList')}</div>
+          <div className="tenant-list">
+            <div
+              className={`tenant-item${activeTenant === 'all' ? ' active' : ''}`}
+              onClick={() => setActiveTenant('all')}
+            >
+              <span>{t('userManagement.allTenants')}</span>
+              <span className="tenant-count">{users.length}</span>
+            </div>
+            {tenants.map((tenant) => (
+              <div
+                key={tenant.id}
+                className={`tenant-item${activeTenant === tenant.id ? ' active' : ''}`}
+                onClick={() => setActiveTenant(tenant.id)}
+              >
+                <span>{tenantDisplay(tenant, t).name}</span>
+                <span className="tenant-count">{tenant.userCount}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="user-main">
+          <div className="yx-card">
+            <div className="yx-toolbar">
+              <Input
+                prefix={<SearchOutlined />}
+                placeholder={t('userManagement.searchUsers')}
+                style={{ width: 200 }}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                allowClear
+              />
+              <Select
+                placeholder={t('userManagement.allRoles')}
+                style={{ width: 140 }}
+                value={roleFilter || undefined}
+                onChange={(v) => setRoleFilter(v || '')}
+                allowClear
+                options={[
+                  { label: t('auth.systemAdmin'), value: 'admin' },
+                  { label: t('userManagement.roleUser'), value: 'user' },
+                ]}
+              />
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                {t('userManagement.createUser')}
+              </Button>
+            </div>
+            <Table
+              columns={columns}
+              dataSource={filtered}
+              rowKey="id"
+              pagination={{
+                total: filtered.length,
+                pageSize: 10,
+                showTotal: (total) => t('common.totalPage', { total }),
+              }}
+              size="middle"
+            />
+          </div>
+        </div>
+      </div>
+
+      <UserFormModal ref={formModalRef} tenants={tenants} onSaved={load} />
+      <ToggleStatusModal ref={toggleStatusModalRef} getUserDisplayName={displayName} onSaved={load} />
+      <DeleteConfirmModal ref={deleteConfirmModalRef} getUserDisplayName={displayName} onSaved={load} />
     </div>
-  )
+  );
 }

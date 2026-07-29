@@ -1,8 +1,8 @@
-import { defineConfig } from 'vitest/config'
-import path from 'path'
+import { defineConfig } from 'vitest/config';
+import path from 'path';
 
-const __dirname = path.dirname(new URL(import.meta.url).pathname)
-const pathSrc = path.resolve(__dirname, 'src')
+const __dirname = path.dirname(new URL(import.meta.url).pathname);
+const pathSrc = path.resolve(__dirname, 'src');
 
 export default defineConfig({
   root: __dirname,
@@ -23,4 +23,4 @@ export default defineConfig({
       },
     },
   },
-})
+});

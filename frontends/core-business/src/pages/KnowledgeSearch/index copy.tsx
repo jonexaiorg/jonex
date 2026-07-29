@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Card, Empty, Modal, Spin, message } from 'antd'
-import { useTranslation } from 'react-i18next'
-import { observer } from 'mobx-react-lite'
-import { useStore } from '@/store'
-import ReactMarkdown from 'react-markdown'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Card, Empty, Modal, Spin, message } from 'antd';
+import { useTranslation } from 'react-i18next';
+import { observer } from 'mobx-react-lite';
+import { useStore } from '@/store';
+import ReactMarkdown from 'react-markdown';
 import {
   SearchOutlined,
   ArrowRightOutlined,
@@ -18,7 +18,7 @@ import {
   CloseCircleOutlined,
   CaretDownOutlined,
   CaretRightOutlined,
-} from '@ant-design/icons'
+} from '@ant-design/icons';
 import {
   getKnowledgeSearchOverview,
   getKnowledgeSearchDomains,
@@ -27,8 +27,8 @@ import {
   deleteKnowledgeSearchHistory,
   clearKnowledgeSearchHistory,
   streamKnowledgeSearch,
-} from '@/api/knowledgeSearch'
-import { useDocumentViewer } from '@/components/DocumentViewer'
+} from '@/api/knowledgeSearch';
+import { useDocumentViewer } from '@/components/DocumentViewer';
 import type {
   KnowledgeSearchOverview,
   KnowledgeSearchDomain,
@@ -38,20 +38,32 @@ import type {
   KnowledgeReferenceLocation,
   ReasoningTrace,
   ReasoningStep,
-} from '@/types/knowledgeSearch'
+} from '@/types/knowledgeSearch';
 
 const STAT_CARD_CONFIG: {
-  key: keyof KnowledgeSearchOverview
-  labelKey: string
-  Icon: React.ComponentType<any>
-  bg: string
-  color: string
+  key: keyof KnowledgeSearchOverview;
+  labelKey: string;
+  Icon: React.ComponentType<any>;
+  bg: string;
+  color: string;
 }[] = [
-  { key: 'totalDomains', labelKey: 'knowledgeSearch.knowledgeDomain', Icon: BlockOutlined, bg: '#eff6ff', color: '#3b82f6' },
-  { key: 'totalEntities', labelKey: 'knowledgeSearch.knowledgeEntity', Icon: NodeIndexOutlined, bg: '#ecfdf5', color: '#10b981' },
+  {
+    key: 'totalDomains',
+    labelKey: 'knowledgeSearch.knowledgeDomain',
+    Icon: BlockOutlined,
+    bg: '#eff6ff',
+    color: '#3b82f6',
+  },
+  {
+    key: 'totalEntities',
+    labelKey: 'knowledgeSearch.knowledgeEntity',
+    Icon: NodeIndexOutlined,
+    bg: '#ecfdf5',
+    color: '#10b981',
+  },
   { key: 'sourceFiles', labelKey: 'common.sourceFiles', Icon: FileTextOutlined, bg: '#f5f3ff', color: '#8b5cf6' },
   { key: 'dataSources', labelKey: 'common.dataSources', Icon: DatabaseOutlined, bg: '#fff7ed', color: '#f97316' },
-]
+];
 
 const EMPTY_OVERVIEW: KnowledgeSearchOverview = {
   totalDocuments: 0,
@@ -62,41 +74,41 @@ const EMPTY_OVERVIEW: KnowledgeSearchOverview = {
   totalDomains: 0,
   sourceFiles: 0,
   dataSources: 0,
-}
+};
 
 interface SearchSession {
-  id: string
-  query: string
-  domainId: string
-  rawAnswer: string
-  status: KnowledgeSearchRunStatus
-  errorMessage: string
-  source?: string
-  references?: KnowledgeReference[]
-  reasoning?: ReasoningTrace | null
+  id: string;
+  query: string;
+  domainId: string;
+  rawAnswer: string;
+  status: KnowledgeSearchRunStatus;
+  errorMessage: string;
+  source?: string;
+  references?: KnowledgeReference[];
+  reasoning?: ReasoningTrace | null;
 }
 
 function parseThink(raw: string): { think: string; answer: string; thinking: boolean } {
-  const start = raw.indexOf('<think>')
-  if (start < 0) return { think: '', answer: raw.trim(), thinking: false }
+  const start = raw.indexOf('<think>');
+  if (start < 0) return { think: '', answer: raw.trim(), thinking: false };
 
-  const before = raw.slice(0, start)
-  const afterStart = raw.slice(start + '<think>'.length)
-  const end = afterStart.indexOf('</think>')
+  const before = raw.slice(0, start);
+  const afterStart = raw.slice(start + '<think>'.length);
+  const end = afterStart.indexOf('</think>');
 
   if (end < 0) {
-    return { think: afterStart.trim(), answer: before.trim(), thinking: true }
+    return { think: afterStart.trim(), answer: before.trim(), thinking: true };
   }
 
-  const think = afterStart.slice(0, end).trim()
-  const answer = `${before}${afterStart.slice(end + '</think>'.length)}`.trim()
-  return { think, answer, thinking: false }
+  const think = afterStart.slice(0, end).trim();
+  const answer = `${before}${afterStart.slice(end + '</think>'.length)}`.trim();
+  return { think, answer, thinking: false };
 }
 
 function parseReferences(text: string): { refs: string[]; body: string } {
-  const refs: string[] = []
-  const normalized = text.replace(/\r\n/g, '\n')
-  const sourcePathPattern = /(?:\/app\/inputs\/|\/app\/outputs\/|\/tmp\/rag_output\/)/
+  const refs: string[] = [];
+  const normalized = text.replace(/\r\n/g, '\n');
+  const sourcePathPattern = /(?:\/app\/inputs\/|\/app\/outputs\/|\/tmp\/rag_output\/)/;
 
   const normalizeReferenceLine = (line: string) =>
     line
@@ -104,108 +116,112 @@ function parseReferences(text: string): { refs: string[]; body: string } {
       .replace(/^\s*[-*+]\s*/, '')
       .replace(/^\s*\d+[.)]\s*/, '')
       .replace(/^\s*\[\d+\]\s*/, '')
-      .trim()
+      .trim();
 
   const collectRef = (line: string) => {
-    const cleaned = normalizeReferenceLine(line)
-    if (cleaned) refs.push(cleaned)
-  }
+    const cleaned = normalizeReferenceLine(line);
+    if (cleaned) refs.push(cleaned);
+  };
 
   const isReferenceHeading = (line: string) =>
-    /^\s{0,3}(?:#{1,6}\s*)?(?:References|参考文献|原文引用|引用来源)\s*[:：]?\s*/i.test(line)
-  const hasReferencePayload = (line: string) =>
-    sourcePathPattern.test(normalizeReferenceLine(line))
-  const isSourcePathLine = (line: string) =>
-    sourcePathPattern.test(normalizeReferenceLine(line))
+    /^\s{0,3}(?:#{1,6}\s*)?(?:References|参考文献|原文引用|引用来源)\s*[:：]?\s*/i.test(line);
+  const hasReferencePayload = (line: string) => sourcePathPattern.test(normalizeReferenceLine(line));
+  const isSourcePathLine = (line: string) => sourcePathPattern.test(normalizeReferenceLine(line));
 
-  const bodyLines: string[] = []
-  let inReferenceBlock = false
+  const bodyLines: string[] = [];
+  let inReferenceBlock = false;
 
   normalized.split('\n').forEach((line) => {
     if (isReferenceHeading(line)) {
-      inReferenceBlock = true
-      if (hasReferencePayload(line)) collectRef(line)
-      return
+      inReferenceBlock = true;
+      if (hasReferencePayload(line)) collectRef(line);
+      return;
     }
 
     if (inReferenceBlock) {
-      if (line.trim()) collectRef(line)
-      return
+      if (line.trim()) collectRef(line);
+      return;
     }
 
     if (isSourcePathLine(line)) {
-      collectRef(line)
-      return
+      collectRef(line);
+      return;
     }
 
-    bodyLines.push(line)
-  })
+    bodyLines.push(line);
+  });
 
   const body = bodyLines
     .join('\n')
-    .replace(/^\s*(?:[-*+]\s*)?(?:\d+[.)]\s*)?(?:\[\d+\]\s*)?(?:\/app\/inputs\/|\/app\/outputs\/|\/tmp\/rag_output\/)[^\n]*/gm, (line) => {
-      collectRef(line)
-      return ''
-    })
-    .replace(/^\s*(?:[-*+]\s*)?(?:\d+[.)]\s*)?(?:\[\d+\]\s*)?(?:References|参考文献|原文引用|引用来源)\s*[:：]\s*(?:\/app\/inputs\/|\/app\/outputs\/|\/tmp\/rag_output\/)[^\n]*/gim, (line) => {
-      collectRef(line)
-      return ''
-    })
-    .trim()
+    .replace(
+      /^\s*(?:[-*+]\s*)?(?:\d+[.)]\s*)?(?:\[\d+\]\s*)?(?:\/app\/inputs\/|\/app\/outputs\/|\/tmp\/rag_output\/)[^\n]*/gm,
+      (line) => {
+        collectRef(line);
+        return '';
+      },
+    )
+    .replace(
+      /^\s*(?:[-*+]\s*)?(?:\d+[.)]\s*)?(?:\[\d+\]\s*)?(?:References|参考文献|原文引用|引用来源)\s*[:：]\s*(?:\/app\/inputs\/|\/app\/outputs\/|\/tmp\/rag_output\/)[^\n]*/gim,
+      (line) => {
+        collectRef(line);
+        return '';
+      },
+    )
+    .trim();
 
-  return { refs: Array.from(new Set(refs)), body }
+  return { refs: Array.from(new Set(refs)), body };
 }
 
 function buildAnswerPreview(raw: string, maxLen = 100): string {
-  const { answer } = parseThink(raw)
-  const { body } = parseReferences(answer)
-  const cleaned = body.replace(/\s+/g, ' ').trim()
-  if (!cleaned) return ''
-  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) + '...' : cleaned
+  const { answer } = parseThink(raw);
+  const { body } = parseReferences(answer);
+  const cleaned = body.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) + '...' : cleaned;
 }
 
 function formatRelativeTime(isoStr: string, t: (key: string, opts?: any) => string): string {
-  const now = Date.now()
-  const then = new Date(isoStr).getTime()
-  const diffMs = now - then
-  const diffMin = Math.floor(diffMs / 60000)
-  if (diffMin < 1) return t('common.justNow')
-  if (diffMin < 60) return t('common.minutesAgo', { count: diffMin })
-  const diffHr = Math.floor(diffMin / 60)
-  if (diffHr < 24) return t('common.hoursAgo', { count: diffHr })
-  const diffDay = Math.floor(diffHr / 24)
-  if (diffDay === 1) return t('common.yesterday')
-  if (diffDay < 7) return t('common.daysAgo', { count: diffDay })
-  return isoStr.substring(0, 10)
+  const now = Date.now();
+  const then = new Date(isoStr).getTime();
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return t('common.justNow');
+  if (diffMin < 60) return t('common.minutesAgo', { count: diffMin });
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return t('common.hoursAgo', { count: diffHr });
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay === 1) return t('common.yesterday');
+  if (diffDay < 7) return t('common.daysAgo', { count: diffDay });
+  return isoStr.substring(0, 10);
 }
 
 function isSearchRunning(status?: KnowledgeSearchRunStatus): boolean {
-  return status === 'searching'
+  return status === 'searching';
 }
 
 function getSearchStatusLabel(status: KnowledgeSearchRunStatus, t: (key: string) => string): string {
   switch (status) {
     case 'searching':
-      return t('status.searching')
+      return t('status.searching');
     case 'done':
-      return t('status.completed')
+      return t('status.completed');
     case 'error':
-      return t('status.searchFailed')
+      return t('status.searchFailed');
     case 'stopped':
-      return t('status.stopped')
+      return t('status.stopped');
     case 'empty':
-      return t('status.noResults')
+      return t('status.noResults');
     default:
-      return t('status.pendingSearch')
+      return t('status.pendingSearch');
   }
 }
 
 function formatTimestamp(sec?: number | null): string {
-  if (sec == null || Number.isNaN(sec)) return ''
-  const s = Math.max(0, Math.floor(sec))
-  const m = Math.floor(s / 60)
-  const r = s % 60
-  return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
+  if (sec == null || Number.isNaN(sec)) return '';
+  const s = Math.max(0, Math.floor(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
 function getMediaLabel(type: string, t: (key: string) => string): string {
@@ -215,29 +231,29 @@ function getMediaLabel(type: string, t: (key: string) => string): string {
     audio: 'knowledgeSearch.mediaTypeAudio',
     video: 'knowledgeSearch.mediaTypeVideo',
     image: 'knowledgeSearch.mediaTypeImage',
-  }
-  return t(map[type] || 'knowledgeSearch.mediaTypeOther')
+  };
+  return t(map[type] || 'knowledgeSearch.mediaTypeOther');
 }
 
 function reasoningStatusMeta(status: string, t: (key: string) => string): { color: string; bg: string; label: string } {
   switch (status) {
     case 'done':
-      return { color: '#10b981', bg: '#ecfdf5', label: t('status.done') }
+      return { color: '#10b981', bg: '#ecfdf5', label: t('status.done') };
     case 'skipped':
-      return { color: '#94a3b8', bg: '#f1f5f9', label: t('status.skipped') }
+      return { color: '#94a3b8', bg: '#f1f5f9', label: t('status.skipped') };
     case 'failed':
-      return { color: '#ef4444', bg: '#fef2f2', label: t('status.failed') }
+      return { color: '#ef4444', bg: '#fef2f2', label: t('status.failed') };
     case 'running':
-      return { color: '#3b82f6', bg: '#eff6ff', label: t('status.running') }
+      return { color: '#3b82f6', bg: '#eff6ff', label: t('status.running') };
     default:
-      return { color: '#64748b', bg: '#f1f5f9', label: status }
+      return { color: '#64748b', bg: '#f1f5f9', label: status };
   }
 }
 
 /** 数值安全格式化（分数保留两位） */
 function fmtScore(v: unknown): string {
-  const n = typeof v === 'number' ? v : Number(v)
-  return Number.isFinite(n) ? n.toFixed(2) : String(v ?? '')
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n.toFixed(2) : String(v ?? '');
 }
 
 /** 推理详情小标签 */
@@ -245,16 +261,16 @@ function ReasoningChip({
   children,
   tone = 'default',
 }: {
-  children: React.ReactNode
-  tone?: 'default' | 'primary' | 'success' | 'danger'
+  children: React.ReactNode;
+  tone?: 'default' | 'primary' | 'success' | 'danger';
 }) {
   const tones = {
     default: { bg: '#f1f5f9', color: '#64748b' },
     primary: { bg: '#f5f3ff', color: '#7c3aed' },
     success: { bg: '#ecfdf5', color: '#10b981' },
     danger: { bg: '#fef2f2', color: '#ef4444' },
-  } as const
-  const t = tones[tone]
+  } as const;
+  const t = tones[tone];
   return (
     <span
       style={{
@@ -268,13 +284,13 @@ function ReasoningChip({
     >
       {children}
     </span>
-  )
+  );
 }
 
 /** 按推理阶段渲染该步的结构化详情（命中实体 / 路由分数 / 邻域事实 / 多库结果等） */
 function renderStepDetail(step: ReasoningStep, t: (key: string, opts?: any) => string): React.ReactNode {
-  if (!step.detail) return null
-  const d = step.detail as Record<string, any>
+  if (!step.detail) return null;
+  const d = step.detail as Record<string, any>;
 
   const wrap = (children: React.ReactNode) => (
     <div
@@ -288,16 +304,20 @@ function renderStepDetail(step: ReasoningStep, t: (key: string, opts?: any) => s
     >
       {children}
     </div>
-  )
+  );
 
   switch (step.stage) {
     case 'ontology_match': {
-      const hits: any[] = Array.isArray(d.hits) ? d.hits : []
-      if (hits.length === 0) return null
+      const hits: any[] = Array.isArray(d.hits) ? d.hits : [];
+      if (hits.length === 0) return null;
       return wrap(
         <>
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>
-            {t('knowledgeSearch.hitEntities', { count: hits.length, total: d.total_hits ?? hits.length, kbCount: d.kb_count ?? '—' })}
+            {t('knowledgeSearch.hitEntities', {
+              count: hits.length,
+              total: d.total_hits ?? hits.length,
+              kbCount: d.kb_count ?? '—',
+            })}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {hits.map((h, idx) => (
@@ -321,12 +341,16 @@ function renderStepDetail(step: ReasoningStep, t: (key: string, opts?: any) => s
             ))}
           </div>
         </>,
-      )
+      );
     }
     case 'route_decision': {
-      const route = d.route
+      const route = d.route;
       const routeLabel =
-        route === 'ontology' ? t('knowledgeSearch.ontologyRoute') : route === 'rag' ? t('knowledgeSearch.ragRoute') : String(route ?? '—')
+        route === 'ontology'
+          ? t('knowledgeSearch.ontologyRoute')
+          : route === 'rag'
+            ? t('knowledgeSearch.ragRoute')
+            : String(route ?? '—');
       return wrap(
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           <ReasoningChip tone="primary">{t('knowledgeSearch.routeTo', { route: routeLabel })}</ReasoningChip>
@@ -341,7 +365,7 @@ function renderStepDetail(step: ReasoningStep, t: (key: string, opts?: any) => s
             </ReasoningChip>
           )}
         </div>,
-      )
+      );
     }
     case 'fact_lookup': {
       return wrap(
@@ -352,12 +376,12 @@ function renderStepDetail(step: ReasoningStep, t: (key: string, opts?: any) => s
           )}
           {d.kb_id && <ReasoningChip>{d.kb_id}</ReasoningChip>}
         </div>,
-      )
+      );
     }
     case 'rag_fallback': {
-      const ok: string[] = Array.isArray(d.kb_ok) ? d.kb_ok : []
-      const failed: string[] = Array.isArray(d.kb_failed) ? d.kb_failed : []
-      if (ok.length === 0 && failed.length === 0) return null
+      const ok: string[] = Array.isArray(d.kb_ok) ? d.kb_ok : [];
+      const failed: string[] = Array.isArray(d.kb_failed) ? d.kb_failed : [];
+      if (ok.length === 0 && failed.length === 0) return null;
       return wrap(
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {ok.length > 0 && (
@@ -381,52 +405,50 @@ function renderStepDetail(step: ReasoningStep, t: (key: string, opts?: any) => s
             </div>
           )}
         </div>,
-      )
+      );
     }
     default:
-      return null
+      return null;
   }
 }
 
-export default observer(function KnowledgeSearch() {
-  const { t } = useTranslation()
-  const { global } = useStore()
-  const [query, setQuery] = useState('')
-  const [selectedDomain, setSelectedDomain] = useState('all')
+const KnowledgeSearch = observer(function KnowledgeSearch() {
+  const { t } = useTranslation();
+  const { global } = useStore();
+  const [query, setQuery] = useState('');
+  const [selectedDomain, setSelectedDomain] = useState('all');
 
-  const [overview, setOverview] = useState<KnowledgeSearchOverview | null>(null)
-  const [domains, setDomains] = useState<KnowledgeSearchDomain[]>([])
-  const [history, setHistory] = useState<KnowledgeSearchHistoryItem[]>([])
+  const [overview, setOverview] = useState<KnowledgeSearchOverview | null>(null);
+  const [domains, setDomains] = useState<KnowledgeSearchDomain[]>([]);
+  const [history, setHistory] = useState<KnowledgeSearchHistoryItem[]>([]);
 
-  const [activeSearch, setActiveSearch] = useState<SearchSession | null>(null)
-  const [pageLoading, setPageLoading] = useState(true)
-  const [pageError, setPageError] = useState('')
-  const [activeHistoryIndex, setActiveHistoryIndex] = useState<number | null>(null)
-  const [thinkExpandedMap, setThinkExpandedMap] = useState<Record<string, boolean>>({})
+  const [activeSearch, setActiveSearch] = useState<SearchSession | null>(null);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [pageError, setPageError] = useState('');
+  const [activeHistoryIndex, setActiveHistoryIndex] = useState<number | null>(null);
+  const [thinkExpandedMap, setThinkExpandedMap] = useState<Record<string, boolean>>({});
 
-  const abortRef = useRef<AbortController | null>(null)
-  const reasoningRef = useRef<Record<string, unknown> | null>(null)
-  const isSearching = isSearchRunning(activeSearch?.status)
+  const abortRef = useRef<AbortController | null>(null);
+  const reasoningRef = useRef<Record<string, unknown> | null>(null);
+  const isSearching = isSearchRunning(activeSearch?.status);
 
   // 按当前领域空间过滤服务候选（'all' 全领域项始终保留）
   const visibleDomains = useMemo(
     () => domains.filter((d) => d.id === 'all' || d.space_id === global.currentSpaceId),
     [domains, global.currentSpaceId],
-  )
+  );
 
   // 空间切换：若当前选中的服务不属于新空间，则回落到「全领域」
   useEffect(() => {
-    setSelectedDomain((prev) =>
-      prev === 'all' || visibleDomains.some((d) => d.id === prev) ? prev : 'all',
-    )
-  }, [visibleDomains])
+    setSelectedDomain((prev) => (prev === 'all' || visibleDomains.some((d) => d.id === prev) ? prev : 'all'));
+  }, [visibleDomains]);
 
   // 原文段/视频预览：统一文档查看器
-  const { openDocument, viewer } = useDocumentViewer()
+  const { openDocument, viewer } = useDocumentViewer();
   // 推理链面板展开态（按 session）
-  const [reasoningExpandedMap, setReasoningExpandedMap] = useState<Record<string, boolean>>({})
+  const [reasoningExpandedMap, setReasoningExpandedMap] = useState<Record<string, boolean>>({});
   // 关联原文面板展开态（按 session，默认折叠）
-  const [refsExpandedMap, setRefsExpandedMap] = useState<Record<string, boolean>>({})
+  const [refsExpandedMap, setRefsExpandedMap] = useState<Record<string, boolean>>({});
 
   // 查看原文：全部走统一弹层；视频/音频带时间锚点时定位到时间点
   const openReference = useCallback(
@@ -437,235 +459,234 @@ export default observer(function KnowledgeSearch() {
         mediaType: ref.media_type,
         timeStart: loc?.time_start ?? null,
         timeEnd: loc?.time_end ?? null,
-      })
+      });
     },
     [openDocument],
-  )
+  );
 
   // ── initial data load ──────────────────────────────────
   useEffect(() => {
-    let mounted = true
+    let mounted = true;
 
     async function loadInitialData() {
-      setPageLoading(true)
+      setPageLoading(true);
       try {
         const results = await Promise.allSettled([
           getKnowledgeSearchOverview(),
           getKnowledgeSearchDomains(),
           getKnowledgeSearchHistory(''),
-        ] as const)
+        ] as const);
 
-        if (!mounted) return
+        if (!mounted) return;
 
-        const failedLabels: string[] = []
-        const [overviewResult, domainResult, historyResult] = results
+        const failedLabels: string[] = [];
+        const [overviewResult, domainResult, historyResult] = results;
 
         if (overviewResult.status === 'fulfilled') {
-          setOverview(overviewResult.value)
+          setOverview(overviewResult.value);
         } else {
-          failedLabels.push(t('knowledgeSearch.overviewLabel'))
-          setOverview(EMPTY_OVERVIEW)
+          failedLabels.push(t('knowledgeSearch.overviewLabel'));
+          setOverview(EMPTY_OVERVIEW);
         }
 
         if (domainResult.status === 'fulfilled') {
-          setDomains(domainResult.value)
+          setDomains(domainResult.value);
         } else {
-          failedLabels.push(t('knowledgeSearch.domainListLabel'))
-          setDomains([])
+          failedLabels.push(t('knowledgeSearch.domainListLabel'));
+          setDomains([]);
         }
 
         if (historyResult.status === 'fulfilled') {
-          setHistory(historyResult.value)
+          setHistory(historyResult.value);
         } else {
-          failedLabels.push(t('knowledgeSearch.historyLabel'))
-          setHistory([])
+          failedLabels.push(t('knowledgeSearch.historyLabel'));
+          setHistory([]);
         }
 
-        setPageError('')
+        setPageError('');
         if (failedLabels.length) {
           message.warning({
             key: 'knowledge-search-initial-data-warning',
             content: t('knowledgeSearch.partialApiFailed', { labels: failedLabels.join('、') }),
-          })
+          });
         }
-        setPageLoading(false)
+        setPageLoading(false);
       } catch (error) {
-        if (!mounted) return
-        setPageError(error instanceof Error ? error.message : t('knowledgeSearch.loadFailed'))
-        setPageLoading(false)
+        if (!mounted) return;
+        setPageError(error instanceof Error ? error.message : t('knowledgeSearch.loadFailed'));
+        setPageLoading(false);
       }
     }
 
-    loadInitialData()
+    loadInitialData();
 
     return () => {
-      mounted = false
-      abortRef.current?.abort()
-    }
-  }, [])
+      mounted = false;
+      abortRef.current?.abort();
+    };
+  }, []);
 
   // ── search ─────────────────────────────────────────────
-  const handleSearch = useCallback(async (
-    nextQuery?: string,
-    options?: { keepHistoryActive?: boolean; domainId?: string },
-  ) => {
-    const trimmedQuery = (nextQuery ?? query).trim()
-    if (!trimmedQuery) return
+  const handleSearch = useCallback(
+    async (nextQuery?: string, options?: { keepHistoryActive?: boolean; domainId?: string }) => {
+      const trimmedQuery = (nextQuery ?? query).trim();
+      if (!trimmedQuery) return;
 
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
 
-    const sessionId = Date.now().toString()
-    const domainId = options?.domainId ?? selectedDomain
-    const kbIds = getSelectedKbIds(domainId)
-    if (kbIds.length === 0) {
-      message.warning(t('knowledgeSearch.noKbWarning'))
-      return
-    }
-    const searchParams = { query: trimmedQuery, mode: 'mix' as const, topK: 5, domainId, kbIds }
-    let streamError: Error | null = null
-    let accumulatedAnswer = ''
-    let finalReferences: KnowledgeReference[] = []
-    const startTime = Date.now()
+      const sessionId = Date.now().toString();
+      const domainId = options?.domainId ?? selectedDomain;
+      const kbIds = getSelectedKbIds(domainId);
+      if (kbIds.length === 0) {
+        message.warning(t('knowledgeSearch.noKbWarning'));
+        return;
+      }
+      const searchParams = { query: trimmedQuery, mode: 'mix' as const, topK: 5, domainId, kbIds };
+      let streamError: Error | null = null;
+      let accumulatedAnswer = '';
+      let finalReferences: KnowledgeReference[] = [];
+      const startTime = Date.now();
 
-    setQuery(trimmedQuery)
-    if (!options?.keepHistoryActive) setActiveHistoryIndex(null)
-    setActiveSearch({
-      id: sessionId,
-      query: trimmedQuery,
-      domainId,
-      rawAnswer: '',
-      status: 'searching',
-      errorMessage: '',
-    })
-
-    try {
-      await streamKnowledgeSearch(
-        searchParams,
-        {
-          onDelta: (delta, meta?: any) => {
-            accumulatedAnswer += delta
-            setThinkExpandedMap((prev) => {
-              if (!delta.includes('<think>')) return prev
-              return { ...prev, [sessionId]: true }
-            })
-            setActiveSearch((prev) =>
-              prev?.id === sessionId ? { ...prev, rawAnswer: prev.rawAnswer + delta, source: meta?.source || prev.source } : prev,
-            )
-          },
-          onError: (error) => {
-            streamError = error
-            setActiveSearch((prev) =>
-              prev?.id === sessionId
-                ? { ...prev, status: 'error' as const, errorMessage: error.message }
-                : prev,
-            )
-          },
-          onDone: (meta) => {
-            reasoningRef.current = (meta?.reasoning as any) ?? null
-            finalReferences = meta?.references ?? []
-            setActiveSearch((prev) =>
-              prev?.id === sessionId
-                ? { ...prev, references: meta?.references ?? [], reasoning: meta?.reasoning ?? null, source: meta?.source || prev.source }
-                : prev,
-            )
-          },
-        },
-        controller.signal,
-      )
-
-      if (streamError) throw streamError
-      if (controller.signal.aborted) return
-
-      const domainName = getDomainName(domainId)
-      const preview = buildAnswerPreview(accumulatedAnswer)
-      const refCount = finalReferences.length
-
-      setActiveSearch((prev) =>
-        prev?.id === sessionId
-          ? { ...prev, status: 'done' as const }
-          : prev,
-      )
-      setThinkExpandedMap((prev) => ({ ...prev, [sessionId]: false }))
-
-      saveKnowledgeSearchHistory('', {
+      setQuery(trimmedQuery);
+      if (!options?.keepHistoryActive) setActiveHistoryIndex(null);
+      setActiveSearch({
+        id: sessionId,
         query: trimmedQuery,
         domainId,
-        domain: domainName,
-        answerPreview: preview,
-        referenceCount: refCount,
-        resultCount: refCount,
-        status: 'done',
-        durationMs: Date.now() - startTime,
-      })
-        .then((item) => {
-          setHistory((prev) => [item, ...prev])
-          setActiveHistoryIndex(0)
+        rawAnswer: '',
+        status: 'searching',
+        errorMessage: '',
+      });
+
+      try {
+        await streamKnowledgeSearch(
+          searchParams,
+          {
+            onDelta: (delta, meta?: any) => {
+              accumulatedAnswer += delta;
+              setThinkExpandedMap((prev) => {
+                if (!delta.includes('<think>')) return prev;
+                return { ...prev, [sessionId]: true };
+              });
+              setActiveSearch((prev) =>
+                prev?.id === sessionId
+                  ? { ...prev, rawAnswer: prev.rawAnswer + delta, source: meta?.source || prev.source }
+                  : prev,
+              );
+            },
+            onError: (error) => {
+              streamError = error;
+              setActiveSearch((prev) =>
+                prev?.id === sessionId ? { ...prev, status: 'error' as const, errorMessage: error.message } : prev,
+              );
+            },
+            onDone: (meta) => {
+              reasoningRef.current = (meta?.reasoning as any) ?? null;
+              finalReferences = meta?.references ?? [];
+              setActiveSearch((prev) =>
+                prev?.id === sessionId
+                  ? {
+                      ...prev,
+                      references: meta?.references ?? [],
+                      reasoning: meta?.reasoning ?? null,
+                      source: meta?.source || prev.source,
+                    }
+                  : prev,
+              );
+            },
+          },
+          controller.signal,
+        );
+
+        if (streamError) throw streamError;
+        if (controller.signal.aborted) return;
+
+        const domainName = getDomainName(domainId);
+        const preview = buildAnswerPreview(accumulatedAnswer);
+        const refCount = finalReferences.length;
+
+        setActiveSearch((prev) => (prev?.id === sessionId ? { ...prev, status: 'done' as const } : prev));
+        setThinkExpandedMap((prev) => ({ ...prev, [sessionId]: false }));
+
+        saveKnowledgeSearchHistory('', {
+          query: trimmedQuery,
+          domainId,
+          domain: domainName,
+          answerPreview: preview,
+          referenceCount: refCount,
+          resultCount: refCount,
+          status: 'done',
+          durationMs: Date.now() - startTime,
         })
-        .catch(() => {
-          // save failed, silently ignore
-        })
-    } catch (error) {
-      if (controller.signal.aborted) return
-      const msg = error instanceof Error ? error.message : t('knowledgeSearch.searchFailed')
-      setActiveSearch((prev) =>
-        prev?.id === sessionId
-          ? { ...prev, status: 'error' as const, errorMessage: msg }
-          : prev,
-      )
-      setThinkExpandedMap((prev) => ({ ...prev, [sessionId]: false }))
-    } finally {
-      if (abortRef.current === controller) abortRef.current = null
-    }
-  }, [query, selectedDomain])
+          .then((item) => {
+            setHistory((prev) => [item, ...prev]);
+            setActiveHistoryIndex(0);
+          })
+          .catch(() => {
+            // save failed, silently ignore
+          });
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        const msg = error instanceof Error ? error.message : t('knowledgeSearch.searchFailed');
+        setActiveSearch((prev) =>
+          prev?.id === sessionId ? { ...prev, status: 'error' as const, errorMessage: msg } : prev,
+        );
+        setThinkExpandedMap((prev) => ({ ...prev, [sessionId]: false }));
+      } finally {
+        if (abortRef.current === controller) abortRef.current = null;
+      }
+    },
+    [query, selectedDomain],
+  );
 
   const handleHistoryClick = useCallback(
     (item: KnowledgeSearchHistoryItem, index: number) => {
-      setQuery(item.query)
-      setActiveHistoryIndex(index)
-      if (item.domainId) setSelectedDomain(item.domainId)
+      setQuery(item.query);
+      setActiveHistoryIndex(index);
+      if (item.domainId) setSelectedDomain(item.domainId);
       void handleSearch(item.query, {
         keepHistoryActive: true,
         domainId: item.domainId ?? selectedDomain,
-      })
+      });
     },
     [handleSearch, selectedDomain],
-  )
+  );
 
   const handleStopSearch = useCallback(() => {
-    abortRef.current?.abort()
-    abortRef.current = null
+    abortRef.current?.abort();
+    abortRef.current = null;
     setActiveSearch((prev) => {
-      if (!prev || !isSearchRunning(prev.status)) return prev
-      setThinkExpandedMap((map) => ({ ...map, [prev.id]: false }))
-      return { ...prev, status: 'stopped' as const }
-    })
-    message.info(t('knowledgeSearch.searchStopped'))
-  }, [])
+      if (!prev || !isSearchRunning(prev.status)) return prev;
+      setThinkExpandedMap((map) => ({ ...map, [prev.id]: false }));
+      return { ...prev, status: 'stopped' as const };
+    });
+    message.info(t('knowledgeSearch.searchStopped'));
+  }, []);
 
   const handleClearSearch = useCallback(() => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    setActiveSearch(null)
-    setActiveHistoryIndex(null)
-  }, [])
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setActiveSearch(null);
+    setActiveHistoryIndex(null);
+  }, []);
 
   const handleDomainChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedDomain(e.target.value)
-  }, [])
+    setSelectedDomain(e.target.value);
+  }, []);
 
   const handleDeleteHistory = useCallback(
     (id: string, index: number) => {
       deleteKnowledgeSearchHistory('', id)
         .then(() => {
-          setHistory((prev) => prev.filter((h) => h.id !== id))
-          if (activeHistoryIndex === index) setActiveHistoryIndex(null)
+          setHistory((prev) => prev.filter((h) => h.id !== id));
+          if (activeHistoryIndex === index) setActiveHistoryIndex(null);
         })
-        .catch(() => {})
+        .catch(() => {});
     },
     [activeHistoryIndex],
-  )
+  );
 
   const handleClearHistory = useCallback(() => {
     Modal.confirm({
@@ -677,40 +698,40 @@ export default observer(function KnowledgeSearch() {
       onOk: () => {
         clearKnowledgeSearchHistory('')
           .then(() => {
-            setHistory([])
-            setActiveHistoryIndex(null)
+            setHistory([]);
+            setActiveHistoryIndex(null);
           })
-          .catch(() => {})
+          .catch(() => {});
       },
-    })
-  }, [])
+    });
+  }, []);
 
   const getDomainName = useCallback(
     (domainId?: string) => domains.find((d) => d.id === domainId)?.name ?? t('knowledgeSearch.allDomain'),
     [domains],
-  )
+  );
 
   const getSelectedKbIds = useCallback(
     (domainId?: string): string[] => {
       if (!domainId || domainId === 'all') {
         // 全领域检索：仅聚合「当前空间」下服务的 kb_ids
-        const allIds = new Set<string>()
-        visibleDomains.forEach((d) => d.kb_ids?.forEach((kid) => allIds.add(kid)))
-        return Array.from(allIds)
+        const allIds = new Set<string>();
+        visibleDomains.forEach((d) => d.kb_ids?.forEach((kid) => allIds.add(kid)));
+        return Array.from(allIds);
       }
-      const domain = visibleDomains.find((d) => d.id === domainId)
-      return domain?.kb_ids ?? []
+      const domain = visibleDomains.find((d) => d.id === domainId);
+      return domain?.kb_ids ?? [];
     },
     [visibleDomains],
-  )
+  );
 
   // ── render helpers ─────────────────────────────────────
 
   const renderStats = () => (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 28 }}>
       {STAT_CARD_CONFIG.map((cfg) => {
-        const value = overview ? overview[cfg.key] : '-'
-        const displayValue = typeof value === 'number' ? value.toLocaleString() : value
+        const value = overview ? overview[cfg.key] : '-';
+        const displayValue = typeof value === 'number' ? value.toLocaleString() : value;
         return (
           <Card
             key={cfg.key}
@@ -742,10 +763,10 @@ export default observer(function KnowledgeSearch() {
               <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 2 }}>{t(cfg.labelKey)}</div>
             </div>
           </Card>
-        )
+        );
       })}
     </div>
-  )
+  );
 
   const renderSearchPanel = () => (
     <Card style={{ borderRadius: 16, marginBottom: 24 }} styles={{ body: { padding: '24px 28px' } }}>
@@ -808,8 +829,8 @@ export default observer(function KnowledgeSearch() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                e.preventDefault()
-                void handleSearch()
+                e.preventDefault();
+                void handleSearch();
               }
             }}
             style={{
@@ -845,25 +866,21 @@ export default observer(function KnowledgeSearch() {
         )}
       </div>
     </Card>
-  )
+  );
 
   const renderSessionCard = (session: SearchSession) => {
-    const parsedAnswer = parseThink(session.rawAnswer)
-    const { body: responseBody } = parseReferences(parsedAnswer.answer)
-    const running = isSearchRunning(session.status)
-    const hasThink = parsedAnswer.think.length > 0
-    const hasAnswerContent = responseBody.length > 0
-    const hasContent = hasThink || hasAnswerContent
-    const thinkExpanded = parsedAnswer.thinking || thinkExpandedMap[session.id] === true
-    const domainName = getDomainName(session.domainId)
-    const statusLabel = getSearchStatusLabel(session.status, t)
+    const parsedAnswer = parseThink(session.rawAnswer);
+    const { body: responseBody } = parseReferences(parsedAnswer.answer);
+    const running = isSearchRunning(session.status);
+    const hasThink = parsedAnswer.think.length > 0;
+    const hasAnswerContent = responseBody.length > 0;
+    const hasContent = hasThink || hasAnswerContent;
+    const thinkExpanded = parsedAnswer.thinking || thinkExpandedMap[session.id] === true;
+    const domainName = getDomainName(session.domainId);
+    const statusLabel = getSearchStatusLabel(session.status, t);
 
     return (
-      <Card
-        key={session.id}
-        style={{ borderRadius: 12, marginBottom: 20 }}
-        styles={{ body: { padding: '20px 24px' } }}
-      >
+      <Card key={session.id} style={{ borderRadius: 12, marginBottom: 20 }} styles={{ body: { padding: '20px 24px' } }}>
         <div
           style={{
             marginBottom: 16,
@@ -885,9 +902,7 @@ export default observer(function KnowledgeSearch() {
             }}
           >
             <SearchOutlined style={{ color: '#3b82f6', flexShrink: 0 }} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {session.query}
-            </span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.query}</span>
             <span
               style={{
                 fontSize: 12,
@@ -908,19 +923,13 @@ export default observer(function KnowledgeSearch() {
               </span>
             )}
             {session.status === 'error' && (
-              <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 400, flexShrink: 0 }}>
-                {statusLabel}
-              </span>
+              <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 400, flexShrink: 0 }}>{statusLabel}</span>
             )}
             {session.status === 'stopped' && (
-              <span style={{ fontSize: 12, color: '#f97316', fontWeight: 400, flexShrink: 0 }}>
-                {statusLabel}
-              </span>
+              <span style={{ fontSize: 12, color: '#f97316', fontWeight: 400, flexShrink: 0 }}>{statusLabel}</span>
             )}
             {session.status === 'done' && (
-              <span style={{ fontSize: 12, color: '#10b981', fontWeight: 400, flexShrink: 0 }}>
-                {statusLabel}
-              </span>
+              <span style={{ fontSize: 12, color: '#10b981', fontWeight: 400, flexShrink: 0 }}>{statusLabel}</span>
             )}
             {session.source && (
               <span
@@ -987,8 +996,7 @@ export default observer(function KnowledgeSearch() {
               marginBottom: 12,
             }}
           >
-            <button
-              type="button"
+            <Button
               onClick={() =>
                 setThinkExpandedMap((prev) => ({
                   ...prev,
@@ -1009,7 +1017,9 @@ export default observer(function KnowledgeSearch() {
               }}
             >
               {thinkExpanded ? <CaretDownOutlined /> : <CaretRightOutlined />}
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>{t('knowledgeSearch.thinkingProcess')}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>
+                {t('knowledgeSearch.thinkingProcess')}
+              </span>
               {parsedAnswer.thinking ? (
                 <span
                   style={{
@@ -1028,7 +1038,7 @@ export default observer(function KnowledgeSearch() {
                   {thinkExpanded ? t('knowledgeSearch.clickCollapse') : t('knowledgeSearch.collapsed')}
                 </span>
               )}
-            </button>
+            </Button>
             {thinkExpanded ? (
               <div
                 style={{
@@ -1072,48 +1082,66 @@ export default observer(function KnowledgeSearch() {
               marginBottom: 16,
             }}
           >
-            <button
-              type="button"
-              onClick={() =>
-                setReasoningExpandedMap((prev) => ({ ...prev, [session.id]: !prev[session.id] }))
-              }
+            <Button
+              onClick={() => setReasoningExpandedMap((prev) => ({ ...prev, [session.id]: !prev[session.id] }))}
               style={{
-                width: '100%', border: 'none', background: 'transparent', padding: 0,
-                display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', textAlign: 'left',
+                width: '100%',
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                textAlign: 'left',
               }}
             >
               {reasoningExpandedMap[session.id] ? <CaretDownOutlined /> : <CaretRightOutlined />}
               <NodeIndexOutlined style={{ color: '#8b5cf6' }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#6d28d9' }}>{t('knowledgeSearch.reasoningProcess')}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#6d28d9' }}>
+                {t('knowledgeSearch.reasoningProcess')}
+              </span>
               <span style={{ fontSize: 12, color: '#a78bda' }}>
-                {t('knowledgeSearch.steps', { count: session.reasoning!.steps.length, source: session.reasoning!.final_source })}
+                {t('knowledgeSearch.steps', {
+                  count: session.reasoning!.steps.length,
+                  source: session.reasoning!.final_source,
+                })}
                 {session.reasoning!.total_ms != null ? ` · ${session.reasoning!.total_ms}ms` : ''}
               </span>
-            </button>
+            </Button>
             {reasoningExpandedMap[session.id] && (
               <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {session.reasoning!.steps.map((step, i) => {
-                  const meta = reasoningStatusMeta(step.status, t)
+                  const meta = reasoningStatusMeta(step.status, t);
                   return (
                     <div key={`${step.stage}-${i}`} style={{ display: 'flex', gap: 10 }}>
                       <div
                         style={{
-                          width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                          background: meta.bg, color: meta.color, fontSize: 11, fontWeight: 700,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: 22,
+                          height: 22,
+                          borderRadius: '50%',
+                          flexShrink: 0,
+                          background: meta.bg,
+                          color: meta.color,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                         }}
                       >
                         {i + 1}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
-                            {step.title}
-                          </span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{step.title}</span>
                           <span
                             style={{
-                              fontSize: 11, color: meta.color, background: meta.bg,
-                              borderRadius: 4, padding: '0 6px',
+                              fontSize: 11,
+                              color: meta.color,
+                              background: meta.bg,
+                              borderRadius: 4,
+                              padding: '0 6px',
                             }}
                           >
                             {meta.label}
@@ -1130,7 +1158,7 @@ export default observer(function KnowledgeSearch() {
                         {renderStepDetail(step, t)}
                       </div>
                     </div>
-                  )
+                  );
                 })}
               </div>
             )}
@@ -1212,91 +1240,114 @@ export default observer(function KnowledgeSearch() {
               marginBottom: 16,
             }}
           >
-            <button
-              type="button"
-              onClick={() =>
-                setRefsExpandedMap((prev) => ({ ...prev, [session.id]: !prev[session.id] }))
-              }
+            <Button
+              onClick={() => setRefsExpandedMap((prev) => ({ ...prev, [session.id]: !prev[session.id] }))}
               style={{
-                width: '100%', border: 'none', background: 'transparent', padding: 0,
-                display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', textAlign: 'left',
-                fontSize: 12, color: '#3b82f6', fontWeight: 600,
+                width: '100%',
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+                textAlign: 'left',
+                fontSize: 12,
+                color: '#3b82f6',
+                fontWeight: 600,
               }}
             >
               {refsExpandedMap[session.id] ? <CaretDownOutlined /> : <CaretRightOutlined />}
               <FileTextOutlined />
               {t('knowledgeSearch.relatedDocs', { count: session.references!.length })}
-            </button>
+            </Button>
             {refsExpandedMap[session.id] && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
-              {session.references!.map((ref, i) => {
-                const locs = ref.locations || []
-                const tsLoc = locs.find((l) => l.type === 'timestamp' && l.time_start != null)
-                const snippet = locs.find((l) => l.text)?.text || ''
-                return (
-                  <div
-                    key={`${ref.doc_id}-${i}`}
-                    style={{
-                      background: '#fff',
-                      border: '1px solid #e8edf5',
-                      borderRadius: 8,
-                      padding: '10px 12px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span
-                        style={{
-                          fontSize: 11, color: '#64748b', background: '#f1f5f9',
-                          borderRadius: 4, padding: '1px 7px', flexShrink: 0,
-                        }}
-                      >
-                        {getMediaLabel(ref.media_type, t)}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 13, fontWeight: 600, color: '#0b2b5c',
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          maxWidth: 360,
-                        }}
-                        title={ref.file_name}
-                      >
-                        {ref.file_name}
-                      </span>
-                      {tsLoc && (
-                        <span style={{ fontSize: 12, color: '#8b5cf6', flexShrink: 0 }}>
-                          {formatTimestamp(tsLoc.time_start)}
-                          {tsLoc.time_end != null ? ` - ${formatTimestamp(tsLoc.time_end)}` : ''}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                {session.references!.map((ref, i) => {
+                  const locs = ref.locations || [];
+                  const tsLoc = locs.find((l) => l.type === 'timestamp' && l.time_start != null);
+                  const snippet = locs.find((l) => l.text)?.text || '';
+                  return (
+                    <div
+                      key={`${ref.doc_id}-${i}`}
+                      style={{
+                        background: '#fff',
+                        border: '1px solid #e8edf5',
+                        borderRadius: 8,
+                        padding: '10px 12px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: '#64748b',
+                            background: '#f1f5f9',
+                            borderRadius: 4,
+                            padding: '1px 7px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {getMediaLabel(ref.media_type, t)}
                         </span>
-                      )}
-                      <a
-                        className="yx-table-action"
-                        style={{ marginLeft: 'auto', fontSize: 12, flexShrink: 0 }}
-                        onClick={() => openReference(ref, tsLoc || locs[0])}
-                      >
-                        {ref.media_type === 'video'
-                          ? (tsLoc ? t('knowledgeSearch.locatePlay') : t('knowledgeSearch.viewVideo'))
-                          : ref.media_type === 'audio'
-                            ? t('knowledgeSearch.playAudio')
-                            : ref.media_type === 'image'
-                              ? t('knowledgeSearch.viewImage')
-                              : t('knowledgeSearch.viewOriginal')}
-                      </a>
-                    </div>
-                    {snippet && (
-                      <div
-                        style={{
-                          marginTop: 8, fontSize: 13, color: '#475569', lineHeight: 1.7,
-                          background: '#fafcff', borderRadius: 6, padding: '8px 10px',
-                          maxHeight: 120, overflow: 'auto', whiteSpace: 'pre-wrap',
-                        }}
-                      >
-                        {snippet}
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: '#0b2b5c',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: 360,
+                          }}
+                          title={ref.file_name}
+                        >
+                          {ref.file_name}
+                        </span>
+                        {tsLoc && (
+                          <span style={{ fontSize: 12, color: '#8b5cf6', flexShrink: 0 }}>
+                            {formatTimestamp(tsLoc.time_start)}
+                            {tsLoc.time_end != null ? ` - ${formatTimestamp(tsLoc.time_end)}` : ''}
+                          </span>
+                        )}
+                        <a
+                          className="yx-table-action"
+                          style={{ marginLeft: 'auto', fontSize: 12, flexShrink: 0 }}
+                          onClick={() => openReference(ref, tsLoc || locs[0])}
+                        >
+                          {ref.media_type === 'video'
+                            ? tsLoc
+                              ? t('knowledgeSearch.locatePlay')
+                              : t('knowledgeSearch.viewVideo')
+                            : ref.media_type === 'audio'
+                              ? t('knowledgeSearch.playAudio')
+                              : ref.media_type === 'image'
+                                ? t('knowledgeSearch.viewImage')
+                                : t('knowledgeSearch.viewOriginal')}
+                        </a>
                       </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+                      {snippet && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontSize: 13,
+                            color: '#475569',
+                            lineHeight: 1.7,
+                            background: '#fafcff',
+                            borderRadius: 6,
+                            padding: '8px 10px',
+                            maxHeight: 120,
+                            overflow: 'auto',
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          {snippet}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
@@ -1305,12 +1356,14 @@ export default observer(function KnowledgeSearch() {
         {running && !hasContent && (
           <div style={{ textAlign: 'center', padding: '30px 0' }}>
             <Spin size="default" />
-            <div style={{ marginTop: 10, color: '#94a3b8', fontSize: 13 }}>{t('knowledgeSearch.searchingKnowledge')}</div>
+            <div style={{ marginTop: 10, color: '#94a3b8', fontSize: 13 }}>
+              {t('knowledgeSearch.searchingKnowledge')}
+            </div>
           </div>
         )}
       </Card>
-    )
-  }
+    );
+  };
 
   const renderHistorySidebar = () => (
     <div
@@ -1341,8 +1394,7 @@ export default observer(function KnowledgeSearch() {
         <HistoryOutlined />
         {t('knowledgeSearch.searchHistory')}
         {history.length > 0 && (
-          <button
-            type="button"
+          <Button
             onClick={handleClearHistory}
             style={{
               marginLeft: 'auto',
@@ -1355,7 +1407,7 @@ export default observer(function KnowledgeSearch() {
             }}
           >
             {t('knowledgeSearch.clear')}
-          </button>
+          </Button>
         )}
       </div>
       {history.length === 0 ? (
@@ -1385,10 +1437,7 @@ export default observer(function KnowledgeSearch() {
               gap: 8,
             }}
           >
-            <div
-              onClick={() => handleHistoryClick(h, i)}
-              style={{ flex: 1, minWidth: 0 }}
-            >
+            <div onClick={() => handleHistoryClick(h, i)} style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
                   fontSize: 13,
@@ -1405,11 +1454,10 @@ export default observer(function KnowledgeSearch() {
                 <span>{formatRelativeTime(h.searchedAt, t)}</span>
               </div>
             </div>
-            <button
-              type="button"
+            <Button
               onClick={(e) => {
-                e.stopPropagation()
-                handleDeleteHistory(h.id, i)
+                e.stopPropagation();
+                handleDeleteHistory(h.id, i);
               }}
               style={{
                 border: 'none',
@@ -1424,12 +1472,12 @@ export default observer(function KnowledgeSearch() {
               title={t('knowledgeSearch.deleteHistory')}
             >
               ×
-            </button>
+            </Button>
           </div>
         ))
       )}
     </div>
-  )
+  );
 
   const renderMainContent = () => {
     if (pageLoading) {
@@ -1437,7 +1485,7 @@ export default observer(function KnowledgeSearch() {
         <div style={{ textAlign: 'center', padding: '80px 0' }}>
           <Spin size="large" />
         </div>
-      )
+      );
     }
 
     if (pageError) {
@@ -1446,7 +1494,7 @@ export default observer(function KnowledgeSearch() {
           <div style={{ color: '#ef4444', fontSize: 14, marginBottom: 12 }}>{pageError}</div>
           <Button onClick={() => window.location.reload()}>{t('knowledgeSearch.refreshPage')}</Button>
         </div>
-      )
+      );
     }
 
     if (!activeSearch) {
@@ -1454,11 +1502,11 @@ export default observer(function KnowledgeSearch() {
         <Card style={{ borderRadius: 12 }} styles={{ body: { padding: '60px 20px' } }}>
           <Empty description={t('knowledgeSearch.emptyDescription')} />
         </Card>
-      )
+      );
     }
 
-    return renderSessionCard(activeSearch)
-  }
+    return renderSessionCard(activeSearch);
+  };
 
   // ── main render ────────────────────────────────────────
   return (
@@ -1466,7 +1514,13 @@ export default observer(function KnowledgeSearch() {
       <div className="yx-page-title">
         <h1>{t('knowledgeSearch.pageTitle')}</h1>
         <p className="yx-page-subtitle">
-          <span dangerouslySetInnerHTML={{ __html: t('knowledgeSearch.pageSubtitle', { name: global.currentSpace?.name || t('knowledgeSearch.notSelected') }) }} />
+          <span
+            dangerouslySetInnerHTML={{
+              __html: t('knowledgeSearch.pageSubtitle', {
+                name: global.currentSpace?.name || t('knowledgeSearch.notSelected'),
+              }),
+            }}
+          />
         </p>
       </div>
       {/* 统计信息-暂时隐藏 */}
@@ -1474,9 +1528,7 @@ export default observer(function KnowledgeSearch() {
       {renderSearchPanel()}
 
       <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {renderMainContent()}
-        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>{renderMainContent()}</div>
         {renderHistorySidebar()}
       </div>
 
@@ -1487,5 +1539,8 @@ export default observer(function KnowledgeSearch() {
       {/* 统一文档查看弹层（视频/音频可定位到时间点） */}
       {viewer}
     </div>
-  )
-})
+  );
+});
+
+KnowledgeSearch.displayName = 'KnowledgeSearch';
+export default KnowledgeSearch;

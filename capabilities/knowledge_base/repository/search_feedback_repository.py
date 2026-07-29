@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""Repository for Knowledge Base search feedback."""
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +24,7 @@ class KnowledgeSearchFeedbackRepository(BaseRepository[KnowledgeSearchFeedback])
         offset: int = 0,
         limit: int = 50,
     ) -> list[KnowledgeSearchFeedback]:
-
+        """按知识库查询反馈记录，可按反馈类型过滤。"""
         conditions = [
             KnowledgeSearchFeedback.tenant_id == self._tenant_id(tenant_id),
             KnowledgeSearchFeedback.knowledge_base_id == knowledge_base_id,
@@ -48,7 +48,7 @@ class KnowledgeSearchFeedbackRepository(BaseRepository[KnowledgeSearchFeedback])
         knowledge_base_id: str,
         feedback_type: str | None = None,
     ) -> int:
-
+        """统计知识库的反馈数量。"""
         conditions = [
             KnowledgeSearchFeedback.tenant_id == self._tenant_id(tenant_id),
             KnowledgeSearchFeedback.knowledge_base_id == knowledge_base_id,
@@ -68,7 +68,7 @@ class KnowledgeSearchFeedbackRepository(BaseRepository[KnowledgeSearchFeedback])
         tenant_id: str,
         data: dict,
     ) -> KnowledgeSearchFeedback:
-
+        """创建一条反馈记录。"""
         record = KnowledgeSearchFeedback(
             tenant_id=self._tenant_id(tenant_id),
             user_id=data["user_id"],
@@ -79,7 +79,7 @@ class KnowledgeSearchFeedbackRepository(BaseRepository[KnowledgeSearchFeedback])
             knowledge_base_name=data.get("knowledge_base_name"),
             feedback_type=data["feedback_type"],
             adopted=False,
-            searched_at=data.get("searched_at"),
+            searched_at=data.get("searched_at"),  # None → 走 DB default func.now()
         )
         self.session.add(record)
         await self.session.flush()
@@ -90,7 +90,7 @@ class KnowledgeSearchFeedbackRepository(BaseRepository[KnowledgeSearchFeedback])
         tenant_id: str,
         feedback_id: str,
     ) -> KnowledgeSearchFeedback | None:
-
+        """切换采纳状态。"""
         conditions = [
             KnowledgeSearchFeedback.id == feedback_id,
             KnowledgeSearchFeedback.tenant_id == self._tenant_id(tenant_id),
@@ -109,26 +109,26 @@ class KnowledgeSearchFeedbackRepository(BaseRepository[KnowledgeSearchFeedback])
         tenant_id: str,
         knowledge_base_id: str,
     ) -> dict:
-
+        """获取知识库的反馈统计。"""
         conditions = [
             KnowledgeSearchFeedback.tenant_id == self._tenant_id(tenant_id),
             KnowledgeSearchFeedback.knowledge_base_id == knowledge_base_id,
         ]
 
-
+        # 总数
         total_result = await self.session.execute(
             select(func.count()).select_from(KnowledgeSearchFeedback).where(*conditions)
         )
         total = total_result.scalar_one()
 
-
+        # 点赞数
         like_conditions = conditions + [KnowledgeSearchFeedback.feedback_type == "like"]
         like_result = await self.session.execute(
             select(func.count()).select_from(KnowledgeSearchFeedback).where(*like_conditions)
         )
         like_count = like_result.scalar_one()
 
-
+        # 踩数
         dislike_conditions = conditions + [KnowledgeSearchFeedback.feedback_type == "dislike"]
         dislike_result = await self.session.execute(
             select(func.count()).select_from(KnowledgeSearchFeedback).where(*dislike_conditions)

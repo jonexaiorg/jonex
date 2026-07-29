@@ -1,4 +1,4 @@
-
+"""Knowledge Base document DTOs."""
 
 from datetime import datetime
 from typing import Any, Optional
@@ -26,6 +26,9 @@ class DocumentListRequest(BaseModel):
     knowledge_base_id: str = Field(..., min_length=1, max_length=128)
     status: Optional[str] = Field(default=None, max_length=32)
     ontology_status: Optional[str] = Field(default=None, max_length=32)
+    # 线性状态多选筛选（优先于 status/ontology_status）：
+    # pending_parse / parsing / ingesting / parse_failed / pending_compile / compiling / compiled / compile_failed
+    phase: Optional[list[str]] = Field(default=None)
     keyword: Optional[str] = Field(default=None, max_length=255)
     folder_id: Optional[str] = Field(default=None, max_length=64)
     page: int = Field(default=1, ge=1)

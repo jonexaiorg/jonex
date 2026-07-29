@@ -246,6 +246,8 @@ class JsonDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        doc_id: str | None = None,
+        file_path: str | None = None,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -255,6 +257,9 @@ class JsonDocStatusStorage(DocStatusStorage):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', 'id')
             sort_direction: Sort direction ('asc' or 'desc')
+            doc_id: [jonex] Filter by client-side document id via the ``doc=<id>|``
+                anchor in file_path (file_source). None = no filter.
+            file_path: [jonex] Filter by exact file_path. None = no filter.
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
@@ -273,6 +278,10 @@ class JsonDocStatusStorage(DocStatusStorage):
         if sort_direction.lower() not in ["asc", "desc"]:
             sort_direction = "desc"
 
+        # [jonex] Alias params before the loop below rebinds `doc_id` to the iterated key.
+        scope_doc_id = doc_id
+        scope_file_path = file_path
+
         # For JSON storage, we load all data and sort/filter in memory
         all_docs = []
 
@@ -283,6 +292,13 @@ class JsonDocStatusStorage(DocStatusStorage):
                     status_filter is not None
                     and doc_data.get("status") != status_filter.value
                 ):
+                    continue
+
+                # [jonex] Document-scope filter (file_source anchor / exact file_path)
+                fp = doc_data.get("file_path") or ""
+                if scope_doc_id and f"doc={scope_doc_id}|" not in fp:
+                    continue
+                if scope_file_path and fp != scope_file_path:
                     continue
 
                 try:

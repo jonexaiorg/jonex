@@ -2,30 +2,32 @@ import { createServer } from 'node:http'
 import pkg from 'http-proxy'
 const { createProxyServer } = pkg
 
-
-
-
+// ============================================================
+// Configuration
+// ============================================================
 const PORT = parseInt(process.env.GATEWAY_PORT || '8080', 10)
 
 const UPSTREAMS = {
-
+  // Backend API gateway
   api: process.env.API_TARGET || 'http://localhost:8000',
-
+  // Frontend Vite dev servers
   shell: process.env.SHELL_TARGET || 'http://localhost:5173',
+  'expert-call': process.env.EXPERT_CALL_TARGET || 'http://localhost:5174',
   'core-business': process.env.CORE_BUSINESS_TARGET || 'http://localhost:5175',
   'ecosystem-management': process.env.ECOSYSTEM_MANAGEMENT_TARGET || 'http://localhost:5176',
   'platform-management': process.env.PLATFORM_MANAGEMENT_TARGET || 'http://localhost:5177',
 }
 
 const REMOTE_ENTRY_MODULES = {
+  'expert-call': '__federation_remote_expertCall_entry',
   'core-business': '__federation_remote_coreBusiness_entry',
   'ecosystem-management': '__federation_remote_ecosystemManagement_entry',
   'platform-management': '__federation_remote_platformManagement_entry',
 }
 
-
-
-
+// ============================================================
+// HTTP Proxy
+// ============================================================
 const proxy = createProxyServer({
   changeOrigin: true,
   ws: true,
@@ -42,30 +44,30 @@ proxy.on('error', (err, req, res) => {
 })
 
 proxy.on('proxyRes', (proxyRes, req) => {
-
+  // Security headers (mirroring Nginx frontend-gateway.conf)
   proxyRes.headers['X-Frame-Options'] = 'SAMEORIGIN'
   proxyRes.headers['X-XSS-Protection'] = '1; mode=block'
   proxyRes.headers['X-Content-Type-Options'] = 'nosniff'
   proxyRes.headers['Referrer-Policy'] = 'no-referrer-when-downgrade'
 })
 
-
-
-
-const SUB_APPS = ['core-business', 'ecosystem-management', 'platform-management']
+// ============================================================
+// Route matching
+// ============================================================
+const SUB_APPS = ['expert-call', 'core-business', 'ecosystem-management', 'platform-management']
 
 function findRoute(pathname) {
-
+  // 1. Health check
   if (pathname === '/health') {
     return { handler: true }
   }
 
-
+  // 2. Backend API
   if (pathname.startsWith('/api/')) {
     return { target: UPSTREAMS.api }
   }
 
-
+  // 3. Remote entry (Module Federation dev server virtual module)
   for (const app of SUB_APPS) {
     const entryPrefix = `/remotes/${app}/assets/remoteEntry.js`
     if (pathname === entryPrefix) {
@@ -76,7 +78,7 @@ function findRoute(pathname) {
     }
   }
 
-
+  // 4. Remote assets (Module Federation) — strip /remotes prefix
   for (const app of SUB_APPS) {
     const prefix = `/remotes/${app}/`
     if (pathname.startsWith(prefix)) {
@@ -85,32 +87,32 @@ function findRoute(pathname) {
     }
   }
 
-
+  // 5. Standalone SPA routes
   for (const app of SUB_APPS) {
     if (pathname.startsWith(`/${app}/`) || pathname === `/${app}`) {
       return { target: UPSTREAMS[app] }
     }
   }
 
-
+  // 6. Shell — catch-all
   return { target: UPSTREAMS.shell }
 }
 
-
-
-
+// ============================================================
+// HTTP server
+// ============================================================
 const server = createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
   const route = findRoute(url.pathname)
 
-
+  // Health check
   if (route.handler) {
     res.writeHead(200, { 'Content-Type': 'text/plain' })
     res.end('ok')
     return
   }
 
-
+  // Apply path rewrite for remote assets
   if (route.path != null) {
     req.url = route.path + url.search
   }
@@ -126,9 +128,9 @@ const server = createServer((req, res) => {
   })
 })
 
-
-
-
+// ============================================================
+// WebSocket upgrade (Vite HMR)
+// ============================================================
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
   const route = findRoute(url.pathname)
@@ -140,9 +142,9 @@ server.on('upgrade', (req, socket, head) => {
   }
 })
 
-
-
-
+// ============================================================
+// Start
+// ============================================================
 server.listen(PORT, () => {
   console.log('')
   console.log('╔══════════════════════════════════════════╗')
@@ -153,6 +155,7 @@ server.listen(PORT, () => {
   console.log('Upstreams:')
   console.log(`  API               → ${UPSTREAMS.api}`)
   console.log(`  Shell             → ${UPSTREAMS.shell}`)
+  console.log(`  Expert Call       → ${UPSTREAMS['expert-call']}`)
   console.log(`  Core Business     → ${UPSTREAMS['core-business']}`)
   console.log(`  Eco Management    → ${UPSTREAMS['ecosystem-management']}`)
   console.log(`  Platform Mgmt     → ${UPSTREAMS['platform-management']}`)

@@ -1,4 +1,6 @@
-
+"""
+业务领域 — 业务领域模板模型
+"""
 import uuid
 
 from sqlalchemy import Column, DateTime, Integer, SmallInteger, String, Text

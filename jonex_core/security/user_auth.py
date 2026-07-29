@@ -1,7 +1,7 @@
 """
-User authentication module
+用户认证模块
 
-Password hashing + user JWT generation/verification + one-time login ticket. Only used in Sidecar.
+密码哈希 + 用户 JWT 生成/验签 + 一次性登录票据。仅在 Sidecar 中使用。
 """
 import hashlib
 import hmac
@@ -16,12 +16,13 @@ from fastapi import Depends, Header
 
 from jonex_core.common.config import get_config
 from jonex_core.common.exceptions import TokenExpiredError, PermissionDeniedError
+from jonex_core.common.i18n import translate
 
 logger = logging.getLogger(__name__)
 
 
 class UserAuth:
-    """User authentication - password hashing + user JWT"""
+    """用户认证 — 密码哈希 + 用户 JWT"""
 
     def __init__(self):
         config = get_config()
@@ -60,21 +61,21 @@ class UserAuth:
         try:
             payload = jwt.decode(token, self.secret, algorithms=[self.algorithm])
             if payload.get("type") not in ("user", "refresh"):
-                raise TokenExpiredError(message="Invalid token type")
+                raise TokenExpiredError()  # Token 类型不合法（非 user/refresh）
             return payload
         except jwt.ExpiredSignatureError:
-            raise TokenExpiredError(message="Token Expired")
+            raise TokenExpiredError()  # Token 签名已过期
         except jwt.PyJWTError as e:
-            logger.warning(f"JWT signature verification failed: {e}")
-            raise TokenExpiredError(message="Invalid token")
+            logger.warning(f"JWT 验签失败: {e}")
+            raise TokenExpiredError()  # Token 格式无效或签名校验失败
 
 
     def create_login_ticket_plaintext(self) -> str:
-        """Generate one-time login ticket plaintext (32 bytes urlsafe base64)"""
+        """生成一次性登录票据明文（32 字节 urlsafe base64）"""
         return secrets.token_urlsafe(32)
 
     def hash_login_ticket(self, ticket: str) -> str:
-        """HMAC-SHA256 the ticket plaintext, return hex digest. Uses JWT_SECRET as key"""
+        """对 ticket 明文做 HMAC-SHA256，返回 hex digest。使用 JWT_SECRET 作为 key"""
         return hmac.new(
             self.secret.encode(),
             ticket.encode(),
@@ -93,9 +94,9 @@ def get_user_auth() -> UserAuth:
 
 
 async def get_current_user(authorization: str = Header(...)) -> dict:
-    """FastAPI dependency: parse current user from Bearer token (only used in Sidecar)"""
+    """FastAPI 依赖：从 Bearer token 解析当前用户（仅在 Sidecar 中使用）"""
     if not authorization.startswith("Bearer "):
-        raise TokenExpiredError(message="Missing Bearer token")
+        raise TokenExpiredError(message=translate("err.auth.missing_bearer_token", fallback="缺少 Bearer token"))
     token = authorization[7:]
     auth = get_user_auth()
     payload = auth.decode_token(token)
@@ -108,12 +109,12 @@ async def get_current_user(authorization: str = Header(...)) -> dict:
 
 
 def require_role(*roles: str):
-    """FastAPI dependency factory: verify user role"""
+    """FastAPI 依赖工厂：校验用户角色"""
 
     async def _check_role(current_user: dict = Depends(get_current_user)):
         if current_user["role"] not in roles:
             raise PermissionDeniedError(
-                message=f"Required role: {', '.join(roles)}, current role: {current_user['role']}"
+                message=translate("err.auth.insufficient_role", params={"required": ', '.join(roles), "current": current_user['role']}, fallback=f"需要角色: {', '.join(roles)}，当前角色: {current_user['role']}")
             )
         return current_user
 

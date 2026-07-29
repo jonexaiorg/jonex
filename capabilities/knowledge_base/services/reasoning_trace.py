@@ -1,10 +1,10 @@
-
+"""编排推理链采集器"""
 import time
 from typing import Any, Optional
 
 
 class ReasoningCollector:
-
+    """编排推理链采集器。enabled=False 时全部方法为 no-op，零开销。"""
 
     def __init__(self, enabled: bool):
         self.enabled = enabled

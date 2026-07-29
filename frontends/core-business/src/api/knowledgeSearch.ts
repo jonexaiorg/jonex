@@ -1,16 +1,62 @@
-import { readAccessToken } from '@jonex/shell-sdk'
-import { request, getData } from './request'
+import { readAccessToken } from '@jonex/shell-sdk';
+import { request, getData } from './request';
+import {
+  listMockKnowledgeSearchHistory,
+  saveMockKnowledgeSearchHistory,
+  deleteMockKnowledgeSearchHistory,
+  clearMockKnowledgeSearchHistory,
+} from '../mocks/knowledgeSearchHistoryStore';
 import type {
   KnowledgeSearchDomain,
   KnowledgeSearchHistoryItem,
+  KnowledgeSearchMode,
   KnowledgeSearchOverview,
   KnowledgeSearchStreamHandlers,
+  KnowledgeSearchStreamMeta,
   KnowledgeSearchStreamParams,
   SaveKnowledgeSearchHistoryPayload,
-} from '../types/knowledgeSearch'
+  SearchFeedbackType,
+  CancelSearchFeedbackParams,
+  SubmitSearchFeedbackParams,
+  SubmitSearchFeedbackResponse,
+} from '../types/knowledgeSearch';
 
+type NormalizedSearchParams = {
+  query: string;
+  mode: KnowledgeSearchMode;
+  topK: number;
+  domainId: string;
+  kbIds: string[];
+};
 
-type NormalizedSearchParams = Required<KnowledgeSearchStreamParams>
+interface RawKnowledgeSearchHistoryItem {
+  id: string;
+  query: string;
+  searched_at?: string;
+  searchedAt?: string;
+  result_count?: number;
+  resultCount?: number;
+  domain?: string;
+  domain_id?: string;
+  domainId?: string;
+  domain_space_id?: string;
+  domainSpaceId?: string;
+  status?: KnowledgeSearchHistoryItem['status'];
+  answer_preview?: string;
+  answerPreview?: string;
+  reference_count?: number;
+  referenceCount?: number;
+  duration_ms?: number;
+  durationMs?: number;
+  mode?: string;
+  top_k?: number;
+  topK?: number;
+  metadata?: {
+    domain?: string;
+    domain_id?: string;
+    domainId?: string;
+  };
+}
 
 function normalizeSearchParams(params: KnowledgeSearchStreamParams): NormalizedSearchParams {
   return {
@@ -18,39 +64,85 @@ function normalizeSearchParams(params: KnowledgeSearchStreamParams): NormalizedS
     mode: params.mode ?? 'mix',
     topK: params.topK ?? 5,
     domainId: params.domainId ?? 'all',
-  }
+    kbIds: params.kbIds ?? [],
+  };
+}
+
+function normalizeHistoryItem(item: RawKnowledgeSearchHistoryItem): KnowledgeSearchHistoryItem {
+  const metadata = item.metadata ?? {};
+  return {
+    id: item.id,
+    query: item.query,
+    searchedAt: item.searchedAt ?? item.searched_at ?? new Date().toISOString(),
+    resultCount: item.resultCount ?? item.result_count ?? 0,
+    domain: item.domain ?? metadata.domain,
+    domainId: item.domainId ?? item.domain_id ?? metadata.domainId ?? metadata.domain_id,
+    domainSpaceId: item.domainSpaceId ?? item.domain_space_id ?? undefined,
+    status: item.status,
+    answerPreview: item.answerPreview ?? item.answer_preview,
+    referenceCount: item.referenceCount ?? item.reference_count,
+    durationMs: item.durationMs ?? item.duration_ms,
+    mode: item.mode === 'hybrid' ? 'hybrid' : undefined,
+    topK: item.topK ?? item.top_k,
+  };
 }
 
 export async function getKnowledgeSearchOverview(): Promise<KnowledgeSearchOverview> {
-  return getData<KnowledgeSearchOverview>(request.get('/knowledge-base/search/overview'))
+  // if (useMock) return mockKnowledgeSearchOverview
+  return getData<KnowledgeSearchOverview>(request.get('/knowledge-base/search/overview'));
 }
 
-export async function getKnowledgeSearchDomains(): Promise<KnowledgeSearchDomain[]> {
-  return getData<KnowledgeSearchDomain[]>(request.get('/knowledge-base/search/domains'))
+export async function getKnowledgeSearchDomains(spaceId?: string): Promise<KnowledgeSearchDomain[]> {
+  const params: Record<string, string | number> = { limit: 100 };
+  if (spaceId) params.space_id = spaceId;
+  const result = await getData<{ items: KnowledgeSearchDomain[] }>(request.get('/knowledge-base/services', { params }));
+  const items = result.items ?? [];
+  return [{ id: 'all', name: '', description: '' }, ...items];
 }
 
-export async function getKnowledgeSearchHistory(): Promise<KnowledgeSearchHistoryItem[]> {
-  const result = await getData<{ items: KnowledgeSearchHistoryItem[] }>(
-    request.get('/knowledge-base/search/history'),
-  )
-  return result.items
+export async function getKnowledgeSearchHistory(
+  knowledgeBaseId: string,
+  domainSpaceId?: string,
+): Promise<KnowledgeSearchHistoryItem[]> {
+  // if (useMock) return listMockKnowledgeSearchHistory()
+  const params: Record<string, string> = { knowledge_base_id: knowledgeBaseId };
+  if (domainSpaceId) params.domain_space_id = domainSpaceId;
+  const result = await getData<{ items: RawKnowledgeSearchHistoryItem[] }>(
+    request.get('/knowledge-base/search/history', { params }),
+  );
+  return (result.items ?? []).map(normalizeHistoryItem);
 }
 
 export async function saveKnowledgeSearchHistory(
+  knowledgeBaseId: string,
   payload: SaveKnowledgeSearchHistoryPayload,
 ): Promise<KnowledgeSearchHistoryItem> {
-  const result = await getData<{ item: KnowledgeSearchHistoryItem }>(
-    request.post('/knowledge-base/search/history', payload),
-  )
-  return result.item
+  // if (useMock) {
+  //   const updated = saveMockKnowledgeSearchHistory(payload)
+  //   return updated[0]
+  // }
+  const result = await getData<RawKnowledgeSearchHistoryItem | { item: RawKnowledgeSearchHistoryItem }>(
+    request.post('/knowledge-base/search/history', { ...payload, knowledge_base_id: knowledgeBaseId }),
+  );
+  return normalizeHistoryItem(('item' in result ? result.item : result) as RawKnowledgeSearchHistoryItem);
 }
 
-export async function deleteKnowledgeSearchHistory(id: string): Promise<void> {
-  await getData(request.delete(`/knowledge-base/search/history/${id}`))
+export async function deleteKnowledgeSearchHistory(knowledgeBaseId: string, id: string): Promise<void> {
+  // if (useMock) {
+  //   deleteMockKnowledgeSearchHistory(id)
+  //   return
+  // }
+  await getData(
+    request.delete(`/knowledge-base/search/history/${id}`, { params: { knowledge_base_id: knowledgeBaseId } }),
+  );
 }
 
-export async function clearKnowledgeSearchHistory(): Promise<void> {
-  await getData(request.delete('/knowledge-base/search/history'))
+export async function clearKnowledgeSearchHistory(knowledgeBaseId: string): Promise<void> {
+  // if (useMock) {
+  //   clearMockKnowledgeSearchHistory()
+  //   return
+  // }
+  await getData(request.delete('/knowledge-base/search/history', { params: { knowledge_base_id: knowledgeBaseId } }));
 }
 
 export async function streamKnowledgeSearch(
@@ -58,72 +150,164 @@ export async function streamKnowledgeSearch(
   handlers: KnowledgeSearchStreamHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
-  const normalized = normalizeSearchParams(params)
+  const normalized = normalizeSearchParams(params);
 
+  const token = readAccessToken();
+  const baseUrl = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
+  const url = new URL(`${baseUrl}/knowledge-base/search/ontology`, window.location.origin);
 
-  const token = readAccessToken()
-  const baseUrl = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1'
-  const url = new URL(`${baseUrl}/knowledge-base/documents/search/stream`, window.location.origin)
-
-  url.searchParams.set('query', normalized.query)
-  url.searchParams.set('mode', normalized.mode)
-  url.searchParams.set('top_k', String(normalized.topK))
+  const body: Record<string, unknown> = {
+    query: normalized.query,
+    mode: normalized.mode,
+    top_k: normalized.topK,
+    with_reasoning: true,
+  };
   if (normalized.domainId && normalized.domainId !== 'all') {
-    url.searchParams.set('domain_id', normalized.domainId)
+    body.domain_id = normalized.domainId;
+  }
+  if (normalized.kbIds.length > 0) {
+    body.knowledge_base_ids = normalized.kbIds;
   }
 
   const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
     signal,
-  })
+  });
 
   if (response.status === 401) {
-    handlers.onError?.(new Error('登录已失效，请重新登录'))
-    return
+    handlers.onError?.(new Error('Session expired, please log in again'));
+    return;
   }
 
-  if (!response.ok || !response.body) {
-    throw new Error(`搜索失败：${response.status}`)
+  if (!response.ok) {
+    throw new Error(`Search failed: ${response.status}`);
   }
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder('utf-8')
-  let buffer = ''
 
   try {
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
+    const result = await response.json();
 
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
-
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed.startsWith('data:')) continue
-
-        const payload = trimmed.slice(5).trim()
-        if (payload === '[DONE]') {
-          handlers.onDone?.()
-          return
-        }
-
-        try {
-          const chunk = JSON.parse(payload)
-          const delta = chunk.choices?.[0]?.delta?.content
-          if (delta) handlers.onDelta(delta, chunk)
-        } catch {
-          // skip unparseable SSE lines, continue processing
-        }
-      }
+    if (!result.success || !result.data?.answer) {
+      handlers.onDelta('Sorry, no relevant knowledge found.', { source: result.data?.source });
+      handlers.onDone?.();
+      return;
     }
+
+    // 模拟流式输出：逐字输出 answer 模拟打字效果
+    const answer = result.data.answer;
+    const meta = {
+      source: result.data.source,
+      references: result.data.references ?? [],
+      reasoning: result.data.reasoning ?? null,
+      rag_used: result.data.rag_used,
+    };
+    for (let i = 0; i < answer.length; i += 2) {
+      if (signal?.aborted) return;
+      handlers.onDelta(answer.slice(i, i + 2), meta);
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    }
+    handlers.onDone?.(meta);
   } catch (error) {
-    if (signal?.aborted) return
-    handlers.onError?.(
-      error instanceof Error ? error : new Error('知识检索连接中断，请重试'),
-    )
-    throw error
+    if (signal?.aborted) return;
+    handlers.onError?.(error instanceof Error ? error : new Error('Knowledge search failed, please retry'));
   }
+}
+
+/** 提交对当前搜索回答的「有帮助/无帮助」反馈 */
+export async function submitSearchFeedback(params: SubmitSearchFeedbackParams): Promise<SubmitSearchFeedbackResponse> {
+  const token = readAccessToken();
+  const response = await fetch('/api/v1/knowledge-base/search/feedback', {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: params.query,
+      session_id: params.sessionId,
+      answer_preview: params.answerPreview,
+      feedback_type: params.feedbackType,
+      knowledge_base_ids: params.kbIds,
+      searched_at: params.searchedAt,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to submit feedback');
+  }
+  const result = await response.json();
+  return result.data ?? { success: true, feedbackType: params.feedbackType, likeCount: 1, dislikeCount: 0 };
+}
+
+/** 取消对当前搜索回答的反馈（再次点击切换状态） */
+export async function cancelSearchFeedback(params: CancelSearchFeedbackParams): Promise<SubmitSearchFeedbackResponse> {
+  const token = readAccessToken();
+  const response = await fetch('/api/v1/knowledge-base/search/feedback', {
+    method: 'DELETE',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      session_id: params.sessionId,
+      feedback_type: params.feedbackType,
+      knowledge_base_ids: params.kbIds,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to cancel feedback');
+  }
+  const result = await response.json();
+  return result.data ?? { success: true, feedbackType: params.feedbackType, likeCount: 0, dislikeCount: 0 };
+}
+
+// ── 情况追踪（搜索反馈管理）API ──────────────────────────────
+
+/** 查询知识库的搜索反馈列表 */
+export async function getSearchFeedbackList(
+  knowledgeBaseId: string,
+  params?: { feedbackType?: SearchFeedbackType; page?: number; pageSize?: number },
+): Promise<import('../types/knowledgeSearch').SearchFeedbackListResponse> {
+  const token = readAccessToken();
+  const searchParams = new URLSearchParams({ knowledge_base_id: knowledgeBaseId });
+  if (params?.feedbackType) searchParams.set('feedback_type', params.feedbackType);
+  if (params?.page) searchParams.set('page', String(params.page));
+  if (params?.pageSize) searchParams.set('page_size', String(params.pageSize));
+
+  const response = await fetch(`/api/v1/knowledge-base/search/feedback?${searchParams}`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+  if (!response.ok) throw new Error('Failed to fetch feedback list');
+  const result = await response.json();
+  return result.data ?? { items: [], total: 0, like_count: 0, dislike_count: 0, page: 1, page_size: 50 };
+}
+
+/** 切换反馈采纳状态 */
+export async function toggleSearchFeedbackAdopted(feedbackId: string): Promise<void> {
+  const token = readAccessToken();
+  const response = await fetch('/api/v1/knowledge-base/search/feedback/toggle-adopt', {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ feedback_id: feedbackId }),
+  });
+  if (!response.ok) throw new Error('Failed to toggle feedback status');
+}
+
+/** 获取知识库的反馈统计 */
+export async function getSearchFeedbackStats(
+  knowledgeBaseId: string,
+): Promise<import('../types/knowledgeSearch').SearchFeedbackStats> {
+  const token = readAccessToken();
+  const response = await fetch(`/api/v1/knowledge-base/search/feedback/stats?knowledge_base_id=${knowledgeBaseId}`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+  if (!response.ok) throw new Error('Failed to fetch feedback statistics');
+  const result = await response.json();
+  return result.data ?? { total: 0, like_count: 0, dislike_count: 0 };
 }

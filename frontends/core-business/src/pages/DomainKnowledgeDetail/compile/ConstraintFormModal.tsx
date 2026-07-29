@@ -1,46 +1,36 @@
-import React, { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { Modal, Form, Input, Select } from 'antd'
-import type {
-  ConstraintTargetType,
-  ConstraintTypeCode,
-  OntologyConstraint,
-  SaveOntologyConstraintPayload,
-} from '@/types/domainKnowledge'
-import {
-  constraintTargetTypeTextMap,
-  constraintTypeTextMap,
-  normalizeConstraintType,
-} from '@/types/domainKnowledge'
-import type { ConstraintTargetOptions } from '@/api/domainKnowledge'
+import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from 'i18next';
+import { Modal, Form, Input, Select } from 'antd';
+import type { ConstraintTargetType, OntologyConstraint, SaveOntologyConstraintPayload } from '@/types/domainKnowledge';
+import { constraintTargetTypeLabelKey } from '@/types/domainKnowledge';
+import type { ConstraintTargetOptions } from '@/api/domainKnowledge';
 
-const TARGET_TYPE_OPTIONS: { labelKey: string; value: ConstraintTargetType }[] = [
-  { labelKey: constraintTargetTypeTextMap.entity, value: 'entity' },
-  { labelKey: constraintTargetTypeTextMap.attribute, value: 'attribute' },
-  { labelKey: constraintTargetTypeTextMap.relation, value: 'relation' },
-]
-
-const CONSTRAINT_TYPE_OPTIONS: { labelKey: string; value: ConstraintTypeCode }[] = (
-  Object.entries(constraintTypeTextMap) as [ConstraintTypeCode, string][]
-).map(([value, labelKey]) => ({ value, labelKey }))
+const CONSTRAINT_TYPE_OPTIONS = [
+  { label: i18n.t('compile.constraintType.mutex'), value: '互斥' },
+  { label: i18n.t('compile.constraintType.range'), value: '值域要求' },
+  { label: i18n.t('compile.constraintType.unique'), value: '唯一' },
+  { label: i18n.t('compile.constraintType.required'), value: '必填' },
+  { label: i18n.t('compile.constraintType.custom'), value: 'custom' },
+];
 
 interface ConstraintFormValues {
-  name: string
-  targetType: ConstraintTargetType
-  targetCode: string
-  constraintType: ConstraintTypeCode
-  expression?: string
-  suggestion?: string
+  name: string;
+  targetType: ConstraintTargetType;
+  targetCode: string;
+  constraintType: string;
+  expression?: string;
+  suggestion?: string;
 }
 
 interface Props {
-  open: boolean
-  editing: OntologyConstraint | null
-  targetOptions: ConstraintTargetOptions
-  existingNames: string[]
-  submitting: boolean
-  onCancel: () => void
-  onSubmit: (payload: SaveOntologyConstraintPayload) => void
+  open: boolean;
+  editing: OntologyConstraint | null;
+  targetOptions: ConstraintTargetOptions;
+  existingNames: string[];
+  submitting: boolean;
+  onCancel: () => void;
+  onSubmit: (payload: SaveOntologyConstraintPayload) => void;
 }
 
 export default function ConstraintFormModal({
@@ -52,25 +42,30 @@ export default function ConstraintFormModal({
   onCancel,
   onSubmit,
 }: Props) {
-  const { t } = useTranslation()
-  const [form] = Form.useForm<ConstraintFormValues>()
-  const [targetType, setTargetType] = useState<ConstraintTargetType>('entity')
+  const { t } = useTranslation();
+  const TARGET_TYPE_OPTIONS: { label: string; value: ConstraintTargetType }[] = [
+    { label: t(constraintTargetTypeLabelKey.entity), value: 'entity' },
+    { label: t(constraintTargetTypeLabelKey.attribute), value: 'attribute' },
+    { label: t(constraintTargetTypeLabelKey.relation), value: 'relation' },
+  ];
+  const [form] = Form.useForm<ConstraintFormValues>();
+  const [targetType, setTargetType] = useState<ConstraintTargetType>('entity');
 
   useEffect(() => {
-    if (!open) return
+    if (!open) return;
     if (editing) {
-      setTargetType(editing.targetType)
+      setTargetType(editing.targetType);
       form.setFieldsValue({
         name: editing.name,
         targetType: editing.targetType,
         targetCode: editing.targetCode,
-        constraintType: normalizeConstraintType(editing.constraintType),
+        constraintType: editing.constraintType || 'custom',
         expression: editing.expression,
         suggestion: editing.suggestion,
-      })
-      return
+      });
+      return;
     }
-    setTargetType('entity')
+    setTargetType('entity');
     form.setFieldsValue({
       name: '',
       targetType: 'entity',
@@ -78,14 +73,14 @@ export default function ConstraintFormModal({
       constraintType: 'custom',
       expression: '',
       suggestion: '',
-    })
-  }, [editing, form, open])
+    });
+  }, [editing, form, open]);
 
-  const currentOptions = targetOptions[targetType] || []
+  const currentOptions = targetOptions[targetType] || [];
 
   async function handleOk() {
-    const values = await form.validateFields()
-    const label = (targetOptions[values.targetType] || []).find((o) => o.value === values.targetCode)?.label
+    const values = await form.validateFields();
+    const label = (targetOptions[values.targetType] || []).find((o) => o.value === values.targetCode)?.label;
     onSubmit({
       name: values.name.trim(),
       targetType: values.targetType,
@@ -94,74 +89,80 @@ export default function ConstraintFormModal({
       constraintType: values.constraintType || 'custom',
       expression: (values.expression || '').trim(),
       suggestion: (values.suggestion || '').trim(),
-    })
+    });
   }
 
   return (
     <Modal
-      title={editing ? 'Edit Ontology Constraint' : 'Add Ontology Constraint'}
+      title={editing ? t('compile.constraintEdit') : t('compile.constraintNew')}
       open={open}
       onCancel={onCancel}
       onOk={handleOk}
-      okText="Confirm"
-      cancelText="Cancel"
+      okText={t('common.confirm')}
+      cancelText={t('common.cancel')}
       confirmLoading={submitting}
       width={720}
       destroyOnHidden
     >
       <Form form={form} layout="vertical" preserve={false}>
         <Form.Item
-          label="Constraint Name"
+          label={t('compile.constraint.name')}
           name="name"
           rules={[
-            { required: true, whitespace: true, message: 'Enter a constraint name' },
+            { required: true, whitespace: true, message: t('compile.constraint.nameMessage') },
             {
               validator: (_, value) => {
-                const name = (value || '').trim()
-                if (!name) return Promise.resolve()
-                const clash = existingNames.some((n) => n === name && n !== editing?.name)
-                return clash ? Promise.reject(new Error('This constraint name already exists')) : Promise.resolve()
+                const name = (value || '').trim();
+                if (!name) return Promise.resolve();
+                const clash = existingNames.some((n) => n === name && n !== editing?.name);
+                return clash ? Promise.reject(new Error('Constraint name already exists')) : Promise.resolve();
               },
             },
           ]}
         >
-          <Input placeholder="For example, Non-negative Amount" />
+          <Input placeholder={t('compile.constraint.namePlaceholder')} />
         </Form.Item>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Form.Item label="Target Type" name="targetType" rules={[{ required: true, message: 'Select a target type' }]}>
+          <Form.Item
+            label={t('compile.constraint.targetType')}
+            name="targetType"
+            rules={[{ required: true, message: t('compile.constraint.targetTypeMessage') }]}
+          >
             <Select
-              options={TARGET_TYPE_OPTIONS.map((option) => ({
-                value: option.value,
-                label: t(option.labelKey),
-              }))}
+              options={TARGET_TYPE_OPTIONS}
               onChange={(v: ConstraintTargetType) => {
-                setTargetType(v)
-                form.setFieldsValue({ targetCode: undefined })
+                setTargetType(v);
+                form.setFieldsValue({ targetCode: undefined });
               }}
             />
           </Form.Item>
-          <Form.Item label="Target" name="targetCode" rules={[{ required: true, message: 'Select a target' }]}>
+          <Form.Item
+            label={t('compile.constraint.targetObject')}
+            name="targetCode"
+            rules={[{ required: true, message: t('compile.constraint.targetObjectMessage') }]}
+          >
             <Select
               options={currentOptions}
               showSearch
               optionFilterProp="label"
-              placeholder={currentOptions.length ? 'Select a target' : 'No targets available'}
+              placeholder={
+                currentOptions.length
+                  ? t('compile.constraint.targetSelectPlaceholder')
+                  : t('compile.constraint.noTargetPlaceholder')
+              }
             />
           </Form.Item>
         </div>
-        <Form.Item label="Constraint Type" name="constraintType">
-          <Select options={CONSTRAINT_TYPE_OPTIONS.map((option) => ({
-            value: option.value,
-            label: t(option.labelKey),
-          }))} />
+        <Form.Item label={t('compile.constraint.constraintType')} name="constraintType">
+          <Select options={CONSTRAINT_TYPE_OPTIONS} />
         </Form.Item>
-        <Form.Item label="Constraint Expression" name="expression">
-          <Input.TextArea rows={2} placeholder="Define the condition, for example amount >= 0" />
+        <Form.Item label={t('compile.constraint.expression')} name="expression">
+          <Input.TextArea rows={2} placeholder={t('compile.constraint.expressionPlaceholder')} />
         </Form.Item>
-        <Form.Item label="Recommendation" name="suggestion">
-          <Input.TextArea rows={2} placeholder="Message or remediation advice when the constraint is violated" />
+        <Form.Item label={t('compile.constraint.suggestion')} name="suggestion">
+          <Input.TextArea rows={2} placeholder={t('compile.constraint.suggestionPlaceholder')} />
         </Form.Item>
       </Form>
     </Modal>
-  )
+  );
 }

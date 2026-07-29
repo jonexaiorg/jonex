@@ -1,4 +1,4 @@
-
+"""Knowledge Base DTO exports."""
 
 from .data_source import (
     DataSourceCreateRequest,
@@ -7,6 +7,18 @@ from .data_source import (
     DataSourceUpdateRequest,
 )
 from .folder import FolderCreateRequest, FolderListQuery, FolderListResponse, FolderResponse, FolderUpdateRequest
+from .tag import (
+    TagCreateRequest,
+    TagListResponse,
+    TagResponse,
+    TagUpdateRequest,
+)
+from .document_tag import (
+    AddDocumentTagRequest,
+    DocumentTagActionResponse,
+    DocumentTagListResponse,
+    SetDocumentTagsRequest,
+)
 from .document import (
     DocumentDeleteResponse,
     DocumentListRequest,
@@ -16,7 +28,16 @@ from .document import (
     DocumentUploadRequest,
     SetDocumentFolderRequest,
 )
+from .ontology_crud import (
+    CreateOntologyInstanceRequest,
+    CreateOntologyRelationRequest,
+    DeleteOntologyInstanceRequest,
+    DeleteOntologyRelationRequest,
+    UpdateOntologyInstanceRequest,
+    UpdateOntologyRelationRequest,
+)
 from .ontology_query import (
+    OntologyEntitySearchRequest,
     OntologyGraphRequest,
     OntologyInstanceListRequest,
     OntologyNeighborRequest,
@@ -62,10 +83,14 @@ from .search_history import (
 )
 
 __all__ = [
+    "CreateOntologyInstanceRequest",
+    "CreateOntologyRelationRequest",
     "DataSourceCreateRequest",
     "DataSourceListResponse",
     "DataSourceResponse",
     "DataSourceUpdateRequest",
+    "DeleteOntologyInstanceRequest",
+    "DeleteOntologyRelationRequest",
     "DocumentDeleteResponse",
     "FolderCreateRequest",
     "FolderListQuery",
@@ -79,6 +104,7 @@ __all__ = [
     "DocumentScopeRequest",
     "DocumentUploadRequest",
     "EnhancedSearchResponse",
+    "OntologyEntitySearchRequest",
     "OntologyInstanceListRequest",
     "OntologyGraphRequest",
     "OntologyNeighborRequest",
@@ -117,4 +143,14 @@ __all__ = [
     "SetDocumentFolderRequest",
     "SourceLocation",
     "SourceReference",
+    "TagCreateRequest",
+    "TagListResponse",
+    "TagResponse",
+    "TagUpdateRequest",
+    "SetDocumentTagsRequest",
+    "AddDocumentTagRequest",
+    "DocumentTagListResponse",
+    "DocumentTagActionResponse",
+    "UpdateOntologyInstanceRequest",
+    "UpdateOntologyRelationRequest",
 ]

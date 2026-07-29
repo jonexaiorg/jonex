@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-"""Domain capability layer - provides capability encapsulation for specific domains"""
+"""领域能力层 - 提供特定领域的能力封装"""
 
 from .base import DomainCapability
 from .speech_processing.speech_to_text import SpeechToTextCapability

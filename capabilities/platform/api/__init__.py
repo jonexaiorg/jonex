@@ -1,4 +1,6 @@
-
+"""
+platform 能力 API 路由
+"""
 from fastapi import APIRouter
 
 

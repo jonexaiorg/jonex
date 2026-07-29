@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""Repository for KB-level folders."""
 
 from sqlalchemy import select
 
@@ -18,7 +18,7 @@ class FolderRepository(BaseRepository[Folder]):
         tenant_id: str,
         knowledge_base_id: str,
     ) -> list[Folder]:
-
+        """按 D-07/D-08 排序：预设在前（is_preset=1），预设内按名称排序，非预设按创建时间降序。"""
         tid = require_tenant(tenant_id)
         result = await self.session.execute(
             select(Folder).where(

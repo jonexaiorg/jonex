@@ -1,4 +1,6 @@
-
+"""
+知识库能力 — 领域服务模型
+"""
 import uuid
 from datetime import datetime
 

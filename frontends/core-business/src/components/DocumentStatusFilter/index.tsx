@@ -1,13 +1,13 @@
-import { Tag } from 'antd'
-import { useTranslation } from 'react-i18next'
-import { FILTER_PHASES, PHASE_DISPLAY, type DocPhase } from '@/utils/docPhase'
+import { Tag } from 'antd';
+import { useTranslation } from 'react-i18next';
+import { FILTER_PHASES, PHASE_DISPLAY, type DocPhase } from '@/utils/docPhase';
 
-const { CheckableTag } = Tag
+const { CheckableTag } = Tag;
 
 export interface DocumentStatusFilterProps {
   /** 当前选中的 phase 列表；空数组表示「全部」。 */
-  value: DocPhase[]
-  onChange: (phases: DocPhase[]) => void
+  value: DocPhase[];
+  onChange: (phases: DocPhase[]) => void;
 }
 
 /**
@@ -15,14 +15,14 @@ export interface DocumentStatusFilterProps {
  * 「全部」重置为空；点某 phase 切换其选中态。与 utils/docPhase 同源。
  */
 export default function DocumentStatusFilter({ value, onChange }: DocumentStatusFilterProps) {
-  const { t } = useTranslation()
+  const { t } = useTranslation();
   const toggle = (phase: DocPhase, checked: boolean) => {
     if (checked) {
-      onChange([...value, phase])
+      onChange([...value, phase]);
     } else {
-      onChange(value.filter((p) => p !== phase))
+      onChange(value.filter((p) => p !== phase));
     }
-  }
+  };
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -34,8 +34,8 @@ export default function DocumentStatusFilter({ value, onChange }: DocumentStatus
         {t('common.all')}
       </CheckableTag>
       {FILTER_PHASES.map((phase) => {
-        const d = PHASE_DISPLAY[phase]
-        const checked = value.includes(phase)
+        const d = PHASE_DISPLAY[phase];
+        const checked = value.includes(phase);
         return (
           <CheckableTag
             key={phase}
@@ -51,8 +51,8 @@ export default function DocumentStatusFilter({ value, onChange }: DocumentStatus
           >
             {t(d.label)}
           </CheckableTag>
-        )
+        );
       })}
     </div>
-  )
+  );
 }

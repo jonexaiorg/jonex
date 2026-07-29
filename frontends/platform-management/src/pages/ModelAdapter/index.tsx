@@ -1,50 +1,231 @@
-import React from 'react'
-import { Input, Tag, Button, message } from 'antd'
-import { SearchOutlined, PlusOutlined, PlayCircleOutlined, SettingOutlined, BarChartOutlined, RobotOutlined, CodepenOutlined, BlockOutlined, SortDescendingOutlined } from '@ant-design/icons'
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Input, Button, Tag, Spin, Result, message } from 'antd';
+import {
+  SearchOutlined,
+  PlusOutlined,
+  PlayCircleOutlined,
+  SettingOutlined,
+  RobotOutlined,
+  CodepenOutlined,
+  BlockOutlined,
+  SortDescendingOutlined,
+} from '@ant-design/icons';
+import { listProviders, testProvider, type ModelProviderItem } from '../../api/modelProviders';
+import AdapterFormModal, { type AdapterFormModalHandle } from './AdapterFormModal';
 
-const models = [
-  { name: 'GPT-4o', vendor: 'OpenAI', type: '对话模型', icon: <RobotOutlined />, color: '#10b981', latency: '1.2s', tokenLimit: '128K', calls: '12,458', successRate: '99.2%' },
-  { name: 'Claude Opus 4', vendor: 'Anthropic', type: '对话模型', icon: <CodepenOutlined />, color: '#8b5cf6', latency: '1.8s', tokenLimit: '200K', calls: '8,234', successRate: '99.5%' },
-  { name: 'text2vec-large', vendor: '本地部署', type: '向量模型', icon: <BlockOutlined />, color: '#3b82f6', latency: '0.3s', dims: '768', calls: '56,892', successRate: '100%' },
-  { name: 'bge-reranker', vendor: '本地部署', type: '重排序模型', icon: <SortDescendingOutlined />, color: '#f59e0b', latency: '0.5s', batchSize: '64', calls: '23,456', successRate: '99.8%' },
-]
+const PROVIDER_TYPE_LABELS: Record<string, string> = {
+  llm: 'LLM',
+  embedding: 'Embedding',
+  reranker: 'Reranker',
+};
+
+const BUILT_IN_MODEL_TYPE_KEYS: Record<string, string> = {
+  provider_demo_gpt4o: 'modelAdapter.typeChat',
+  provider_demo_claude: 'modelAdapter.typeChat',
+  provider_demo_text2vec: 'modelAdapter.typeEmbedding',
+  provider_demo_reranker: 'modelAdapter.typeReranking',
+};
+
+const ICON_CONFIG: { icon: React.ReactNode; color: string }[] = [
+  { icon: <RobotOutlined />, color: '#10b981' },
+  { icon: <CodepenOutlined />, color: '#8b5cf6' },
+  { icon: <BlockOutlined />, color: '#3b82f6' },
+  { icon: <SortDescendingOutlined />, color: '#f59e0b' },
+];
+
+function fmtLatency(ms: number | null): string {
+  if (ms === null || ms === undefined) return '-';
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
+
+function fmtCount(n: number | null): string {
+  if (n === null || n === undefined) return '-';
+  return n.toLocaleString();
+}
 
 export default function ModelAdapterPage() {
+  const { t } = useTranslation();
+  const [providers, setProviders] = useState<ModelProviderItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const modalRef = useRef<AdapterFormModalHandle>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await listProviders(0, 100);
+      setProviders(result.items);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t('modelAdapter.loadFailed'));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filtered = providers.filter((p) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return p.name.toLowerCase().includes(q) || (p.model_name || '').toLowerCase().includes(q);
+  });
+
+  const handleTest = async (id: string) => {
+    try {
+      const result = await testProvider(id);
+      message.success(result.message || t('modelAdapter.testPassed'));
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : t('modelAdapter.testFailed'));
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Result
+        status="error"
+        title={t('modelAdapter.loadFailed')}
+        subTitle={error}
+        extra={
+          <Button type="primary" onClick={load}>
+            {t('common.retry')}
+          </Button>
+        }
+      />
+    );
+  }
+
   return (
     <div>
       <div className="yx-page-title">
-        <h1>模型适配</h1>
-        <p style={{ color: '#64748b', margin: '4px 0 0', fontSize: 14 }}>管理接入的 AI 模型与适配器</p>
+        <h1>{t('modelAdapter.pageTitle')}</h1>
       </div>
-      <div className="yx-toolbar" style={{ marginBottom: 20 }}>
-        <Input prefix={<SearchOutlined />} placeholder="搜索模型..." style={{ width: 240 }} />
-        <Button type="primary" icon={<PlusOutlined />}>添加模型</Button>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 20,
+          marginTop: 8,
+        }}
+      >
+        <Input
+          prefix={<SearchOutlined />}
+          placeholder={t('modelAdapter.searchPlaceholder')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          allowClear
+          style={{ width: 240 }}
+        />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, color: '#64748b' }}>
+            {t('modelAdapter.totalModels', { count: filtered.length })}
+          </span>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => modalRef.current?.open()}>
+            {t('modelAdapter.addModel')}
+          </Button>
+        </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 20 }}>
-        {models.map((m, i) => (
-          <div key={i} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-              <div style={{ width: 48, height: 48, borderRadius: 12, background: m.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#fff' }}>{m.icon}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 16 }}>{m.name}</div>
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>{m.vendor} · {m.type}</div>
+
+      {filtered.length === 0 ? (
+        <div className="yx-empty-state">
+          <p>{t('modelAdapter.empty')}</p>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => modalRef.current?.open()}>
+            {t('modelAdapter.addModel')}
+          </Button>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 20 }}>
+          {filtered.map((p, idx) => {
+            const iconCfg = ICON_CONFIG[idx % ICON_CONFIG.length];
+            const modelTypeKey = BUILT_IN_MODEL_TYPE_KEYS[p.id];
+            const modelTypeLabel = modelTypeKey ? t(modelTypeKey) : p.model_type || '-';
+            return (
+              <div
+                key={p.id}
+                style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 24 }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                  <div
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 12,
+                      background: iconCfg.color,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 22,
+                      color: '#fff',
+                    }}
+                  >
+                    {iconCfg.icon}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 16 }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                      {PROVIDER_TYPE_LABELS[p.provider_type] || p.provider_type} · {modelTypeLabel}
+                    </div>
+                  </div>
+                  <Tag color={p.status === 'active' ? 'success' : 'default'}>
+                    {p.status === 'active' ? t('modelAdapter.connected') : p.status}
+                  </Tag>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+                  <div style={{ fontSize: 13 }}>
+                    <span style={{ color: '#94a3b8' }}>{t('modelAdapter.latency')}: </span>
+                    {fmtLatency(p.latency_ms)}
+                  </div>
+                  <div style={{ fontSize: 13 }}>
+                    <span style={{ color: '#94a3b8' }}>
+                      {p.token_limit
+                        ? t('modelAdapter.tokenLimit') + ': '
+                        : p.vector_dimension
+                          ? t('modelAdapter.vectorDimension') + ': '
+                          : t('modelAdapter.batchSizeTitle') + ': '}
+                    </span>
+                    {p.token_limit?.toLocaleString() ||
+                      p.vector_dimension ||
+                      ((p.config_json as Record<string, unknown>)?.batch_size as number) ||
+                      '-'}
+                  </div>
+                  <div style={{ fontSize: 13 }}>
+                    <span style={{ color: '#94a3b8' }}>{t('modelAdapter.callCount')}: </span>
+                    {fmtCount(p.call_count)}
+                  </div>
+                  <div style={{ fontSize: 13 }}>
+                    <span style={{ color: '#94a3b8' }}>{t('modelAdapter.successRate')}: </span>
+                    {p.success_rate !== null ? `${p.success_rate}%` : '-'}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button type="primary" size="small" icon={<PlayCircleOutlined />} onClick={() => handleTest(p.id)}>
+                    {t('modelAdapter.test')}
+                  </Button>
+                  <Button size="small" icon={<SettingOutlined />} onClick={() => modalRef.current?.openEdit(p)}>
+                    {t('modelAdapter.configure')}
+                  </Button>
+                </div>
               </div>
-              <Tag color="success">已连接</Tag>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-              <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>延迟: </span>{m.latency}</div>
-              <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>{m.tokenLimit ? 'Token 限额: ' : m.dims ? '向量维度: ' : '批量大小: '}</span>{m.tokenLimit || m.dims || m.batchSize}</div>
-              <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>调用次数: </span>{m.calls}</div>
-              <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>成功率: </span>{m.successRate}</div>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button type="primary" size="small" icon={<PlayCircleOutlined />} onClick={() => message.success('测试成功')}>测试</Button>
-              <Button size="small" icon={<SettingOutlined />}>配置</Button>
-              <Button size="small" icon={<BarChartOutlined />}>监控</Button>
-            </div>
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
+
+      <AdapterFormModal ref={modalRef} onSuccess={load} />
     </div>
-  )
+  );
 }

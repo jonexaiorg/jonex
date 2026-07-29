@@ -1,8 +1,6 @@
 """Unit tests for AsrModalProcessor audio processing."""
-import json
 import tempfile
 import os
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

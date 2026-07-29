@@ -1,69 +1,79 @@
-import React, { Component, type ReactNode } from 'react'
-import { Button, Result, Spin } from 'antd'
+import React, { Component, type ReactNode } from 'react';
+import { Button, Result, Spin } from 'antd';
+import { withTranslation, WithTranslation } from 'react-i18next';
 
-interface Props {
-  children: ReactNode
-  standaloneUrl?: string
-  appName?: string
-  loading?: boolean
+interface Props extends WithTranslation {
+  children: ReactNode;
+  standaloneUrl?: string;
+  appName?: string;
+  loading?: boolean;
 }
 
 interface State {
-  error: Error | null
-  retrying: boolean
+  error: Error | null;
+  retrying: boolean;
 }
 
-export default class RemoteAppBoundary extends Component<Props, State> {
+class RemoteAppBoundary extends Component<Props, State> {
   constructor(props: Props) {
-    super(props)
-    this.state = { error: null, retrying: false }
+    super(props);
+    this.state = { error: null, retrying: false };
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
-    return { error }
+    return { error };
   }
 
   handleRetry = (): void => {
-    this.setState({ error: null, retrying: false })
-  }
+    this.setState({ error: null, retrying: false });
+  };
 
   render() {
-    const { error, retrying } = this.state
-    const { children, standaloneUrl, appName, loading } = this.props
+    const { error, retrying } = this.state;
+    const { children, standaloneUrl, appName, loading } = this.props;
 
     if (loading || retrying) {
       return (
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: 120,
-        }}>
-          <Spin size="large" tip="正在加载应用..." />
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 120,
+          }}
+        >
+          <Spin size="large" tip={this.props.t('shell.loadingApp')} />
         </div>
-      )
+      );
     }
 
     if (error) {
       return (
         <Result
           status="warning"
-          title="应用加载失败"
-          subTitle={appName ? `无法加载「${appName}」` : '无法加载子应用'}
+          title={this.props.t('shell.loadAppFailed')}
+          subTitle={appName ? this.props.t('shell.cannotLoadApp', { appName }) : this.props.t('shell.cannotLoadSubApp')}
           extra={[
             <Button key="retry" type="primary" onClick={this.handleRetry}>
-              重试
+              {this.props.t('common.retry')}
             </Button>,
             standaloneUrl ? (
-              <Button key="standalone" onClick={() => { window.open(standaloneUrl, '_self') }}>
-                在新窗口打开
+              <Button
+                key="standalone"
+                onClick={() => {
+                  window.open(standaloneUrl, '_self');
+                }}
+              >
+                {this.props.t('shell.openInNewWindow')}
               </Button>
             ) : null,
           ].filter(Boolean)}
         />
-      )
+      );
     }
 
-    return children
+    return children;
   }
 }
+
+export default withTranslation()(RemoteAppBoundary);

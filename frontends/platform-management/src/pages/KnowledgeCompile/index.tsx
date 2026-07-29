@@ -1,6 +1,6 @@
-import React from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Card, Table, Tag, Row, Col } from 'antd'
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Card, Table, Tag, Row, Col } from 'antd';
 import {
   SearchOutlined,
   ApartmentOutlined,
@@ -9,106 +9,132 @@ import {
   FileTextOutlined,
   NodeIndexOutlined,
   ThunderboltOutlined,
-} from '@ant-design/icons'
-import { colors, radius } from '@jonex/platform-theme/tokens'
-import type { CompileTask } from '../../types/management'
-
-const compileTasks: CompileTask[] = []
-
-const statusConfig: Record<string, { color: string; label: string }> = {
-  running: { color: 'processing', label: '运行中' },
-  completed: { color: 'success', label: '已完成' },
-  failed: { color: 'error', label: '失败' },
-  pending: { color: 'default', label: '等待中' },
-}
-
-const stats = [
-  {
-    title: '编译任务总数',
-    value: compileTasks.length,
-    icon: <BuildOutlined />,
-    color: colors.accent,
-    bg: `${colors.accent}15`,
-  },
-  {
-    title: '实体总数',
-    value: compileTasks.reduce((s, t) => s + t.entityCount, 0).toLocaleString(),
-    icon: <NodeIndexOutlined />,
-    color: '#10b981',
-    bg: '#ecfdf5',
-  },
-  {
-    title: '关系总数',
-    value: compileTasks.reduce((s, t) => s + t.relationCount, 0).toLocaleString(),
-    icon: <ApartmentOutlined />,
-    color: '#8b5cf6',
-    bg: '#f5f3ff',
-  },
-  {
-    title: 'Chunk 总数',
-    value: compileTasks.reduce((s, t) => s + t.chunkCount, 0).toLocaleString(),
-    icon: <BlockOutlined />,
-    color: '#f59e0b',
-    bg: '#fffbeb',
-  },
-]
-
-const subPages = [
-  { title: '编译检索', desc: '搜索已编译的知识内容', path: '/knowledge-compile/search', icon: <SearchOutlined />, color: '#3b82f6' },
-  { title: '知识图谱', desc: '查看编译生成的知识图谱', path: '/knowledge-compile/graph', icon: <ApartmentOutlined />, color: '#8b5cf6' },
-  { title: '向量检索', desc: '向量相似度搜索与召回测试', path: '/knowledge-compile/vector', icon: <BlockOutlined />, color: '#10b981' },
-  { title: '编译管理', desc: '管理编译任务与调度', path: '/knowledge-compile/compile', icon: <ThunderboltOutlined />, color: '#f59e0b' },
-]
+} from '@ant-design/icons';
+import { colors, radius } from '@jonex/platform-theme/tokens';
+import { MOCK_COMPILE_TASKS, type CompileTask } from '../../data/mock';
+import { useTranslation } from 'react-i18next';
 
 export default function KnowledgeCompile() {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+
+  const statusConfig: Record<string, { color: string; label: string }> = {
+    running: { color: 'processing', label: t('status.running') },
+    completed: { color: 'success', label: t('status.completed') },
+    failed: { color: 'error', label: t('status.failed') },
+    pending: { color: 'default', label: t('status.pending') },
+  };
+
+  const stats = [
+    {
+      title: t('knowledgeCompile.totalTasks'),
+      value: MOCK_COMPILE_TASKS.length,
+      icon: <BuildOutlined />,
+      color: colors.accent,
+      bg: `${colors.accent}15`,
+    },
+    {
+      title: t('knowledgeCompile.totalEntities'),
+      value: MOCK_COMPILE_TASKS.reduce((s, t) => s + t.entityCount, 0).toLocaleString(),
+      icon: <NodeIndexOutlined />,
+      color: '#10b981',
+      bg: '#ecfdf5',
+    },
+    {
+      title: t('knowledgeCompile.totalRelations'),
+      value: MOCK_COMPILE_TASKS.reduce((s, t) => s + t.relationCount, 0).toLocaleString(),
+      icon: <ApartmentOutlined />,
+      color: '#8b5cf6',
+      bg: '#f5f3ff',
+    },
+    {
+      title: t('knowledgeCompile.totalChunks'),
+      value: MOCK_COMPILE_TASKS.reduce((s, t) => s + t.chunkCount, 0).toLocaleString(),
+      icon: <BlockOutlined />,
+      color: '#f59e0b',
+      bg: '#fffbeb',
+    },
+  ];
+
+  const subPages = [
+    {
+      title: t('knowledgeCompile.cardSearch'),
+      desc: t('knowledgeCompile.cardSearchDesc'),
+      path: '/knowledge-compile/search',
+      icon: <SearchOutlined />,
+      color: '#3b82f6',
+    },
+    {
+      title: t('knowledgeCompile.cardGraph'),
+      desc: t('knowledgeCompile.cardGraphDesc'),
+      path: '/knowledge-compile/graph',
+      icon: <ApartmentOutlined />,
+      color: '#8b5cf6',
+    },
+    {
+      title: t('knowledgeCompile.cardVector'),
+      desc: t('knowledgeCompile.cardVectorDesc'),
+      path: '/knowledge-compile/vector',
+      icon: <BlockOutlined />,
+      color: '#10b981',
+    },
+    {
+      title: t('knowledgeCompile.cardCompile'),
+      desc: t('knowledgeCompile.cardCompileDesc'),
+      path: '/knowledge-compile/compile',
+      icon: <ThunderboltOutlined />,
+      color: '#f59e0b',
+    },
+  ];
 
   const columns = [
     {
-      title: '任务名称',
+      title: t('knowledgeCompile.taskName'),
       dataIndex: 'name',
       key: 'name',
       render: (v: string) => (
-        <a className="yx-table-action" onClick={() => navigate('/knowledge-compile/compile')}>{v}</a>
+        <a className="yx-table-action" onClick={() => navigate('/knowledge-compile/compile')}>
+          {v}
+        </a>
       ),
     },
-    { title: '类型', dataIndex: 'type', key: 'type' },
+    { title: t('common.type'), dataIndex: 'type', key: 'type' },
     {
-      title: '状态',
+      title: t('common.status'),
       dataIndex: 'status',
       key: 'status',
       render: (v: string) => {
-        const cfg = statusConfig[v] || { color: 'default', label: v }
-        return <Tag color={cfg.color}>{cfg.label}</Tag>
+        const cfg = statusConfig[v] || { color: 'default', label: v };
+        return <Tag color={cfg.color}>{cfg.label}</Tag>;
       },
     },
     {
-      title: '实体数',
+      title: t('knowledgeCompile.entityCount'),
       dataIndex: 'entityCount',
       key: 'entityCount',
       render: (v: number) => v.toLocaleString(),
     },
     {
-      title: '关系数',
+      title: t('knowledgeCompile.relationCount'),
       dataIndex: 'relationCount',
       key: 'relationCount',
       render: (v: number) => v.toLocaleString(),
     },
     {
-      title: 'Chunk 数',
+      title: t('knowledgeCompile.chunkCount'),
       dataIndex: 'chunkCount',
       key: 'chunkCount',
       render: (v: number) => v.toLocaleString(),
     },
-    { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt' },
-  ]
+    { title: t('knowledgeCompile.updatedAt'), dataIndex: 'updatedAt', key: 'updatedAt' },
+  ];
 
   return (
     <div>
       <div className="yx-page-title">
-        <h1>知识编译</h1>
+        <h1>{t('knowledgeCompile.title')}</h1>
         <p style={{ color: colors.textSecondary, margin: '4px 0 0', fontSize: 14 }}>
-          管理知识库的编译、图谱构建和向量化
+          {t('knowledgeCompile.description')}
         </p>
       </div>
 
@@ -187,18 +213,21 @@ export default function KnowledgeCompile() {
       </Row>
 
       <div className="yx-card">
-        <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600, color: colors.textPrimary, paddingBottom: 12, borderBottom: `1px solid ${colors.border}` }}>
+        <h3
+          style={{
+            margin: '0 0 16px',
+            fontSize: 16,
+            fontWeight: 600,
+            color: colors.textPrimary,
+            paddingBottom: 12,
+            borderBottom: `1px solid ${colors.border}`,
+          }}
+        >
           <FileTextOutlined style={{ marginRight: 8, color: colors.accent }} />
-          最近编译任务
+          {t('knowledgeCompile.recentTasks')}
         </h3>
-        <Table
-          columns={columns}
-          dataSource={compileTasks}
-          rowKey="id"
-          pagination={false}
-          size="middle"
-        />
+        <Table columns={columns} dataSource={MOCK_COMPILE_TASKS} rowKey="id" pagination={false} size="middle" />
       </div>
     </div>
-  )
+  );
 }

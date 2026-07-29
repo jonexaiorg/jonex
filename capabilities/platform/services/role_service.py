@@ -1,9 +1,12 @@
-
+"""
+角色管理服务。
+"""
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jonex_core.common.exceptions import ResourceNotFoundError, ResourceConflictError
+from jonex_core.common.i18n import translate
 from jonex_core.common.tenant import require_tenant
 from capabilities.platform.models.role import Role
 from capabilities.platform.repository.permission_repository import PermissionRepository
@@ -21,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class RoleService:
-
+    """角色管理服务"""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -34,7 +37,9 @@ class RoleService:
         tenant_id = require_tenant(tenant_id)
         existing = await self.repo.get_by_name(tenant_id, req.name)
         if existing:
-            raise ResourceConflictError(message=f"Role name already exists: {req.name}")
+            raise ResourceConflictError(
+            message=translate("err.role.name_exists", params={"name": req.name}, fallback=f"角色名已存在: {req.name}")
+        )  # 原消息: 角色名已存在: {name}
 
         role = Role(
             tenant_id=tenant_id,
@@ -43,14 +48,16 @@ class RoleService:
         )
         self.session.add(role)
         await self.session.flush()
-        logger.info(f"Created role: {role.name} (id={role.id})")
+        logger.info(f"创建角色: {role.name} (id={role.id})")
         return RoleResponse.from_orm(role)
 
     async def get(self, tenant_id: str, role_id: int) -> RoleResponse:
         tenant_id = require_tenant(tenant_id)
         role = await self.repo.get_by_id(role_id, tenant_id)
         if not role or role.is_deleted:
-            raise ResourceNotFoundError(message=f"Role not found: {role_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.role.not_found", params={"role_id": str(role_id)}, fallback=f"角色不存在: {role_id}")
+        )  # 原消息: 角色不存在: {role_id}
         return RoleResponse.from_orm(role)
 
     async def list_roles(
@@ -68,13 +75,17 @@ class RoleService:
         tenant_id = require_tenant(tenant_id)
         role = await self.repo.get_by_id(role_id, tenant_id)
         if not role or role.is_deleted:
-            raise ResourceNotFoundError(message=f"Role not found: {role_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.role.not_found", params={"role_id": str(role_id)}, fallback=f"角色不存在: {role_id}")
+        )  # 原消息: 角色不存在: {role_id}
 
         update_data = req.dict(exclude_unset=True)
         if "name" in update_data and update_data["name"] != role.name:
             existing = await self.repo.get_by_name(tenant_id, update_data["name"])
             if existing and existing.id != role.id:
-                raise ResourceConflictError(message=f"Role name already exists: {update_data['name']}")
+                raise ResourceConflictError(
+                message=translate("err.role.name_exists", params={"name": update_data['name']}, fallback=f"角色名已存在: {update_data['name']}")
+            )  # 原消息: 角色名已存在: {name}
         for key, val in update_data.items():
             setattr(role, key, val)
         await self.session.flush()
@@ -84,41 +95,53 @@ class RoleService:
         tenant_id = require_tenant(tenant_id)
         role = await self.repo.get_by_id(role_id, tenant_id)
         if not role or role.is_deleted:
-            raise ResourceNotFoundError(message=f"Role not found: {role_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.role.not_found", params={"role_id": str(role_id)}, fallback=f"角色不存在: {role_id}")
+        )  # 原消息: 角色不存在: {role_id}
         if role.is_system:
-            raise ResourceConflictError(message="System roles cannot be deleted")
+            raise ResourceConflictError(
+            message=translate("err.role.system_undeletable", fallback="系统角色不可删除")
+        )  # 原消息: 系统角色不可删除
         await self.repo.delete_soft(role, tenant_id)
-        logger.info(f"Deleted role: {role.name} (id={role.id})")
+        logger.info(f"删除角色: {role.name} (id={role.id})")
 
     async def get_permissions(self, tenant_id: str, role_id: int) -> list[int]:
         tenant_id = require_tenant(tenant_id)
         role = await self.repo.get_by_id(role_id, tenant_id)
         if not role or role.is_deleted:
-            raise ResourceNotFoundError(message=f"Role not found: {role_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.role.not_found", params={"role_id": str(role_id)}, fallback=f"角色不存在: {role_id}")
+        )  # 原消息: 角色不存在: {role_id}
         return list(await self.role_perm_repo.get_permission_ids(tenant_id, role_id))
 
     async def set_permissions(self, tenant_id: str, role_id: int, permission_ids: list[int]) -> None:
         tenant_id = require_tenant(tenant_id)
         role = await self.repo.get_by_id(role_id, tenant_id)
         if not role or role.is_deleted:
-            raise ResourceNotFoundError(message=f"Role not found: {role_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.role.not_found", params={"role_id": str(role_id)}, fallback=f"角色不存在: {role_id}")
+        )  # 原消息: 角色不存在: {role_id}
 
         normalized_permission_ids = list(dict.fromkeys(permission_ids))
         for permission_id in normalized_permission_ids:
             permission = await self.permission_repo.get_by_id_shared(permission_id)
             if not permission:
-                raise ResourceNotFoundError(message=f"Permission not found: {permission_id}")
+                raise ResourceNotFoundError(
+                message=translate("err.permission.not_found", params={"permission_id": str(permission_id)}, fallback=f"权限不存在: {permission_id}")
+            )  # 原消息: 权限不存在: {permission_id}
 
         await self.role_perm_repo.set_permissions(
             tenant_id,
             role_id,
             normalized_permission_ids,
         )
-        logger.info(f"Set role permissions: role_id={role_id}, perms={normalized_permission_ids}")
+        logger.info(f"设置角色权限: role_id={role_id}, perms={normalized_permission_ids}")
 
     async def get_users(self, tenant_id: str, role_id: int) -> list[int]:
         tenant_id = require_tenant(tenant_id)
         role = await self.repo.get_by_id(role_id, tenant_id)
         if not role or role.is_deleted:
-            raise ResourceNotFoundError(message=f"Role not found: {role_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.role.not_found", params={"role_id": str(role_id)}, fallback=f"角色不存在: {role_id}")
+        )  # 原消息: 角色不存在: {role_id}
         return list(await self.user_role_repo.get_users_for_role(tenant_id, role_id))

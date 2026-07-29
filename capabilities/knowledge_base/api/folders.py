@@ -1,4 +1,6 @@
-
+"""
+知识库 — 文件夹 API 路由
+"""
 from fastapi import APIRouter, Query, Request
 
 from jonex_core.common.response import success_response
@@ -25,7 +27,7 @@ async def create_folder(request: Request):
     body = await request.json()
     tenant_id = extract_tenant_id(request)
     result = await _service.create_folder(tenant_id, body)
-    return success_response(data=result, message="Folder created successfully")
+    return success_response(data=result, message="文件夹已创建")
 
 
 @router.patch("/knowledge-base/folders/{folder_id}")
@@ -37,7 +39,7 @@ async def rename_folder(
     body = await request.json()
     tenant_id = extract_tenant_id(request)
     result = await _service.rename_folder(tenant_id, folder_id, knowledge_base_id, body.get("name", ""))
-    return success_response(data=result, message="Folder renamed successfully")
+    return success_response(data=result, message="文件夹已重命名")
 
 
 @router.delete("/knowledge-base/folders/{folder_id}")
@@ -48,4 +50,4 @@ async def delete_folder(
 ):
     tenant_id = extract_tenant_id(request)
     await _service.delete_folder(tenant_id, folder_id, knowledge_base_id)
-    return success_response(message="Folder deleted successfully")
+    return success_response(message="文件夹已删除")

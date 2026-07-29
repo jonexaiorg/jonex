@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""Knowledge Base search history entities."""
 
 import hashlib
 from datetime import datetime
@@ -27,7 +27,7 @@ def _iso(value: datetime | None) -> str | None:
 
 
 class KnowledgeSearchHistory(Base, TenantMixin, TimestampMixin, SoftDeleteMixin):
-
+    """Tenant/user-scoped search history."""
 
     __tablename__ = "knowledge_search_history"
     __table_args__ = (
@@ -48,6 +48,7 @@ class KnowledgeSearchHistory(Base, TenantMixin, TimestampMixin, SoftDeleteMixin)
     query = Column(Text, nullable=False)
     query_hash = Column(String(64), nullable=False)
     knowledge_base_id = Column(String(128), nullable=False, index=True)
+    domain_space_id = Column(String(64), nullable=True, index=True)
     mode = Column(String(32), nullable=False, default="hybrid")
     top_k = Column(Integer, nullable=False, default=5)
     status = Column(String(32), nullable=False, default="done")
@@ -63,6 +64,7 @@ class KnowledgeSearchHistory(Base, TenantMixin, TimestampMixin, SoftDeleteMixin)
             "id": self.id,
             "tenant_id": self.tenant_id,
             "user_id": self.user_id,
+            "domain_space_id": self.domain_space_id,
             "query": self.query,
             "query_hash": self.query_hash,
             "knowledge_base_id": self.knowledge_base_id,

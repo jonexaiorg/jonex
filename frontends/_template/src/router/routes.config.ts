@@ -1,13 +1,14 @@
-import { redirect } from 'react-router-dom'
-import loadableComponent from '@/utils/loadable'
+import { redirect } from 'react-router-dom';
+import { isEmbedded } from '@jonex/shell-sdk';
+import loadableComponent from '@/utils/loadable';
 
-const BasicLayout = loadableComponent(() => import('@/components/BasicLayout'))
-const HostedLayout = loadableComponent(() => import('@/components/HostedLayout'))
-const Home = loadableComponent(() => import('@/pages/Home'))
-const NotFound = loadableComponent(() => import('@/pages/NotFound'))
+const BasicLayout = loadableComponent(() => import('@/components/BasicLayout'));
+const HostedLayout = loadableComponent(() => import('@/components/HostedLayout'));
+const Home = loadableComponent(() => import('@/pages/Home'));
+const NotFound = loadableComponent(() => import('@/pages/NotFound'));
 
 export function getRoutes(mode: 'standalone' | 'hosted' = 'standalone') {
-  const Layout = mode === 'hosted' ? HostedLayout : BasicLayout
+  const Layout = mode === 'hosted' || isEmbedded() ? HostedLayout : BasicLayout;
 
   return [
     {
@@ -30,7 +31,7 @@ export function getRoutes(mode: 'standalone' | 'hosted' = 'standalone') {
       element: NotFound,
       title: 'error.404',
     },
-  ]
+  ];
 }
 
-export default getRoutes('standalone')
+export default getRoutes('standalone');

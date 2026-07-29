@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""Knowledge Base document entities."""
 
 from datetime import datetime, timezone
 from enum import Enum
@@ -14,10 +14,11 @@ from jonex_core.common.entity import SoftDeleteMixin, TenantMixin, TimestampMixi
 
 
 class DocStatus(str, Enum):
-
+    """Document lifecycle managed by the Knowledge Base service."""
 
     PENDING = "pending"
     PARSING = "parsing"
+    INGESTING = "ingesting"  # [jonex] P3 推送入图阶段（LightRAG LLM 抽取+embedding+写图）
     READY = "ready"
     FAILED = "failed"
     DELETING = "deleting"
@@ -25,7 +26,7 @@ class DocStatus(str, Enum):
 
 
 class OntologyStatus(str, Enum):
-
+    """Ontology extraction lifecycle for a parsed document."""
 
     PENDING = "pending"
     EXTRACTING = "extracting"
@@ -42,7 +43,7 @@ def _iso(value: datetime | None) -> str | None:
 
 
 class KnowledgeDocument(Base, TenantMixin, TimestampMixin, SoftDeleteMixin):
-
+    """Tenant-scoped Knowledge Base document metadata."""
 
     __tablename__ = "knowledge_documents"
     __table_args__ = {"schema": "knowledge_base"}
@@ -71,9 +72,16 @@ class KnowledgeDocument(Base, TenantMixin, TimestampMixin, SoftDeleteMixin):
     ontology_error = Column(Text, nullable=True)
     ontology_retry_count = Column(Integer, nullable=False, default=0)
 
+    # reparse 代次（P0-I）：每次 reparse 提交原子递增，旧代次任务结果作废
+    content_generation = Column(Integer, nullable=False, default=0)
+    # 文档级本体 schema 版本记账（P1-E）
+    ontology_target_schema_version = Column(Integer, nullable=True)
+    ontology_applied_schema_version = Column(Integer, nullable=True)
+    ontology_applied_schema_hash = Column(String(32), nullable=True)
+
     extra_metadata = Column(JSONB, nullable=False, default=dict)
 
-
+    # 文档来源方式（冗余真实列）：api / api_push / storage / file，统计按此列分组
     folder_id = Column(String(64), nullable=True, index=True)
 
     data_source_type = Column(String(32), nullable=True, index=True)
@@ -96,6 +104,10 @@ class KnowledgeDocument(Base, TenantMixin, TimestampMixin, SoftDeleteMixin):
             "ontology_status": self.ontology_status,
             "ontology_error": self.ontology_error,
             "ontology_retry_count": self.ontology_retry_count or 0,
+            "content_generation": self.content_generation or 0,
+            "ontology_target_schema_version": self.ontology_target_schema_version,
+            "ontology_applied_schema_version": self.ontology_applied_schema_version,
+            "ontology_applied_schema_hash": self.ontology_applied_schema_hash,
             "folder_id": self.folder_id,
             "data_source_type": self.data_source_type,
             "metadata": self.extra_metadata or {},

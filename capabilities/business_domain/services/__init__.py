@@ -1,4 +1,6 @@
-
+"""
+业务领域 — Service 层。
+"""
 from jonex_core.common.tenant import require_tenant
 
 

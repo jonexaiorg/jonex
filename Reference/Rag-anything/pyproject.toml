@@ -23,7 +23,6 @@ classifiers = [
 dependencies = [
     "huggingface_hub",
     "lightrag-hku",
-    "mineru[core]",
     "tqdm",
 ]
 
@@ -32,6 +31,10 @@ image = ["Pillow>=10.0.0"]
 text = ["reportlab>=4.0.0"]
 audio = ["openai-whisper>=20231117"]  # ASR transcription support
 office = []  # Requires LibreOffice (external program)
+# [jonex] 本地 MinerU CLI 解析（RAG_PARSER=mineru）。原为核心依赖 `mineru[core]`，
+#   悦溪将其移到此 optional extra：online/selfhost 为纯 HTTP 客户端不需要，
+#   slim 镜像不装此 extra 即可去掉 mineru 及其重传递依赖（torch 除外，torch 来自 whisper/st）。
+local = ["mineru[core]"]  # [jonex]
 video = [
     "cos-python-sdk-v5>=1.9.0",
     "xxhash>=3.0.0",
@@ -94,6 +97,7 @@ target-version = "py310"
 testpaths = ["tests"]
 python_files = ["test*.py"]
 norecursedirs = ["examples"]
+asyncio_mode = "auto"
 markers = [
     "integration: integration tests that require real external services (COS, TokenHub, etc.)",
     "cos: tests that require real COS credentials configured via env vars",

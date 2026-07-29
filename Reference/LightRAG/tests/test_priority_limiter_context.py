@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-"""[yuexi] priority_limit_async_func_call —— context 透传 + 取消/超时语义回归。
+"""[jonex] priority_limit_async_func_call —— context 透传 + 取消/超时语义回归。
 
 对应设计：docs/lightrag-embed-metering-context-propagation-plan.md §7。
 
@@ -9,7 +9,7 @@
 断言，避免依赖 pytest-asyncio。
 
 容器内运行：
-    docker exec yuexi-lightrag python /app/tests/test_priority_limiter_context.py
+    docker exec jonex-lightrag python /app/tests/test_priority_limiter_context.py
 或本机装齐 lightrag 依赖后：
     python Reference/LightRAG/tests/test_priority_limiter_context.py
 全部通过打印 "ALL PASSED"，否则抛 AssertionError。

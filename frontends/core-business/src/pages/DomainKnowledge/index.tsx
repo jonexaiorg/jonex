@@ -1,612 +1,525 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Input, Select, Button, Card, Table, Tag, Modal, message, Space } from 'antd'
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Input, Button, message, Empty, Spin, Dropdown } from 'antd';
 import {
   PlusOutlined,
   SearchOutlined,
   GlobalOutlined,
   SettingOutlined,
-  CloseOutlined,
-} from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
-import type {
-  DomainKnowledgeSpace,
-  DomainKnowledgeItem,
-  DomainKnowledgePermissionMember,
-} from '@/types/domainKnowledge'
-import { statusTextMap, sourceTypeTextMap, statusColorMap } from '@/types/domainKnowledge'
+  EditOutlined,
+  DeleteOutlined,
+  EllipsisOutlined,
+  ClockCircleOutlined,
+  FileTextOutlined,
+  DatabaseOutlined,
+  LineChartOutlined,
+} from '@ant-design/icons';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { observer } from 'mobx-react-lite';
+import { useStore } from '@/store';
+import { SPACE_URL_PARAM } from '@jonex/shell-sdk';
+import type { DomainKnowledgeItem, DomainKnowledgePermissionMember } from '@/types/domainKnowledge';
 import {
-  getDomainKnowledgeSpaces,
   getDomainKnowledgeList,
   getDomainKnowledgePermissions,
   saveDomainKnowledgePermissions,
-} from '@/api/domainKnowledge'
+  createKnowledgeInfo,
+  updateKnowledgeInfo,
+  deleteKnowledgeInfo,
+} from '@/api/domainKnowledge';
+import { listAccessMethods } from '@/api/dataSource';
+import { accessTypeDisplayName } from '@/utils/dataSourceDisplay';
+import PermissionModal from './PermissionModal';
+import CreateEditModal from './CreateEditModal';
+import DeleteConfirmModal from './DeleteConfirmModal';
+import './index.scss';
 
-const PAGE_SIZE = 6
+const PAGE_SIZE = 6;
 
-export default function DomainKnowledge() {
-  const navigate = useNavigate()
+const DomainKnowledge = observer(function DomainKnowledge() {
+  const { global } = useStore();
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // ── filter state ────────────────────────────────────
-  const [keywordInput, setKeywordInput] = useState('')
-  const [keyword, setKeyword] = useState('')
-  const [spaceId, setSpaceId] = useState('')
-  const [spaces, setSpaces] = useState<DomainKnowledgeSpace[]>([])
+  const [keywordInput, setKeywordInput] = useState('');
+  const [keyword, setKeyword] = useState('');
+
+  // 动态获取接入方式名称映射（从 business_domain.data_access_methods）
+  const [sourceTypeNames, setSourceTypeNames] = useState<Record<string, string>>({});
+
+  const fetchSourceTypeNames = useCallback(async () => {
+    try {
+      const methods = await listAccessMethods();
+      const map: Record<string, string> = {};
+      methods.forEach((m) => {
+        map[m.accessType] = m.name;
+      });
+      setSourceTypeNames(map);
+    } catch {
+      /* 获取失败时用 accessType 原文兜底 */
+    }
+  }, []);
 
   // ── list state ───────────────────────────────────────
-  const [list, setList] = useState<DomainKnowledgeItem[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(false)
+  const [list, setList] = useState<DomainKnowledgeItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
 
   // ── permission modal state ───────────────────────────
-  const [permOpen, setPermOpen] = useState(false)
-  const [permLoading, setPermLoading] = useState(false)
-  const [permSaving, setPermSaving] = useState(false)
-  const [currentKb, setCurrentKb] = useState<DomainKnowledgeItem | null>(null)
-  const [permissionMembers, setPermissionMembers] = useState<DomainKnowledgePermissionMember[]>([])
-  const [permissionKeyword, setPermissionKeyword] = useState('')
+  const [permOpen, setPermOpen] = useState(false);
+  const [permLoading, setPermLoading] = useState(false);
+  const [permSaving, setPermSaving] = useState(false);
+  const [currentKb, setCurrentKb] = useState<DomainKnowledgeItem | null>(null);
+  const [permissionMembers, setPermissionMembers] = useState<DomainKnowledgePermissionMember[]>([]);
+  const [permissionKeyword, setPermissionKeyword] = useState('');
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  // ── create modal state ────────────────────────────────
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createDesc, setCreateDesc] = useState('');
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+
+  // ── edit & delete state ───────────────────────────────
+  const [editingKb, setEditingKb] = useState<DomainKnowledgeItem | null>(null);
+  const [deletingKb, setDeletingKb] = useState<DomainKnowledgeItem | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // ── URL sync ────────────────────────────────────────
+  // 页面挂载时 URL 优先覆盖 store
+  useEffect(() => {
+    const urlSpaceId = searchParams.get(SPACE_URL_PARAM);
+    if (urlSpaceId && global.spaces.some((s) => s.id === urlSpaceId)) {
+      global.setCurrentSpaceId(urlSpaceId, { persist: true, broadcast: false });
+    }
+  }, []);
+
+  // store 变化时写回 URL
+  useEffect(() => {
+    const urlSpaceId = searchParams.get(SPACE_URL_PARAM);
+    if (global.currentSpaceId && global.currentSpaceId !== urlSpaceId) {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set(SPACE_URL_PARAM, global.currentSpaceId!);
+          return next;
+        },
+        { replace: true },
+      );
+    }
+  }, [global.currentSpaceId]);
 
   // ── fetch helpers ────────────────────────────────────
-  const fetchSpaces = useCallback(async () => {
-    try {
-      const data = await getDomainKnowledgeSpaces()
-      setSpaces(data)
-    } catch {
-      // spaces load silently
-    }
-  }, [])
-
   const fetchList = useCallback(
-    async (p: number, kw: string, sid: string) => {
-      setLoading(true)
+    async (p: number, kw: string) => {
+      setLoading(true);
       try {
         const result = await getDomainKnowledgeList({
           page: p,
           pageSize: PAGE_SIZE,
           keyword: kw || undefined,
-          spaceId: sid || undefined,
-        })
-        setList(result.list)
-        setTotal(result.pagination.total)
+          spaceId: global.currentSpaceId || undefined,
+        });
+        setList(result.list);
+        setTotal(result.pagination.total);
       } catch (err: any) {
-        message.error(err?.message || '获取知识库列表失败')
+        message.error(err?.message || t('domainKnowledge.fetchListFailed'));
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
     },
-    [],
-  )
+    [global.currentSpaceId],
+  );
 
   // ── initial load ─────────────────────────────────────
   useEffect(() => {
-    fetchSpaces()
-    fetchList(1, '', '')
-  }, [fetchSpaces, fetchList])
+    global.loadSpaces();
+    fetchSourceTypeNames();
+  }, []);
 
-  // ── debounced keyword ────────────────────────────────
+  // ── debounced keyword input → keyword + 回到第 1 页 ─────
+  // 关键词变化时把关键词与页码一起更新（React 18 自动批处理为一次渲染）。
   useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      setKeyword(keywordInput)
-    }, 300)
+      setKeyword(keywordInput);
+      setPage(1);
+    }, 300);
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
-  }, [keywordInput])
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [keywordInput]);
 
-  // ── keyword or spaceId change → reload page 1 ───────
+  // ── 统一的列表请求触发器 ────────────────────────────────
+  // 由 spaces 就绪、当前空间、页码、关键词共同驱动，任一变化都发起请求。
+  // 此前拆成多个 effect，且分页 effect 用 `page !== 1` 守卫，导致从第 2 页
+  // 返回第 1 页时不发请求。合并为单一入口后，回到第 1 页也会正常拉取。
   useEffect(() => {
-    fetchList(1, keyword, spaceId)
-  }, [keyword, spaceId, fetchList])
-
-  // ── pagination change → reload ───────────────────────
-  useEffect(() => {
-    if (page !== 1) {
-      fetchList(page, keyword, spaceId)
+    if (global.spacesLoaded) {
+      fetchList(page, keyword);
     }
-  }, [page])
+  }, [global.spacesLoaded, global.currentSpaceId, page, keyword]);
+
+  // ── create handler ───────────────────────────────────
+  const handleCreate = async () => {
+    if (!createName.trim()) {
+      message.warning(t('domainKnowledge.knowledgeBaseNameRequired'));
+      return;
+    }
+    setCreateSubmitting(true);
+    try {
+      const data = {
+        name: createName.trim(),
+        space_id: global.currentSpaceId!,
+        description: createDesc || undefined,
+      };
+      if (editingKb) {
+        await updateKnowledgeInfo(editingKb.id, data);
+        message.success(t('domainKnowledge.knowledgeBaseUpdated'));
+      } else {
+        await createKnowledgeInfo(data);
+        message.success(t('domainKnowledge.knowledgeBaseCreated'));
+      }
+      setCreateOpen(false);
+      setEditingKb(null);
+      setCreateName('');
+      setCreateDesc('');
+      fetchList(1, keyword);
+    } catch (err: any) {
+      message.error(
+        err?.message || (editingKb ? t('domainKnowledge.updateFailed') : t('domainKnowledge.createFailed')),
+      );
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
+
+  const openCreateModal = () => {
+    setEditingKb(null);
+    setCreateName('');
+    setCreateDesc('');
+    setCreateOpen(true);
+  };
+
+  const openEditModal = (kb: DomainKnowledgeItem) => {
+    setEditingKb(kb);
+    setCreateName(kb.name);
+    setCreateDesc(kb.description || '');
+    setCreateOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deletingKb) return;
+    setDeleteSubmitting(true);
+    try {
+      await deleteKnowledgeInfo(deletingKb.id);
+      message.success(t('common.deleteSuccess'));
+      setDeletingKb(null);
+      fetchList(1, keyword);
+    } catch (err: any) {
+      message.error(err?.message || t('common.deleteFailed'));
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  };
 
   // ── permission modal ─────────────────────────────────
   const openPermModal = async (kb: DomainKnowledgeItem) => {
-    setCurrentKb(kb)
-    setPermissionKeyword('')
-    setPermOpen(true)
-    setPermLoading(true)
+    setCurrentKb(kb);
+    setPermissionKeyword('');
+    setPermOpen(true);
+    setPermLoading(true);
     try {
-      const data = await getDomainKnowledgePermissions(kb.id)
-      setPermissionMembers(data.members)
+      const data = await getDomainKnowledgePermissions(kb.id);
+      setPermissionMembers(data.members);
     } catch {
-      message.error('获取权限成员失败')
+      message.error(t('domainKnowledge.fetchPermissionMembersFailed'));
     } finally {
-      setPermLoading(false)
+      setPermLoading(false);
     }
-  }
+  };
 
   const debouncedPermSearch = useCallback(
     (kw: string) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(async () => {
-        if (!currentKb) return
-        setPermLoading(true)
+        if (!currentKb) return;
+        setPermLoading(true);
         try {
-          const data = await getDomainKnowledgePermissions(currentKb.id, kw || undefined)
-          setPermissionMembers(data.members)
+          const data = await getDomainKnowledgePermissions(currentKb.id, kw || undefined);
+          setPermissionMembers(data.members);
         } catch {
           // silent
         } finally {
-          setPermLoading(false)
+          setPermLoading(false);
         }
-      }, 300)
+      }, 300);
     },
     [currentKb],
-  )
+  );
 
   const handlePermKeywordChange = (val: string) => {
-    setPermissionKeyword(val)
-    debouncedPermSearch(val)
-  }
+    setPermissionKeyword(val);
+    debouncedPermSearch(val);
+  };
 
   const handlePermRoleChange = (userId: string, role: 'view' | 'manage') => {
-    setPermissionMembers((prev) =>
-      prev.map((m) => (m.userId === userId ? { ...m, role } : m)),
-    )
-  }
+    setPermissionMembers((prev) => prev.map((m) => (m.userId === userId ? { ...m, role } : m)));
+  };
 
   const handleSavePermissions = async () => {
-    if (!currentKb) return
-    setPermSaving(true)
+    if (!currentKb) return;
+    setPermSaving(true);
     try {
       await saveDomainKnowledgePermissions(currentKb.id, {
         members: permissionMembers.map((m) => ({
           userId: m.userId,
           role: m.role,
         })),
-      })
-      message.success('权限保存成功')
-      setPermOpen(false)
+      });
+      message.success(t('domainKnowledge.savePermissionSuccess'));
+      setPermOpen(false);
     } catch (err: any) {
-      message.error(err?.message || '权限保存失败')
+      message.error(err?.message || t('domainKnowledge.savePermissionFailed'));
     } finally {
-      setPermSaving(false)
+      setPermSaving(false);
     }
-  }
-
-  // ── columns ──────────────────────────────────────────
-  const columns = [
-    {
-      title: '知识库名称',
-      dataIndex: 'name',
-      key: 'name',
-      width: 180,
-      render: (v: string, r: DomainKnowledgeItem) => (
-        <span
-          className="kb-name"
-          style={{ color: '#3b82f6', cursor: 'pointer', fontWeight: 500 }}
-          onClick={() => navigate(`/domain-knowledge/${r.id}`)}
-        >
-          {v}
-        </span>
-      ),
-    },
-    { title: '所属空间', dataIndex: 'spaceName', key: 'spaceName', width: 140 },
-    {
-      title: '数据源类型',
-      dataIndex: 'dataSourceTypes',
-      key: 'dataSourceTypes',
-      width: 200,
-      render: (types: string[]) => (
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {types.map((t) => (
-            <span
-              key={t}
-              style={{
-                fontSize: 11,
-                padding: '2px 8px',
-                borderRadius: 4,
-                background: '#eff6ff',
-                color: '#3b82f6',
-                border: '1px solid #bfdbfe',
-              }}
-            >
-              {sourceTypeTextMap[t as keyof typeof sourceTypeTextMap] || t}
-            </span>
-          ))}
-        </div>
-      ),
-    },
-    {
-      title: '文档数',
-      dataIndex: 'documentCount',
-      key: 'documentCount',
-      width: 90,
-      render: (v: number) => v.toLocaleString(),
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 90,
-      render: (v: string) => (
-        <Tag color={statusColorMap[v as keyof typeof statusColorMap]}>
-          {statusTextMap[v as keyof typeof statusTextMap] || v}
-        </Tag>
-      ),
-    },
-    {
-      title: '权限设置',
-      key: 'perm',
-      width: 110,
-      render: (_: unknown, r: DomainKnowledgeItem) => (
-        <span
-          className="perm-badge"
-          onClick={() => openPermModal(r)}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            fontSize: 12,
-            padding: '2px 10px',
-            borderRadius: 6,
-            background: '#f1f5f9',
-            color: '#64748b',
-            cursor: 'pointer',
-            border: '1px solid #e2e8f0',
-          }}
-          onMouseEnter={(e) => {
-            ;(e.currentTarget as HTMLElement).style.background = '#eff6ff'
-            ;(e.currentTarget as HTMLElement).style.color = '#3b82f6'
-            ;(e.currentTarget as HTMLElement).style.borderColor = '#bfdbfe'
-          }}
-          onMouseLeave={(e) => {
-            ;(e.currentTarget as HTMLElement).style.background = '#f1f5f9'
-            ;(e.currentTarget as HTMLElement).style.color = '#64748b'
-            ;(e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0'
-          }}
-        >
-          <SettingOutlined style={{ fontSize: 11 }} /> 设置权限
-        </span>
-      ),
-    },
-    { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt', width: 150 },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 100,
-      render: (_: unknown, r: DomainKnowledgeItem) => (
-        <Space>
-          <a className="yx-table-action" onClick={() => navigate(`/domain-knowledge/${r.id}`)}>
-            查看
-          </a>
-          <a className="yx-table-action">编辑</a>
-        </Space>
-      ),
-    },
-  ]
+  };
 
   // ── pagination helpers ───────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const pageNumbers = (): number[] => {
-    const pages: number[] = []
-    for (let i = 1; i <= totalPages; i++) pages.push(i)
-    return pages
-  }
+    const pages: number[] = [];
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+    return pages;
+  };
+
+  // ── display list ──
+  const displayList = list.map((item) => ({
+    ...item,
+    spaceName: global.currentSpace?.name || item.spaceName || '',
+  }));
+
+  // ── data source type display name ──
+  const getSourceTypeDisplay = (type: string): string => {
+    const localized = accessTypeDisplayName(type, t);
+    return localized === type ? sourceTypeNames[type] || type : localized;
+  };
 
   // ── render ───────────────────────────────────────────
   return (
     <div>
+      {/* Page Header */}
       <div className="yx-page-title">
-        <h1>领域知识管理</h1>
-        <p className="yx-page-subtitle">
-          管理各领域空间下的知识库，每个知识库需关联到所属领域空间
-        </p>
+        <h1>{t('navigation.domainKnowledge')}</h1>
+        <p className="yx-page-subtitle">{t('domainKnowledge.pageSubtitle')}</p>
       </div>
 
       {/* Filter Row */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          marginBottom: 20,
-          flexWrap: 'wrap',
-        }}
-      >
-        <label
-          style={{
-            fontSize: 14,
-            fontWeight: 500,
-            color: '#475569',
-            whiteSpace: 'nowrap',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-          }}
-        >
-          <GlobalOutlined style={{ color: '#3b82f6' }} /> 所属空间：
+      <div className="yx-filter-row">
+        <label>
+          <GlobalOutlined style={{ color: '#3b82f6' }} /> {t('domainKnowledge.currentSpace')}
         </label>
-        <Select
-          value={spaceId}
-          onChange={(val) => {
-            setSpaceId(val)
-            setPage(1)
-          }}
-          style={{ minWidth: 180 }}
-          options={[
-            { value: '', label: '全部空间' },
-            ...spaces.map((s) => ({ value: s.id, label: s.name })),
-          ]}
-        />
-        <span style={{ fontSize: 13, color: '#94a3b8', marginLeft: 8 }}>
-          共 {total} 个知识库
+        <span style={{ fontWeight: 500, color: '#0b2b5c' }}>
+          {global.currentSpace?.name || t('domainKnowledge.notSelected')}
         </span>
+        <span className="yx-filter-count">{t('domainKnowledge.knowledgeBaseCount', { total })}</span>
       </div>
 
-      <Card className="yx-card">
+      {/* Toolbar + Card Grid */}
+      <div className="yx-page-card">
         <div className="yx-toolbar">
           <Input
-            prefix={<SearchOutlined />}
-            placeholder="搜索知识库名称..."
+            prefix={<SearchOutlined style={{ color: '#94a3b8', fontSize: 14 }} />}
+            placeholder={t('domainKnowledge.searchPlaceholder')}
             value={keywordInput}
             onChange={(e) => {
-              setKeywordInput(e.target.value)
-              setPage(1)
+              setKeywordInput(e.target.value);
             }}
-            style={{ width: 240 }}
+            style={{ width: 280, lineHeight: 'normal' }}
           />
-          <Button type="primary" icon={<PlusOutlined />}>
-            新建知识库
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+            {t('domainKnowledge.newKnowledgeBase')}
           </Button>
         </div>
-        <Table
-          columns={columns}
-          dataSource={list}
-          rowKey="id"
-          pagination={false}
-          size="middle"
-          loading={loading}
-        />
-        {/* Custom Pagination */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gap: 6,
-            padding: '16px 0 0',
-            borderTop: '1px solid #eef2f6',
-            marginTop: 16,
-          }}
-        >
-          <span
-            className={`yx-page-btn${page <= 1 ? ' disabled' : ''}`}
-            onClick={() => page > 1 && setPage((p) => p - 1)}
-            style={{
-              width: 34,
-              height: 34,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 8,
-              border: '1px solid #e2e8f0',
-              cursor: page <= 1 ? 'not-allowed' : 'pointer',
-              color: '#94a3b8',
-              fontSize: 12,
-              opacity: page <= 1 ? 0.4 : 1,
-            }}
-          >
-            {'<'}
-          </span>
-          {pageNumbers().map((n) => (
-            <span
-              key={n}
-              className={`yx-page-btn${n === page ? ' active' : ''}`}
-              onClick={() => setPage(n)}
-              style={{
-                width: 34,
-                height: 34,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: 8,
-                background: n === page ? '#3b82f6' : 'transparent',
-                color: n === page ? '#fff' : '#64748b',
-                fontWeight: n === page ? 600 : 400,
-                fontSize: 13,
-                cursor: 'pointer',
-                border: n === page ? 'none' : '1px solid #e2e8f0',
-              }}
-            >
-              {n}
-            </span>
-          ))}
-          <span
-            className={`yx-page-btn${page >= totalPages ? ' disabled' : ''}`}
-            onClick={() => page < totalPages && setPage((p) => p + 1)}
-            style={{
-              width: 34,
-              height: 34,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 8,
-              border: '1px solid #e2e8f0',
-              cursor: page >= totalPages ? 'not-allowed' : 'pointer',
-              color: '#94a3b8',
-              fontSize: 12,
-              opacity: page >= totalPages ? 0.4 : 1,
-            }}
-          >
-            {'>'}
-          </span>
-          <span style={{ fontSize: 13, color: '#94a3b8', marginLeft: 12 }}>
-            共 {total} 条，{page}/{totalPages} 页
-          </span>
-        </div>
-      </Card>
 
-      {/* Permission Modal */}
-      <Modal
-        open={permOpen}
-        onCancel={() => setPermOpen(false)}
-        footer={null}
-        width={600}
-        closable={false}
-        styles={{ body: { padding: 0 } }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '20px 24px',
-            borderBottom: '1px solid #eef2f6',
-          }}
-        >
-          <h2
-            style={{
-              fontSize: 17,
-              fontWeight: 600,
-              color: '#0b2b5c',
-              margin: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <SettingOutlined style={{ color: '#3b82f6' }} /> 知识库权限设置
-          </h2>
-          <button
-            onClick={() => setPermOpen(false)}
-            style={{
-              width: 32,
-              height: 32,
-              border: 'none',
-              background: '#f1f5f9',
-              borderRadius: 8,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#64748b',
-              fontSize: 16,
-            }}
-          >
-            <CloseOutlined />
-          </button>
-        </div>
-        <div style={{ padding: '20px 24px' }}>
-          <p style={{ fontSize: 14, color: '#475569', marginBottom: 16 }}>
-            为知识库{' '}
-            <strong style={{ color: '#0b2b5c' }}>{currentKb?.name}</strong>{' '}
-            添加成员并设置权限
-          </p>
-          <Input
-            prefix={<SearchOutlined />}
-            placeholder="搜索用户或角色..."
-            value={permissionKeyword}
-            onChange={(e) => handlePermKeywordChange(e.target.value)}
-            style={{ marginBottom: 12 }}
-          />
-          {permLoading ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
-              加载中...
-            </div>
-          ) : (
-            permissionMembers.map((u, i) => {
-              const checked = u.role
-              return (
-                <div
-                  key={u.userId}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: '10px 12px',
-                    borderRadius: 8,
-                    border: '1px solid #eef2f6',
-                    marginBottom: 8,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 8,
-                      background: u.avatarColor,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#fff',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {u.avatarText}
+        {/* Loading State */}
+        {loading && list.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '80px 0' }}>
+            <Spin size="large" />
+          </div>
+        ) : list.length === 0 ? (
+          /* Empty State */
+          <div style={{ textAlign: 'center', padding: '80px 0' }}>
+            <Empty description={t('domainKnowledge.emptyDescription')}>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+                {t('domainKnowledge.newKnowledgeBase')}
+              </Button>
+            </Empty>
+          </div>
+        ) : (
+          /* Card Grid */
+          <div className="kb-card-grid">
+            {displayList.map((item) => (
+              <div className="kb-card" key={item.id}>
+                {/* Card Top */}
+                <div className="kb-card-top">
+                  <div className="kb-card-icon">
+                    <DatabaseOutlined />
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: '#1e293b' }}>
-                      {u.name}
+                  <div className="kb-card-info">
+                    <div className="kb-card-name" onClick={() => navigate(`/domain-knowledge/${item.id}`)}>
+                      {item.name}
                     </div>
-                    <div style={{ fontSize: 12, color: '#94a3b8' }}>{u.dept}</div>
+                    <div className="kb-card-meta">
+                      <span>
+                        <FileTextOutlined />{' '}
+                        {t('domainKnowledge.docsWithCount', {
+                          count: item.documentCount ?? 0,
+                        })}
+                      </span>
+                      <span>
+                        <ClockCircleOutlined /> {item.updatedAt || '—'}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {(['view', 'manage'] as const).map((role) => {
-                      const isActive = checked === role
-                      const label = role === 'view' ? '查看' : '管理'
-                      return (
-                        <label
-                          key={role}
-                          style={{
-                            padding: '4px 12px',
-                            borderRadius: 6,
-                            fontSize: 12,
-                            border: `1px solid ${isActive ? '#3b82f6' : '#e2e8f0'}`,
-                            cursor: 'pointer',
-                            color: isActive ? '#3b82f6' : '#64748b',
-                            background: isActive ? '#eff6ff' : 'transparent',
-                            fontWeight: isActive ? 500 : 400,
-                          }}
-                        >
-                          <input
-                            type="radio"
-                            name={`perm-${i}`}
-                            checked={isActive}
-                            onChange={() => handlePermRoleChange(u.userId, role)}
-                            style={{ display: 'none' }}
-                          />
-                          {label}
-                        </label>
-                      )
-                    })}
+                  {/* More Button + Dropdown */}
+                  <Dropdown
+                    menu={{
+                      style: {
+                        boxShadow:
+                          '0 6px 16px 0 rgba(0,0,0,0.08), 0 3px 6px -4px rgba(0,0,0,0.12), 0 9px 28px 8px rgba(0,0,0,0.05)',
+                        borderRadius: 8,
+                      },
+                      items: [
+                        {
+                          key: 'settings',
+                          icon: <SettingOutlined />,
+                          label: t('domainKnowledge.knowledgeBaseSettings'),
+                          onClick: () => navigate(`/domain-knowledge/${item.id}/detail`),
+                        },
+                        {
+                          key: 'tracking',
+                          icon: <LineChartOutlined />,
+                          label: t('route.tracking'),
+                          onClick: () => message.info(t('domainKnowledge.trackingComingSoon')),
+                        },
+                        {
+                          key: 'edit',
+                          icon: <EditOutlined />,
+                          label: t('common.edit'),
+                          onClick: () => openEditModal(item),
+                        },
+                        { type: 'divider' },
+                        {
+                          key: 'delete',
+                          icon: <DeleteOutlined />,
+                          label: t('common.delete'),
+                          danger: true,
+                          onClick: () => setDeletingKb(item),
+                        },
+                      ],
+                    }}
+                    trigger={['hover']}
+                    placement="bottomRight"
+                  >
+                    <EllipsisOutlined style={{ cursor: 'pointer' }} />
+                  </Dropdown>
+                </div>
+
+                {/* Card Body - Description */}
+                <div className="kb-card-body">
+                  <div className="kb-card-desc">{item.description || t('domainKnowledge.noDescription')}</div>
+                </div>
+
+                {/* Card Tags Row */}
+                <div className="kb-card-tags">
+                  <div className="source-tags">
+                    {(item.dataSourceTypes && item.dataSourceTypes.length > 0 ? item.dataSourceTypes : ['file']).map(
+                      (type) => (
+                        <span key={type} className="source-tag">
+                          {getSourceTypeDisplay(type)}
+                        </span>
+                      ),
+                    )}
                   </div>
                 </div>
-              )
-            })
-          )}
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 12,
-            padding: '16px 24px',
-            borderTop: '1px solid #eef2f6',
-          }}
-        >
-          <Button onClick={() => setPermOpen(false)}>取消</Button>
-          <Button
-            type="primary"
-            loading={permSaving}
-            onClick={handleSavePermissions}
-          >
-            保存权限
-          </Button>
-        </div>
-      </Modal>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Custom Pagination */}
+        {list.length > 0 && (
+          <div className="yx-pagination">
+            <span
+              className={`yx-page-btn${page <= 1 ? ' disabled' : ''}`}
+              onClick={() => page > 1 && setPage((p) => p - 1)}
+            >
+              &lt;
+            </span>
+            {pageNumbers().map((n) => (
+              <span key={n} className={`yx-page-btn${n === page ? ' active' : ''}`} onClick={() => setPage(n)}>
+                {n}
+              </span>
+            ))}
+            <span
+              className={`yx-page-btn${page >= totalPages ? ' disabled' : ''}`}
+              onClick={() => page < totalPages && setPage((p) => p + 1)}
+            >
+              &gt;
+            </span>
+            <span className="yx-page-info">
+              {t('domainKnowledge.pagination', {
+                total,
+                page,
+                pages: totalPages,
+              })}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <PermissionModal
+        open={permOpen}
+        currentKb={currentKb}
+        members={permissionMembers}
+        keyword={permissionKeyword}
+        loading={permLoading}
+        saving={permSaving}
+        onKeywordChange={handlePermKeywordChange}
+        onRoleChange={handlePermRoleChange}
+        onSave={handleSavePermissions}
+        onCancel={() => setPermOpen(false)}
+      />
+
+      <CreateEditModal
+        open={createOpen}
+        editingKb={editingKb}
+        name={createName}
+        description={createDesc}
+        submitting={createSubmitting}
+        onNameChange={setCreateName}
+        onDescChange={setCreateDesc}
+        onOk={handleCreate}
+        onCancel={() => setCreateOpen(false)}
+      />
+
+      <DeleteConfirmModal
+        open={!!deletingKb}
+        deletingKb={deletingKb}
+        submitting={deleteSubmitting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeletingKb(null)}
+      />
     </div>
-  )
-}
+  );
+});
+
+DomainKnowledge.displayName = 'DomainKnowledge';
+export default DomainKnowledge;

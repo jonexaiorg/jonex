@@ -1,9 +1,15 @@
-import { Outlet } from 'react-router-dom'
-import useDocumentTitle from '@/hooks/useDocumentTitle'
+import { Outlet } from 'react-router-dom';
+import useDocumentTitle from '@/hooks/useDocumentTitle';
+import RouteSync from '@/components/RouteSync';
 
 const AppLayout = () => {
-  useDocumentTitle()
-  return <Outlet />
-}
+  useDocumentTitle();
+  return (
+    <>
+      <RouteSync />
+      <Outlet />
+    </>
+  );
+};
 
-export default AppLayout
+export default AppLayout;

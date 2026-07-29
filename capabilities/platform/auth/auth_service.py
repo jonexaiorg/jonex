@@ -1,4 +1,6 @@
-
+"""
+认证服务 — 独立运行在 platform 容器中，通过 Sidecar 代理调用。
+"""
 import json
 import logging
 from datetime import datetime, timedelta
@@ -8,9 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from jonex_core.common.config import get_config
 from jonex_core.common.exceptions import (
     InvalidApiKeyError,
+    InvalidCredentialsError,
     PermissionDeniedError,
     TokenExpiredError,
 )
+from jonex_core.common.i18n import translate
 from jonex_core.common.tenant import require_tenant
 from capabilities.platform.repository.user_repository import UserRepository
 from capabilities.platform.repository.tenant_repository import TenantRepository
@@ -33,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 class AuthService:
-
+    """平台认证服务"""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -47,13 +51,13 @@ class AuthService:
             if tenant_id:
                 user = await self.user_repo.get_by_username(require_tenant(tenant_id), req.username)
                 if not user:
-                    raise InvalidApiKeyError(message="Invalid username or password")
+                    raise InvalidCredentialsError()
                 if not self.user_auth.verify_password(req.password, user.password_hash):
-                    raise InvalidApiKeyError(message="Invalid username or password")
+                    raise InvalidCredentialsError()
                 result = await self._build_login_response(
                     user,
                     update_last_login=True,
-                    inactive_tenant_message="Invalid username or password",
+                    inactive_tenant_message=translate(3008, fallback="用户名或密码错误"),  # 原消息: 用户名或密码错误
                 )
                 await self._record_login_audit(user.tenant_id, user, client_ip, "SUCCESS")
                 return result
@@ -64,19 +68,19 @@ class AuthService:
                 if self.user_auth.verify_password(req.password, user.password_hash)
             ]
             if not matched_users:
-                raise InvalidApiKeyError(message="Invalid username or password")
+                raise InvalidCredentialsError()
 
             tenant_ids = [user.tenant_id for user in matched_users]
             tenants = await self.tenant_repo.list_active_by_ids(tenant_ids)
             matched_users = [user for user in matched_users if user.tenant_id in tenants]
             if not matched_users:
-                raise InvalidApiKeyError(message="Invalid username or password")
+                raise InvalidCredentialsError()
             if len(matched_users) == 1:
                 user = matched_users[0]
                 result = await self._build_login_response(
                     user,
                     update_last_login=True,
-                    inactive_tenant_message="Invalid username or password",
+                    inactive_tenant_message=translate(3008, fallback="用户名或密码错误"),  # 原消息: 用户名或密码错误
                 )
                 await self._record_login_audit(user.tenant_id, user, client_ip, "SUCCESS")
                 return result
@@ -90,13 +94,13 @@ class AuthService:
             ]
             return TenantSelectionRequiredResponse(tenant_options=tenant_options)
         except InvalidApiKeyError:
-
+            # 登录失败：记录失败日志
             await self._record_login_audit(
                 tenant_id or "unknown",
                 None,
                 client_ip,
                 "FAILED",
-                error_message="Invalid username or password",
+                error_message="用户名或密码错误",
                 username=req.username,
             )
             raise
@@ -111,7 +115,7 @@ class AuthService:
         error_message: str | None = None,
         username: str | None = None,
     ):
-
+        """记录登录审计日志（同步直写，不阻塞登录流程）"""
         try:
             from capabilities.platform.services.audit_log_service import AuditLogService
             svc = AuditLogService(self.session)
@@ -128,14 +132,16 @@ class AuthService:
                 sync=True,
             )
         except Exception:
-            logger.exception("Failed to record login audit log (login flow unaffected)")
+            logger.exception("记录登录审计日志失败（不影响登录流程）")
 
     async def _build_login_response(
         self,
         user: User,
         update_last_login: bool = False,
-        inactive_tenant_message: str = "User does not exist or is disabled",
+        inactive_tenant_message: str | None = None,
     ) -> LoginResponse:
+        if inactive_tenant_message is None:
+            inactive_tenant_message = translate("err.auth.user_not_found_or_disabled", fallback="用户不存在或已禁用")  # 原消息: 用户不存在或已禁用
         tenants = await self.tenant_repo.list_active_by_ids([user.tenant_id])
         tenant = tenants.get(user.tenant_id)
         if not tenant:
@@ -148,7 +154,7 @@ class AuthService:
             user.last_login_at = datetime.utcnow()
             await self.session.flush()
 
-        logger.info(f"User logged in successfully: {user.username} (id={user.id})")
+        logger.info(f"用户登录成功: {user.username} (id={user.id})")
 
         return LoginResponse(
             access_token=access_token,
@@ -180,12 +186,12 @@ class AuthService:
         )
         user = result.scalar_one_or_none()
         if not user:
-            raise InvalidApiKeyError(message="User does not exist or is disabled")
+            raise InvalidApiKeyError(message=translate("err.auth.user_not_found_or_disabled", fallback="用户不存在或已禁用"))  # 原消息: 用户不存在或已禁用
 
         tenants = await self.tenant_repo.list_active_by_ids([user.tenant_id])
         tenant = tenants.get(user.tenant_id)
         if not tenant:
-            raise InvalidApiKeyError(message="User does not exist or is disabled")
+            raise InvalidApiKeyError(message=translate("err.auth.user_not_found_or_disabled", fallback="用户不存在或已禁用"))  # 原消息: 用户不存在或已禁用
 
         return UserInfo(
             user_id=user.id,
@@ -199,7 +205,7 @@ class AuthService:
     async def refresh(self, token: str) -> LoginResponse:
         payload = self.user_auth.decode_token(token)
         if payload.get("type") != "refresh":
-            raise TokenExpiredError(message="Use a refresh token to refresh")
+            raise TokenExpiredError()  # refresh 接口传入了非 refresh 类型的 Token
         tenant_id = require_tenant(payload.get("tenant_id"))
 
         from sqlalchemy import select
@@ -215,7 +221,7 @@ class AuthService:
         )
         user = result.scalar_one_or_none()
         if not user:
-            raise InvalidApiKeyError(message="User does not exist or is disabled")
+            raise InvalidApiKeyError(message=translate("err.auth.user_not_found_or_disabled", fallback="用户不存在或已禁用"))  # 原消息: 用户不存在或已禁用
 
         return await self._build_login_response(user)
 
@@ -238,19 +244,23 @@ class AuthService:
         )
         user = result.scalar_one_or_none()
         if not user:
-            raise InvalidApiKeyError(message="User does not exist or is disabled")
+            raise InvalidApiKeyError(message=translate("err.auth.user_not_found_or_disabled", fallback="用户不存在或已禁用"))  # 原消息: 用户不存在或已禁用
 
         try:
             allowed = json.loads(self.config.AUTH_ALLOWED_REDIRECT_URIS) if self.config.AUTH_ALLOWED_REDIRECT_URIS else {}
         except json.JSONDecodeError:
-            logger.error(f"Failed to parse AUTH_ALLOWED_REDIRECT_URIS: {self.config.AUTH_ALLOWED_REDIRECT_URIS}")
-            raise PermissionDeniedError(message="Invalid redirect allowlist configuration")
+            logger.error(f"AUTH_ALLOWED_REDIRECT_URIS 解析失败: {self.config.AUTH_ALLOWED_REDIRECT_URIS}")
+            raise PermissionDeniedError(message=translate("err.auth.redirect_whitelist_error", fallback="redirect 白名单配置错误"))  # 原消息: redirect 白名单配置错误
 
         allowed_uris = allowed.get(req.appId, [])
         if not allowed_uris:
-            raise PermissionDeniedError(message=f"No allowlist configuration found for appId={req.appId}")
+            raise PermissionDeniedError(
+                message=translate("err.auth.appid_whitelist_missing", params={"app_id": req.appId}, fallback=f"未找到 appId={req.appId} 的白名单配置")
+            )  # 原消息: 未找到 appId={app_id} 的白名单配置
         if not any(req.redirectUri.startswith(u) for u in allowed_uris):
-            raise PermissionDeniedError(message=f"redirectUri is not in the allowlist: {req.redirectUri}")
+            raise PermissionDeniedError(
+                message=translate("err.auth.redirect_uri_not_whitelisted", params={"uri": req.redirectUri}, fallback=f"redirectUri 不在白名单中: {req.redirectUri}")
+            )  # 原消息: redirectUri 不在白名单中: {uri}
 
         ticket_plain = self.user_auth.create_login_ticket_plaintext()
         ticket_hash = self.user_auth.hash_login_ticket(ticket_plain)
@@ -270,11 +280,11 @@ class AuthService:
         )
         self.session.add(ticket_record)
         await self.session.flush()
-
+        # login ticket 会被浏览器下一次跳转立即兑换，必须在返回明文 ticket 前持久化。
         await self.session.commit()
 
         logger.info(
-            f"Created login ticket: hash={ticket_hash[:8]}... user={user.username} "
+            f"创建 login ticket: hash={ticket_hash[:8]}... user={user.username} "
             f"app={req.appId} redirect={req.redirectUri}"
         )
 
@@ -294,20 +304,20 @@ class AuthService:
         ticket_record = result.scalar_one_or_none()
 
         if not ticket_record:
-            raise InvalidApiKeyError(message="ticket does not exist or is malformed")
+            raise InvalidApiKeyError(message=translate("err.auth.invalid_ticket", fallback="ticket 不存在或格式不合法"))  # 原消息: ticket 不存在或格式不合法
 
         now = datetime.utcnow()
         if ticket_record.expires_at < now:
-            raise TokenExpiredError(message="ticket has expired or has already been used")
+            raise TokenExpiredError()  # 登录 ticket 已过期
         if ticket_record.used_at is not None:
-            raise TokenExpiredError(message="ticket has expired or has already been used")
+            raise TokenExpiredError()  # 登录 ticket 已被使用
 
         if ticket_record.app_id != req.appId:
-            raise PermissionDeniedError(message="appId does not match the ticket binding")
+            raise PermissionDeniedError(message=translate("err.auth.appid_ticket_mismatch", fallback="appId 与 ticket 绑定不一致"))  # 原消息: appId 与 ticket 绑定不一致
         if ticket_record.redirect_uri != req.redirectUri:
-            raise PermissionDeniedError(message="redirectUri does not match the ticket binding")
+            raise PermissionDeniedError(message=translate("err.auth.redirect_uri_ticket_mismatch", fallback="redirectUri 与 ticket 绑定不一致"))  # 原消息: redirectUri 与 ticket 绑定不一致
         if ticket_record.state != req.state:
-            raise PermissionDeniedError(message="state does not match the ticket binding")
+            raise PermissionDeniedError(message=translate("err.auth.state_ticket_mismatch", fallback="state 与 ticket 绑定不一致"))  # 原消息: state 与 ticket 绑定不一致
         tenant_id = require_tenant(ticket_record.tenant_id)
 
         result = await self.session.execute(
@@ -320,7 +330,7 @@ class AuthService:
         )
         user = result.scalar_one_or_none()
         if not user:
-            raise InvalidApiKeyError(message="User does not exist or is disabled")
+            raise InvalidApiKeyError(message=translate("err.auth.user_not_found_or_disabled", fallback="用户不存在或已禁用"))  # 原消息: 用户不存在或已禁用
 
         login_response = await self._build_login_response(user)
         ticket_record.used_at = now
@@ -328,7 +338,7 @@ class AuthService:
         await self.session.commit()
 
         logger.info(
-            f"Login ticket redeemed successfully: hash={ticket_hash[:8]}... user={user.username} "
+            f"兑换 login ticket 成功: hash={ticket_hash[:8]}... user={user.username} "
             f"app={req.appId}"
         )
 
@@ -346,6 +356,6 @@ class AuthService:
                 sync=True,
             )
         except Exception:
-            logger.exception("Failed to record ticket redemption audit log")
+            logger.exception("记录票据兑换审计日志失败")
 
         return login_response

@@ -849,8 +849,18 @@ class OpenSearchDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        doc_id: str | None = None,
+        file_path: str | None = None,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
-        """Get documents with pagination using PIT + search_after."""
+        """Get documents with pagination using PIT + search_after.
+
+        [jonex] doc_id/file_path document-scope filtering is NOT implemented for the
+        OpenSearch backend (not the deployed doc_status backend; deployed backend is
+        PGDocStatusStorage). Parameters are accepted for interface compatibility so
+        the paginated handler's keyword call does not raise. If OpenSearch is ever
+        promoted to production, add a bool filter here (file_path wildcard for the
+        ``doc=<id>|`` anchor, term for exact file_path).
+        """
         if not self._index_ready:
             return [], 0
         page = max(1, page)

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""KB 数据源 DTO（Pydantic v1 兼容）。"""
 from datetime import datetime
 from typing import Any, Optional
 
@@ -49,7 +49,7 @@ class DataSourceResponse(BaseModel):
     updated_at: Optional[datetime | str] = None
 
     class Config:
-        extra = "allow"
+        extra = "allow"  # 创建 api_push 时额外回带 ingest_key / ingest_url
 
 
 class DataSourceListResponse(BaseModel):

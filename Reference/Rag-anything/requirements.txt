@@ -1,10 +1,12 @@
 huggingface_hub
 # LightRAG packages
 lightrag-hku
-# MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
-mineru[core]
 # Progress bars for batch processing
 tqdm
+# NOTE(jonex): mineru[core] 已从核心依赖移到 optional extra `local`（见 setup.py / pyproject.toml）。
+#   本地 MinerU CLI 解析（RAG_PARSER=mineru）需 `pip install raganything[local]`；
+#   online / selfhost（RAG_PARSER=mineru_online / mineru_selfhost）为纯 HTTP 客户端，不需要 mineru，
+#   借此让 slim 镜像去掉 mineru 及其重传递依赖（modelscope/opencv/mineru-vl-utils 等）。
 # Note: Optional dependencies are now defined in setup.py extras_require:
 # - [image]: Pillow>=10.0.0 (for BMP, TIFF, GIF, WebP format conversion)
 # - [text]: reportlab>=4.0.0 (for TXT, MD to PDF conversion)

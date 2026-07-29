@@ -7,7 +7,7 @@ except ImportError:
     from pydantic import BaseModel, Field
 
 
-
+# ============ 用户 ============
 
 class UserCreateRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=128)
@@ -45,7 +45,7 @@ class UserListResponse(BaseModel):
     items: list[UserResponse]
 
 
-
+# ============ 角色 ============
 
 class RoleCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
@@ -83,7 +83,7 @@ class UserRolesRequest(BaseModel):
     role_ids: list[int]
 
 
-
+# ============ 权限 ============
 
 class PermissionResponse(BaseModel):
     id: int
@@ -102,7 +102,7 @@ class PermissionListResponse(BaseModel):
     items: list[PermissionResponse]
 
 
-
+# ============ 菜单 ============
 
 class MenuCreateRequest(BaseModel):
     parent_id: int = 0
@@ -144,7 +144,7 @@ class MenuListResponse(BaseModel):
     items: list[MenuResponse]
 
 
-
+# ============ 应用注册 ============
 
 class ApplicationCreateRequest(BaseModel):
     app_code: str = Field(..., max_length=64)
@@ -183,7 +183,7 @@ class ApplicationListResponse(BaseModel):
     items: list[ApplicationResponse]
 
 
-
+# ============ 前端应用清单 ============
 
 class FrontendManifestRoutes(BaseModel):
     hostedBase: str

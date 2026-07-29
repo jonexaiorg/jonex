@@ -4,9 +4,10 @@ This module contains all query-related routes for the LightRAG API.
 
 import json
 from typing import Any, Dict, List, Literal, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from lightrag.base import QueryParam
 from lightrag.api.utils_api import get_combined_auth_dependency
+from lightrag.api.workspace_manager import get_workspace_from_request  # [jonex]
 from lightrag.utils import logger
 from pydantic import BaseModel, Field, field_validator
 
@@ -150,6 +151,10 @@ class ReferenceItem(BaseModel):
         default=None,
         description="List of chunk contents from this file (only present when include_chunk_content=True)",
     )
+    chunk_ids: Optional[List[str]] = Field(  # [jonex]
+        default=None,
+        description="[jonex] Chunk ids aligned with content[], present when include_chunk_content=True",
+    )
 
 
 class QueryResponse(BaseModel):
@@ -188,7 +193,9 @@ class StreamChunkResponse(BaseModel):
     )
 
 
-def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
+def create_query_routes(manager, api_key: Optional[str] = None, top_k: int = 60):
+    # [jonex] manager is a WorkspaceRAGManager (not a single LightRAG instance).
+    # Each handler resolves the correct rag via LIGHTRAG-WORKSPACE header.
     # Fresh router per call. A module-level instance would accumulate
     # duplicate routes when the factory is invoked more than once in the
     # same process (e.g. across tests), which triggers FastAPI's
@@ -326,7 +333,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             },
         },
     )
-    async def query_text(request: QueryRequest):
+    async def query_text(request: QueryRequest, http_request: Request):  # [jonex] +Request
         """
         Comprehensive RAG query endpoint with non-streaming response. Parameter "stream" is ignored.
 
@@ -406,6 +413,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                 - 500: Internal processing error (e.g., LLM service unavailable)
         """
         try:
+            rag = await manager.get(get_workspace_from_request(http_request))  # [jonex]
             param = request.to_query_params(
                 False
             )  # Ensure stream=False for non-streaming endpoint
@@ -430,12 +438,15 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                 chunks = data.get("chunks", [])
                 # Create a mapping from reference_id to chunk content
                 ref_id_to_content = {}
+                ref_id_to_chunk_ids = {}          # [jonex] collect chunk_ids aligned with content
                 for chunk in chunks:
                     ref_id = chunk.get("reference_id", "")
                     content = chunk.get("content", "")
+                    cid = chunk.get("chunk_id", "")   # [jonex] chunks already carry chunk_id
                     if ref_id and content:
                         # Collect chunk content; join later to avoid quadratic string concatenation
                         ref_id_to_content.setdefault(ref_id, []).append(content)
+                        ref_id_to_chunk_ids.setdefault(ref_id, []).append(cid)   # [jonex]
 
                 # Add content to references
                 enriched_references = []
@@ -445,6 +456,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                     if ref_id in ref_id_to_content:
                         # Keep content as a list of chunks (one file may have multiple chunks)
                         ref_copy["content"] = ref_id_to_content[ref_id]
+                        ref_copy["chunk_ids"] = ref_id_to_chunk_ids.get(ref_id, [])   # [jonex]
                     enriched_references.append(ref_copy)
                 references = enriched_references
 
@@ -536,7 +548,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             },
         },
     )
-    async def query_text_stream(request: QueryRequest):
+    async def query_text_stream(request: QueryRequest, http_request: Request):  # [jonex] +Request
         """
         Advanced RAG query endpoint with flexible streaming response.
 
@@ -664,6 +676,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             Use streaming mode for real-time interfaces and non-streaming for batch processing.
         """
         try:
+            rag = await manager.get(get_workspace_from_request(http_request))  # [jonex]
             # Use the stream parameter from the request, defaulting to True if not specified
             stream_mode = request.stream if request.stream is not None else True
             param = request.to_query_params(stream_mode)
@@ -684,12 +697,15 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                     chunks = data.get("chunks", [])
                     # Create a mapping from reference_id to chunk content
                     ref_id_to_content = {}
+                    ref_id_to_chunk_ids = {}          # [jonex] collect chunk_ids aligned with content
                     for chunk in chunks:
                         ref_id = chunk.get("reference_id", "")
                         content = chunk.get("content", "")
+                        cid = chunk.get("chunk_id", "")   # [jonex] chunks already carry chunk_id
                         if ref_id and content:
                             # Collect chunk content
                             ref_id_to_content.setdefault(ref_id, []).append(content)
+                            ref_id_to_chunk_ids.setdefault(ref_id, []).append(cid)   # [jonex]
 
                     # Add content to references
                     enriched_references = []
@@ -699,6 +715,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                         if ref_id in ref_id_to_content:
                             # Keep content as a list of chunks (one file may have multiple chunks)
                             ref_copy["content"] = ref_id_to_content[ref_id]
+                            ref_copy["chunk_ids"] = ref_id_to_chunk_ids.get(ref_id, [])   # [jonex]
                         enriched_references.append(ref_copy)
                     references = enriched_references
 
@@ -1039,7 +1056,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             },
         },
     )
-    async def query_data(request: QueryRequest):
+    async def query_data(request: QueryRequest, http_request: Request):  # [jonex] +Request
         """
         Advanced data retrieval endpoint for structured RAG analysis.
 
@@ -1143,6 +1160,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             as structured data analysis typically requires source attribution.
         """
         try:
+            rag = await manager.get(get_workspace_from_request(http_request))  # [jonex]
             param = request.to_query_params(False)  # No streaming for data endpoint
             response = await rag.aquery_data(request.query, param=param)
 
@@ -1168,7 +1186,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
         dependencies=[Depends(combined_auth)],
         summary="结构化 RAG 查询，返回响应文本 + 检索数据（实体/关系/chunks）",
     )
-    async def query_structured(request: QueryRequest):
+    async def query_structured(request: QueryRequest, http_request: Request):  # [jonex] +Request
         """
         增强型 RAG 查询，同时返回 LLM 响应文本和结构化检索数据。
 
@@ -1180,6 +1198,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
         适用于需要同时获取回答和原始检索结果的场景（如本体增强查询、调试等）。
         """
         try:
+            rag = await manager.get(get_workspace_from_request(http_request))  # [jonex]
             param = request.to_query_params(False)
             param.stream = False
 

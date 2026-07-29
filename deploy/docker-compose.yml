@@ -1,3 +1,13 @@
+# ============================================================
+# 悦溪平台 Docker Compose 编排文件
+# ============================================================
+# 基础设施版本选型（锁定）：
+#   PostgreSQL  15-alpine   (LTS → 2027-11)
+#   Redis       7-alpine    (⚠️ 4.0 已 EOL，禁止降级)
+#   Milvus      2.5.14      (需 BM25 + 混合检索)
+#   etcd        3.5.18      (Milvus 硬性要求 ≥3.5.0)
+#   MinIO       2025-04-22  (S3 v4 签名兼容)
+# ============================================================
 
 networks:
   jonex-network:
@@ -31,7 +41,9 @@ volumes:
     driver: local
 
 services:
-
+  # ============================================================
+  # 基础设施 - PostgreSQL 数据库
+  # ============================================================
   postgres:
     image: postgres:15-alpine
     container_name: jonex-postgres
@@ -47,7 +59,7 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - jonex-postgres-data:/var/lib/postgresql/data
-      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./postgres/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-jonex} -d ${DB_NAME:-jonex}"]
       interval: 10s
@@ -55,6 +67,9 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # ============================================================
+  # 基础设施 - Redis 缓存 / 服务发现
+  # ============================================================
   redis:
     image: redis:7-alpine
     container_name: jonex-redis
@@ -76,6 +91,9 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # ============================================================
+  # 基础设施 - etcd（Milvus 元数据存储）
+  # ============================================================
   etcd:
     image: quay.io/coreos/etcd:v3.5.18
     container_name: jonex-etcd
@@ -105,6 +123,9 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # ============================================================
+  # 基础设施 - MinIO（Milvus 对象存储）
+  # ============================================================
   minio:
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: jonex-minio
@@ -125,6 +146,9 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # ============================================================
+  # 基础设施 - Milvus 向量数据库
+  # ============================================================
   milvus:
     image: milvusdb/milvus:v2.5.14
     container_name: jonex-milvus
@@ -132,8 +156,8 @@ services:
     networks:
       - jonex-network
     ports:
-      - "19530:19530"
-      - "9091:9091"
+      - "19530:19530"   # gRPC
+      - "9091:9091"     # HTTP / metrics
     environment:
       TZ: Asia/Shanghai
       ETCD_ENDPOINTS: etcd:2379
@@ -156,12 +180,18 @@ services:
       start_period: 90s
     restart: unless-stopped
 
+  # ============================================================
+  # 知识库能力服务
+  # ============================================================
   knowledge-base-service:
     build:
       context: ..
       dockerfile: deploy/docker/capability.Dockerfile
       args:
         CAPABILITY_NAME: knowledge_base
+        PYTHON_BASE: python-base                            # 共享基础镜像
+      additional_contexts:
+        python-base: "docker-image://jonex/python-base:local"
     container_name: jonex-knowledge-base
     hostname: knowledge-base
     networks:
@@ -179,29 +209,100 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-jonex123}
       DB_NAME: ${DB_NAME:-jonex}
       REDIS_URL: redis://redis:6379/0
-
+      # RAG 调用通过 Sidecar 反代到 atomic-rag
       SIDECAR_URL: http://sidecar:8000
+      # 审计日志转发到 platform（非 platform 容器必须设置，否则审计静默丢弃）
+      AUDIT_INGEST_URL: http://platform-service:8000
       CAPABILITY_RUNTIME_FILE: /app/config/capability_runtime.yaml
-
+      # Neo4j 本体图数据库连接
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USERNAME: neo4j
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-jonex_neo4j_123}
       NEO4J_ONTOLOGY_LABEL: OntologyEntity
-
-      ONTOLOGY_LLM_BINDING_HOST: ${ONTOLOGY_LLM_BINDING_HOST:-https://tokenhub.tencentmaas.com/v1}
-      ONTOLOGY_LLM_BINDING_API_KEY: ${LLM_BINDING_API_KEY_FOR_ONTOLOGY:-${LLM_BINDING_API_KEY:-}}
-      ONTOLOGY_LLM_MODEL: ${ONTOLOGY_LLM_MODEL:-deepseek-v4-flash}
+      # Ontology LLM (分流问答)
+      ONTOLOGY_LLM_BINDING_HOST: ${ONTOLOGY_LLM_BINDING_HOST:-http://llm-gateway:8787/v1}
+      ONTOLOGY_LLM_BINDING_API_KEY: ${ONTOLOGY_LLM_BINDING_API_KEY:-gw_lightrag}
+      ONTOLOGY_LLM_MODEL: ${ONTOLOGY_LLM_MODEL:-deepseek-v4-flash-202605}
+      # RAG fallback 引用重排（方案 B2）：总开关默认关闭（灰度）；client 经 llm-gateway
+      ONTOLOGY_RAG_FALLBACK_RERANK_ENABLED: ${ONTOLOGY_RAG_FALLBACK_RERANK_ENABLED:-false}
+      # LightRAG 检索期 rerank 配置态（仅供 reasoning 展示，须与 .env.rag 的 RERANK_BINDING 一致）
+      RAG_RETRIEVAL_RERANK_ENABLED: ${RAG_RETRIEVAL_RERANK_ENABLED:-false}
+      RERANK_BINDING_HOST: ${RERANK_BINDING_HOST:-http://llm-gateway:8787/v1}
+      RERANK_BINDING_API_KEY: ${RERANK_BINDING_API_KEY:-gw_lightrag}
+      RERANK_MODEL: ${RERANK_MODEL:-awenleven/Qwen3-Reranker-4B:Q4_K_M}
+      # 对象存储（腾讯云 COS），默认 local
+      OBJECT_STORAGE_BACKEND: ${OBJECT_STORAGE_BACKEND:-local}
+      COS_REGION: ${COS_REGION:-}
+      COS_SECRET_ID: ${COS_SECRET_ID:-}
+      COS_SECRET_KEY: ${COS_SECRET_KEY:-}
+      COS_BUCKET: ${COS_BUCKET:-}
+      COS_KEY_PREFIX: ${COS_KEY_PREFIX:-jonex}
+      COS_PRESIGN_EXPIRES: ${COS_PRESIGN_EXPIRES:-900}
+      KB_INPUT_DIR: /app/inputs               # 与 gateway/atomic-rag 共享上传文件（local 后端原文查看/读取）
     env_file:
       - .env
     volumes:
       - jonex-logs:/app/logs
+      - jonex-rag-inputs:/app/inputs             # local 后端：读取 gateway/atomic-rag 写入的原始文件
       - ./config/capability_runtime.yaml:/app/config/capability_runtime.yaml:ro
+      - ./config/ontology:/app/deploy/config/ontology:ro   # 编译 yaml_default 兜底需要 default.yaml
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       neo4j:
+        condition: service_healthy
+      llm-gateway:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # ============================================================
+  # 业务领域能力服务（领域空间 + 生态管理 + 引擎管理）
+  # ============================================================
+  business-domain-service:
+    build:
+      context: ..
+      dockerfile: deploy/docker/capability.Dockerfile
+      args:
+        CAPABILITY_NAME: business_domain
+        PYTHON_BASE: python-base                            # 共享基础镜像
+      additional_contexts:
+        python-base: "docker-image://jonex/python-base:local"
+    container_name: jonex-business-domain
+    hostname: business-domain
+    networks:
+      - jonex-network
+    ports:
+      - "8005:8000"
+    environment:
+      TZ: Asia/Shanghai
+      CAPABILITY_NAME: business_domain
+      SERVICE_ENDPOINT: http://business-domain-service:8000
+      LOG_LEVEL: INFO
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-jonex}
+      DB_PASSWORD: ${DB_PASSWORD:-jonex123}
+      DB_NAME: ${DB_NAME:-jonex}
+      REDIS_URL: redis://redis:6379/0
+      SIDECAR_URL: http://sidecar:8000
+      # 审计日志转发到 platform（非 platform 容器必须设置，否则审计静默丢弃）
+      AUDIT_INGEST_URL: http://platform-service:8000
+    env_file:
+      - .env
+    volumes:
+      - jonex-logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -211,10 +312,64 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # ============================================================
+  # 平台管理能力服务（用户认证、RBAC、菜单、系统配置等）
+  # ============================================================
+  platform-service:
+    build:
+      context: ..
+      dockerfile: deploy/docker/capability.Dockerfile
+      args:
+        CAPABILITY_NAME: platform
+        PYTHON_BASE: python-base                            # 共享基础镜像
+      additional_contexts:
+        python-base: "docker-image://jonex/python-base:local"
+    container_name: jonex-platform
+    hostname: platform
+    networks:
+      - jonex-network
+    ports:
+      - "8006:8000"
+    environment:
+      TZ: Asia/Shanghai
+      CAPABILITY_NAME: platform
+      SERVICE_ENDPOINT: http://platform-service:8000
+      LOG_LEVEL: INFO
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-jonex}
+      DB_PASSWORD: ${DB_PASSWORD:-jonex123}
+      DB_NAME: ${DB_NAME:-jonex}
+      REDIS_URL: redis://redis:6379/0
+      AUDIT_INGEST_URL: ""   # platform 自身走本地直写，不走 HTTP 转发
+    env_file:
+      - .env
+    volumes:
+      - jonex-logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # ============================================================
+  # Sidecar 代理服务（内部能力调用入口）
+  # ============================================================
   sidecar:
     build:
       context: ..
       dockerfile: deploy/docker/sidecar.Dockerfile
+      args:
+        PYTHON_BASE: python-base                            # 共享基础镜像
+      additional_contexts:
+        python-base: "docker-image://jonex/python-base:local"
     container_name: jonex-sidecar
     hostname: sidecar
     networks:
@@ -224,15 +379,13 @@ services:
     environment:
       TZ: Asia/Shanghai
       LOG_LEVEL: INFO
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USERNAME: ${DB_USERNAME:-jonex}
-      DB_PASSWORD: ${DB_PASSWORD:-jonex123}
-      DB_NAME: ${DB_NAME:-jonex}
       REDIS_URL: redis://redis:6379/0
       KNOWLEDGE_BASE_URL: http://knowledge-base-service:8000
+      BUSINESS_DOMAIN_URL: http://business-domain-service:8000
       ATOMIC_RAG_URL: http://atomic-rag:8000
+      PLATFORM_URL: http://platform-service:8000
       JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       LOGIN_TICKET_EXPIRE_SECONDS: ${LOGIN_TICKET_EXPIRE_SECONDS:-60}
       AUTH_ALLOWED_REDIRECT_URIS: ${AUTH_ALLOWED_REDIRECT_URIS:-{}}
       WORKERS: 4
@@ -241,11 +394,13 @@ services:
     volumes:
       - jonex-logs:/app/logs
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
+      platform-service:
+        condition: service_healthy
       knowledge-base-service:
+        condition: service_healthy
+      business-domain-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -255,10 +410,17 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # ============================================================
+  # API Gateway（前端统一入口）
+  # ============================================================
   gateway:
     build:
       context: ..
       dockerfile: deploy/docker/gateway.Dockerfile
+      args:
+        PYTHON_BASE: python-base                            # 共享基础镜像
+      additional_contexts:
+        python-base: "docker-image://jonex/python-base:local"
     container_name: jonex-gateway
     hostname: gateway
     networks:
@@ -277,11 +439,20 @@ services:
       DB_NAME: ${DB_NAME:-jonex}
       REDIS_URL: redis://redis:6379/0
       SIDECAR_URL: http://sidecar:8000
-      KB_INPUT_DIR: /app/inputs
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      KB_INPUT_DIR: /app/inputs               # 与 atomic-rag 容器共享路径
       AUTH_CORS_ORIGINS: ${AUTH_CORS_ORIGINS:-}
+      # 对象存储（腾讯云 COS），仅网关上传用，默认 local
+      OBJECT_STORAGE_BACKEND: ${OBJECT_STORAGE_BACKEND:-local}
+      COS_KEY_PREFIX: ${COS_KEY_PREFIX:-jonex}
+      COS_REGION: ${COS_REGION:-}
+      COS_SECRET_ID: ${COS_SECRET_ID:-}
+      COS_SECRET_KEY: ${COS_SECRET_KEY:-}
+      COS_BUCKET: ${COS_BUCKET:-}
     volumes:
       - jonex-logs:/app/logs
-      - jonex-rag-inputs:/app/inputs
+      - jonex-rag-inputs:/app/inputs             # 与 atomic-rag 共享上传文件（named volume）
     depends_on:
       postgres:
         condition: service_healthy
@@ -297,6 +468,62 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # ============================================================
+  # LLM 网关 - OpenAI 兼容代理 + Token 计量
+  # 所有 LLM/Embedding 出口（含 LightRAG 内部调用）经此网关
+  # ============================================================
+  llm-gateway:
+    build:
+      context: ..
+      dockerfile: deploy/docker/llm-gateway.Dockerfile
+      args:
+        PYTHON_BASE: python-base                            # 共享基础镜像
+      additional_contexts:
+        python-base: "docker-image://jonex/python-base:local"
+    container_name: jonex-llm-gateway
+    hostname: llm-gateway
+    networks:
+      - jonex-network
+    expose:
+      - "8787"
+    environment:
+      TZ: Asia/Shanghai
+      LOG_LEVEL: INFO
+      REDIS_URL: redis://redis:6379/0
+      LLMGW_UPSTREAM_LLM_HOST: ${LLMGW_UPSTREAM_LLM_HOST:-https://tokenhub.tencentmaas.com/v1}
+      LLMGW_UPSTREAM_LLM_API_KEY: ${LLMGW_UPSTREAM_LLM_API_KEY:-}
+      LLMGW_UPSTREAM_EMBED_HOST: ${LLMGW_UPSTREAM_EMBED_HOST:-http://host.docker.internal:11434/v1}
+      LLMGW_UPSTREAM_EMBED_API_KEY: ${LLMGW_UPSTREAM_EMBED_API_KEY:-ollama}
+      # Rerank 上游（方案 B2：RAG fallback 引用重排）
+      LLMGW_RERANK_BINDING: ${LLMGW_RERANK_BINDING:-ollama-generate}
+      LLMGW_RERANK_MODEL: ${LLMGW_RERANK_MODEL:-awenleven/Qwen3-Reranker-4B:Q4_K_M}
+      LLMGW_UPSTREAM_RERANK_HOST: ${LLMGW_UPSTREAM_RERANK_HOST:-http://host.docker.internal:11434}
+      LLMGW_UPSTREAM_RERANK_API_KEY: ${LLMGW_UPSTREAM_RERANK_API_KEY:-ollama}
+      LLMGW_RERANK_PROMPT_PROFILE: ${LLMGW_RERANK_PROMPT_PROFILE:-qwen3}
+      LLMGW_RERANK_MAX_DOCS: ${LLMGW_RERANK_MAX_DOCS:-12}
+      LLMGW_RERANK_CONCURRENCY: ${LLMGW_RERANK_CONCURRENCY:-4}
+      LLMGW_RERANK_TIMEOUT: ${LLMGW_RERANK_TIMEOUT:-30}
+      LLMGW_INTERNAL_TOKENS: ${LLMGW_INTERNAL_TOKENS:-gw_lightrag,gw_platform}
+      LLMGW_METERING_ENABLED: ${LLMGW_METERING_ENABLED:-true}
+      LLMGW_PG_FLUSH_MAX_ROWS: ${LLMGW_PG_FLUSH_MAX_ROWS:-20}
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"     # Linux 上访问宿主 Ollama 用
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8787/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # ============================================================
+  # Frontend Gateway — 唯一对外 80 端口入口，聚合路由
+  # ============================================================
   frontend-gateway:
     build:
       context: ..
@@ -326,6 +553,9 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  # ============================================================
+  # Shell Frontend — 平台主应用（仅内部暴露）
+  # ============================================================
   shell-frontend:
     build:
       context: ..
@@ -338,7 +568,7 @@ services:
       - "80"
     environment:
       TZ: Asia/Shanghai
-      API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://gateway:8000}
+      API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
       ENV: production
       VITE_ALLOWED_REDIRECT_ORIGINS: ${VITE_ALLOWED_REDIRECT_ORIGINS:-}
     healthcheck:
@@ -349,6 +579,9 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # ============================================================
+  # Core Business Frontend — 核心业务子应用（仅内部暴露）
+  # ============================================================
   core-business-frontend:
     build:
       context: ..
@@ -361,7 +594,7 @@ services:
       - "80"
     environment:
       TZ: Asia/Shanghai
-      API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://gateway:8000}
+      API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
       ENV: production
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1/health"]
@@ -371,6 +604,9 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # ============================================================
+  # Platform Management Frontend — 平台管理子应用（仅内部暴露）
+  # ============================================================
   platform-management-frontend:
     build:
       context: ..
@@ -383,7 +619,7 @@ services:
       - "80"
     environment:
       TZ: Asia/Shanghai
-      API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://gateway:8000}
+      API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
       ENV: production
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1/health"]
@@ -393,6 +629,9 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # ============================================================
+  # Ecosystem Management Frontend — 生态管理子应用（仅内部暴露）
+  # ============================================================
   ecosystem-management-frontend:
     build:
       context: ..
@@ -405,7 +644,7 @@ services:
       - "80"
     environment:
       TZ: Asia/Shanghai
-      API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://gateway:8000}
+      API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
       ENV: production
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1/health"]
@@ -415,6 +654,11 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # ============================================================
+  # LightRAG - 知识库 RAG 服务（原子能力层）
+  # ============================================================
+  # 配置文件：.env.rag（70+ 可配置项，与平台主配置分离）
+  # 支持存储后端：JSON/Nano/PG/Milvus/Qdrant/Neo4j/Mongo/Redis/Memgraph/OpenSearch
   lightrag:
     build:
       context: ..
@@ -425,14 +669,14 @@ services:
     networks:
       - jonex-network
     expose:
-      - "9621"
+      - "9621"                      # 仅容器内，atomic-rag 通过此端口调用
     env_file:
-      - .env.rag
+      - .env.rag                    # 仅 lightrag 加载此文件
     volumes:
-      - jonex-rag-storage:/app/data/rag_storage
-      - jonex-rag-inputs:/app/data/inputs
+      - jonex-rag-storage:/app/data/rag_storage   # 与 atomic-rag 共享解析缓存（named volume）
+      - jonex-rag-inputs:/app/data/inputs          # 与 gateway/atomic-rag 共享上传文件（named volume）
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:host-gateway"   # Linux 上访问宿主 Ollama 用
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9621/health')"]
       interval: 30s
@@ -443,13 +687,31 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
+      # KV/DocStatus 已升级到 PostgreSQL、向量已升级到 Milvus，须待其就绪再启动
+      postgres:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+      llm-gateway:
+        condition: service_started
 
+  # ============================================================
+  # atomic-rag - RAG 原子能力服务（raganything 解析 + 推送 lightrag-server 索引）
+  # ============================================================
+  # 容器内运行 start_capability.py（FastAPI），加载 LightRAGAdapter，提供：
+  #   POST /invoke         — 统一能力调用入口（sidecar 反代调用）
+  #   GET  /query/stream   — NDJSON 流式查询（sidecar 直连代理）
+  #   GET  /health         — 健康检查
+  # ============================================================
   atomic-rag:
     build:
       context: ..
       dockerfile: deploy/docker/atomic-rag.Dockerfile
       args:
         MINERU_SOURCE: ${MINERU_SOURCE:-modelscope}
+        # 依赖胖瘦：full（默认，三种 RAG_PARSER 都能真跑）/ slim（仅 online/selfhost，省 ~3.9GB）
+        # 打瘦身包：RAG_PROFILE=slim docker compose build atomic-rag
+        RAG_PROFILE: ${RAG_PROFILE:-full}
     container_name: jonex-atomic-rag
     hostname: atomic-rag
     networks:
@@ -459,69 +721,133 @@ services:
     env_file:
       - .env
     environment:
-
+      # ---- 服务端口 ----
       SERVICE_PORT: "8000"
-      SERVICE_ENDPOINT: http://atomic-rag:8000
+      SERVICE_ENDPOINT: http://atomic-rag:8000   # start_capability.py 服务发现注册用 hostname
       TZ: Asia/Shanghai
+      # ---- atomic-rag adapter 版本开关（形态a）----
+      # 默认 v1=LightRAGAdapter；W3(COS worker 本地化) 完成前不默认 v2（否则 COS 文档回退）。
+      # 测试/验证时显式设 ATOMIC_RAG_VERSION=v2 启用 LightRAGAdapterV2。
+      ATOMIC_RAG_VERSION: ${ATOMIC_RAG_VERSION:-v2}
 
-      RAG_PARSER: ${RAG_PARSER:-mineru}
-      PARSE_METHOD: ${PARSE_METHOD:-auto}
-      MINERU_BACKEND: ${MINERU_BACKEND:-}
+      # ---- raganything 解析器配置 ----
+      # 本文件为通用基线，不强制 GPU。GPU 加速请叠加 docker-compose.gpu.yml；Mac 开发叠加 docker-compose.mac.yml。
+      RAG_PARSER: ${RAG_PARSER:-mineru}            # 解析引擎: mineru / docling / paddleocr
+      PARSE_METHOD: ${PARSE_METHOD:-auto}          # 解析方式: auto / ocr / txt
+      MINERU_BACKEND: ${MINERU_BACKEND:-}          # GPU 基线默认不强制指定后端，交给 MinerU/环境自行选择
       MINERU_TIMEOUT_SECONDS: ${MINERU_TIMEOUT_SECONDS:-1800}
-      OUTPUT_DIR: /app/output
-      WORKING_DIR: /app/rag_storage
-      LIGHTRAG_STORAGE_DIR: /app/rag_storage
-      RAG_WORKER_NUM: ${RAG_WORKER_NUM:-2}
-      MINERU_SOURCE: ${MINERU_SOURCE:-modelscope}
-      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      RAG_PARSE_RETRY_MAX: ${RAG_PARSE_RETRY_MAX:-3}               # [jonex] #4 v2 parse stage 瞬时错误重试次数（含首次，所有 parser 生效）
+      RAG_PARSE_RETRY_BASE_SEC: ${RAG_PARSE_RETRY_BASE_SEC:-2.0}   # [jonex] #4 v2 parse stage 重试指数退避基数（秒）
+      OUTPUT_DIR: /app/output                      # 解析产物输出目录
+      WORKING_DIR: /app/rag_storage                # raganything 解析器工作/缓存目录
+      # LIGHTRAG_STORAGE_DIR 已移除：原供 storage_reader 读本地 vdb_*.json，
+      # 现已改由 LightRAGGraphReader 经 lightrag-server HTTP 端点读图数据（不再读本地文件）。
+      RAG_WORKER_NUM: ${RAG_WORKER_NUM:-2}         # 并发解析 worker 数，GPU 机器可按资源继续调高
+      # [jonex] 文档级并发：TaskManager 同时处理的文档数（后台 worker 协程数）。
+      WORKER_COUNT: ${WORKER_COUNT:-4}
+      # [jonex] 任务队列容量（总槽位 = WORKER_COUNT + 此值，满则入库请求返回 429）。
+      TASK_QUEUE_CAPACITY: ${TASK_QUEUE_CAPACITY:-100}
+      # [jonex] 单文档内多模态描述 LLM 并发（scene=raganything_ingest），原硬编码 2。
+      # 实际并发 ≈ WORKER_COUNT × 此值，调高需权衡上游 RPM（如 200 次/分钟）与抽取并发额度。
+      MAX_PARALLEL_MULTIMODAL: ${MAX_PARALLEL_MULTIMODAL:-4}
+      MINERU_MODEL_SOURCE: ${MINERU_MODEL_SOURCE:-modelscope}  # MinerU 模型下载源开关（含 VLM/hybrid 后端）：modelscope 国内可达免代理；huggingface 需外网/代理。这是真正生效的开关
+      # mineru_online 解析密钥：不写入 preset/镜像，统一从 env 读取（preset 若显式配置则优先）
+      MINERU_API_TOKEN: ${MINERU_API_TOKEN:-}
+      MINERU_API_BASE_URL: ${MINERU_API_BASE_URL:-https://mineru.net}
+      MINERU_MODEL_VERSION: ${MINERU_MODEL_VERSION:-vlm}
+      # VLM / ASR 连接信息（音视频链路，preset 不写死；优先级 preset override > env > profile）
+      VLM_BINDING_HOST: ${VLM_BINDING_HOST:-}
+      VLM_BINDING_API_KEY: ${VLM_BINDING_API_KEY:-}
+      ASR_BASE_URL: ${ASR_BASE_URL:-}
+      ASR_API_KEY: ${ASR_API_KEY:-}
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}        # whisper 模型: tiny / base / small / medium / large
       RAG_TEXT_CHUNK_CHARS: ${RAG_TEXT_CHUNK_CHARS:-12000}
       RAG_REQUIRE_DOC_IDS: ${RAG_REQUIRE_DOC_IDS:-true}
-      RAG_TRACK_STATUS_RETRIES: ${RAG_TRACK_STATUS_RETRIES:-180}
-      RAG_TRACK_STATUS_DELAY_SECONDS: ${RAG_TRACK_STATUS_DELAY_SECONDS:-2}
+      RAG_TRACK_TIMEOUT_SECONDS: ${RAG_TRACK_TIMEOUT_SECONDS:-1800}
+      RAG_TRACK_POLL_CONCURRENCY: ${RAG_TRACK_POLL_CONCURRENCY:-8}
+      # [jonex] reparse 补偿 cleanup 卡死修复（rag-reparse-strict-cleanup-busy-plan）
+      RAG_PUSH_RETRY_TERMINAL_FAILED: ${RAG_PUSH_RETRY_TERMINAL_FAILED:-true}  # 1-A：终态 failed chunk 纳入有界重推
+      RAG_CLEANUP_POLL_PER_DOC_SEC: ${RAG_CLEANUP_POLL_PER_DOC_SEC:-2}         # 2-A：cleanup 轮询窗口按删除量缩放
       TORCH_SHOW_CPP_STACKTRACES: ${TORCH_SHOW_CPP_STACKTRACES:-0}
-      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-8}
+      OMP_NUM_THREADS: ${OMP_NUM_THREADS:-8}       # GPU 机器默认放宽 CPU 线程；Mac 在覆盖文件中降配
       MKL_NUM_THREADS: ${MKL_NUM_THREADS:-8}
 
+      # ---- VLM / Vision 配置（视频关键帧分析 & 多模态图像处理） ----
       VISION_BINDING_HOST: ${VISION_BINDING_HOST:-${LLM_BINDING_HOST:-}}
       VISION_BINDING_API_KEY: ${VISION_BINDING_API_KEY:-${LLM_BINDING_API_KEY:-}}
       LLM_BINDING_HOST: ${LLM_BINDING_HOST:-}
       LLM_BINDING_API_KEY: ${LLM_BINDING_API_KEY:-}
 
+      # ---- LightRAG Server 连接 ----
       LIGHTRAG_API_URL: http://lightrag:9621
       LIGHTRAG_API_KEY: ${LIGHTRAG_API_KEY}
-      LIGHTRAG_API_TIMEOUT: "300"
+      LIGHTRAG_API_TIMEOUT: "300"                 # LightRAG 入库超时（秒）
 
-      RAG_WEBHOOK_URL: ${RAG_WEBHOOK_URL:-}
+      # ---- Webhook 回调 ----
+      RAG_WEBHOOK_URL: ${RAG_WEBHOOK_URL:-}       # 处理完成后回调地址（空则不回调）
 
+      # ---- 本体抽取引擎 ----
       ONTOLOGY_EXTRACT_ENABLED: ${ONTOLOGY_EXTRACT_ENABLED:-false}
       ONTOLOGY_SCHEMA_PATH: ${ONTOLOGY_SCHEMA_PATH:-/app/deploy/config/ontology/default.yaml}
       ONTOLOGY_EXTRACT_MAX_RETRIES: ${ONTOLOGY_EXTRACT_MAX_RETRIES:-3}
-      ONTOLOGY_LLM_BINDING_HOST: ${LLM_BINDING_HOST_FOR_ONTOLOGY:-https://tokenhub.tencentmaas.com/v1}
-      ONTOLOGY_LLM_BINDING_API_KEY: ${LLM_BINDING_API_KEY_FOR_ONTOLOGY:-${LLM_BINDING_API_KEY:-}}
-      ONTOLOGY_LLM_MODEL: ${LLM_MODEL_FOR_ONTOLOGY:-deepseek-v4-flash}
+      ONTOLOGY_LLM_BINDING_HOST: ${ONTOLOGY_LLM_BINDING_HOST:-http://llm-gateway:8787/v1}
+      ONTOLOGY_LLM_BINDING_API_KEY: ${ONTOLOGY_LLM_BINDING_API_KEY:-gw_lightrag}
+      ONTOLOGY_LLM_MODEL: ${ONTOLOGY_LLM_MODEL:-deepseek-v4-flash-202605}
       ONTOLOGY_LLM_TIMEOUT: ${ONTOLOGY_LLM_TIMEOUT:-60}
       ONTOLOGY_EXTRACT_MAX_ENTITIES: ${ONTOLOGY_EXTRACT_MAX_ENTITIES:-200}
       ONTOLOGY_EXTRACT_MAX_CHUNKS: ${ONTOLOGY_EXTRACT_MAX_CHUNKS:-50}
       ONTOLOGY_EXTRACT_MAX_TOKENS: ${ONTOLOGY_EXTRACT_MAX_TOKENS:-4096}
+      # 本体抽取 LLM 批次并发度（实体归类/关系定型共用）。经 llm-gateway → 上游 LLM，
+      # 与入库期 LightRAG 抽取共用上游并发额度（tokenhub 实测约 48 触发 429）。
+      # 默认 8：保守取值、落在无限流区并留余量；上游更严或多文档并行时下调。
+      ONTOLOGY_EXTRACT_CONCURRENCY: ${ONTOLOGY_EXTRACT_CONCURRENCY:-8}
+      # 实体描述写入 Neo4j 的截断长度（answer_from_facts 的核心上下文）
+      ONTOLOGY_ENTITY_DESC_MAXLEN: ${ONTOLOGY_ENTITY_DESC_MAXLEN:-1000}
+      # schema relation_types 覆盖稀疏时，对 LightRAG 已有边落通用 RELATED_TO 边保证图非空（默认关）
+      ONTOLOGY_KEEP_UNTYPED_EDGES: ${ONTOLOGY_KEEP_UNTYPED_EDGES:-false}
+      # 对象存储（腾讯云 COS），默认 local
+      OBJECT_STORAGE_BACKEND: ${OBJECT_STORAGE_BACKEND:-local}
+      COS_REGION: ${COS_REGION:-}
+      COS_SECRET_ID: ${COS_SECRET_ID:-}
+      COS_SECRET_KEY: ${COS_SECRET_KEY:-}
+      COS_BUCKET: ${COS_BUCKET:-}
+      COS_KEY_PREFIX: ${COS_KEY_PREFIX:-jonex}
+      COS_PRESIGN_EXPIRES: ${COS_PRESIGN_EXPIRES:-900}
+      # MPS（腾讯云媒体处理）视频智能分析：MPS_ENABLED=true 且视频存储在 COS 时，
+      # 视频解析走 MPS（取代 ffmpeg+whisper ASR）。
+      # 凭证/桶/地域未单独配置时，atomic-rag 内部回落复用 COS_*（同账号同桶场景只需开 MPS_ENABLED）。
+      MPS_ENABLED: ${MPS_ENABLED:-false}
+      MPS_SECRET_ID: ${MPS_SECRET_ID:-}
+      MPS_SECRET_KEY: ${MPS_SECRET_KEY:-}
+      MPS_COS_BUCKET: ${MPS_COS_BUCKET:-}
+      MPS_COS_REGION: ${MPS_COS_REGION:-}
 
     volumes:
-      - jonex-rag-storage:/app/rag_storage
-      - jonex-rag-inputs:/app/inputs
-      - jonex-rag-models:/root/.cache
-      - ./config/ontology:/app/deploy/config/ontology:ro
+      - jonex-rag-storage:/app/rag_storage         # raganything 解析器 WORKING_DIR 工作/缓存目录（持久化）；不再用于读 lightrag 存储
+      - jonex-rag-inputs:/app/inputs                # 原始材料输入目录
+      - jonex-rag-models:/root/.cache              # 模型缓存：HF + modelscope + whisper + torch
+      - ./config/ontology:/app/deploy/config/ontology:ro   # 本体 schema 定义
     depends_on:
       lightrag:
         condition: service_healthy
       redis:
         condition: service_healthy
+      llm-gateway:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 300s
+      start_period: 300s          # 5 分钟：mineru 首次启动需下载模型，pymupdf 可缩短到 120s
     restart: unless-stopped
+    # GPU 用户请叠加 docker-compose.gpu.yml 启用 NVIDIA GPU 加速。
+    # Mac 本地开发请叠加 docker-compose.mac.yml 降低资源占用。
 
+  # ============================================================
+  # Neo4j - 本体图数据库（社区版，单 database）
+  # 存储：本体 ABox（:OntologyEntity label）+ LightRAG 图谱（workspace label）
+  # ============================================================
   neo4j:
     image: neo4j:5.26-community
     container_name: jonex-neo4j
@@ -529,8 +855,8 @@ services:
     networks:
       - jonex-network
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "7474:7474"     # dev 期 browser 调试
+      - "7687:7687"     # dev 期 bolt 连接
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-jonex_neo4j_123}
       NEO4J_PLUGINS: '["apoc"]'

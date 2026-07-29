@@ -31,6 +31,36 @@ from lightrag.operate import extract_entities, merge_nodes_and_edges
 # Import prompt templates
 from raganything.prompt import PROMPTS
 from raganything.asr import AsrBackend, AsrCapability
+
+
+# ── [jonex] 主解析提示词覆盖工具（KB 关联的 prompt 配置在解析时生效）──
+class _BlankFormatDict(dict):
+    """format_map 兜底：缺失占位符 → 空串，避免用户自定义 prompt 缺字段导致 KeyError。"""
+
+    def __missing__(self, key):  # noqa: D401
+        return ""
+
+
+def _safe_format(template: str, **kwargs) -> str:
+    """用空串兜底缺失占位符的 str.format；异常时回退原模板（不崩解析）。"""
+    try:
+        return template.format_map(_BlankFormatDict(kwargs))
+    except Exception:
+        return template
+
+
+def _pick_prompt(prompt_overrides, base_code: str, has_context: bool,
+                 default_base: str, default_ctx: str) -> str:
+    """[jonex] base override 压过 _with_context：命中 base override 则两分支都用它；
+    否则按 has_context 选内置 base / _with_context 变体。"""
+    if prompt_overrides is not None:
+        try:
+            if prompt_overrides.has_override(base_code):
+                return prompt_overrides.get_effective_prompt(base_code, default_base)
+        except Exception:
+            pass
+    return default_ctx if has_context else default_base
+
 from raganything.asr.backends.legacy import LegacyFunctionBackend
 from raganything.utils import (
     format_table_body,
@@ -455,6 +485,7 @@ class BaseModalProcessor:
         content_type: str,
         item_info: Dict[str, Any] = None,
         entity_name: str = None,
+        prompt_overrides: Any = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Generate text description and entity info only, without entity relation extraction.
@@ -568,8 +599,6 @@ class BaseModalProcessor:
         This helper strips those blocks so that only the final answer text is
         stored or surfaced to callers.
         """
-        import re
-
         cleaned = re.sub(
             r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE
         )
@@ -607,8 +636,6 @@ class BaseModalProcessor:
     def _extract_all_json_candidates(self, response: str) -> list:
         """Extract all possible JSON candidates from response"""
         candidates = []
-
-        import re
 
         # Pre-process: Remove thinking/reasoning tags that some models use
         # This handles models like qwen2.5-think, deepseek-r1 that wrap reasoning in tags
@@ -867,6 +894,7 @@ class ImageModalProcessor(BaseModalProcessor):
         content_type: str,
         item_info: Dict[str, Any] = None,
         entity_name: str = None,
+        prompt_overrides: Any = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Generate image description and entity info only, without entity relation extraction.
@@ -915,28 +943,22 @@ class ImageModalProcessor(BaseModalProcessor):
             if item_info:
                 context = self._get_context_for_item(item_info)
 
-            # Build detailed visual analysis prompt with context
-            if context:
-                vision_prompt = PROMPTS.get(
-                    "vision_prompt_with_context", PROMPTS["vision_prompt"]
-                ).format(
-                    context=context,
-                    entity_name=entity_name
-                    if entity_name
-                    else "unique descriptive name for this image",
-                    image_path=image_path,
-                    captions=captions if captions else "None",
-                    footnotes=footnotes if footnotes else "None",
-                )
-            else:
-                vision_prompt = PROMPTS["vision_prompt"].format(
-                    entity_name=entity_name
-                    if entity_name
-                    else "unique descriptive name for this image",
-                    image_path=image_path,
-                    captions=captions if captions else "None",
-                    footnotes=footnotes if footnotes else "None",
-                )
+            # Build detailed visual analysis prompt (KB 主解析提示词覆盖 vision_prompt)
+            _tmpl = _pick_prompt(
+                prompt_overrides, "vision_prompt", bool(context),
+                PROMPTS["vision_prompt"],
+                PROMPTS.get("vision_prompt_with_context", PROMPTS["vision_prompt"]),
+            )
+            vision_prompt = _safe_format(
+                _tmpl,
+                context=context,
+                entity_name=entity_name
+                if entity_name
+                else "unique descriptive name for this image",
+                image_path=image_path,
+                captions=captions if captions else "None",
+                footnotes=footnotes if footnotes else "None",
+            )
 
             # Encode image to base64
             image_base64 = self._encode_image_to_base64(image_path)
@@ -1079,6 +1101,7 @@ class TableModalProcessor(BaseModalProcessor):
         content_type: str,
         item_info: Dict[str, Any] = None,
         entity_name: str = None,
+        prompt_overrides: Any = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Generate table description and entity info only, without entity relation extraction.
@@ -1274,6 +1297,7 @@ class EquationModalProcessor(BaseModalProcessor):
         content_type: str,
         item_info: Dict[str, Any] = None,
         entity_name: str = None,
+        prompt_overrides: Any = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Generate equation description and entity info only, without entity relation extraction.
@@ -1457,6 +1481,7 @@ class GenericModalProcessor(BaseModalProcessor):
         content_type: str,
         item_info: Dict[str, Any] = None,
         entity_name: str = None,
+        prompt_overrides: Any = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Generate generic modal description and entity info only, without entity relation extraction.
@@ -1477,26 +1502,21 @@ class GenericModalProcessor(BaseModalProcessor):
             if item_info:
                 context = self._get_context_for_item(item_info)
 
-            # Build generic analysis prompt with context
-            if context:
-                generic_prompt = PROMPTS.get(
-                    "generic_prompt_with_context", PROMPTS["generic_prompt"]
-                ).format(
-                    context=context,
-                    content_type=content_type,
-                    entity_name=entity_name
-                    if entity_name
-                    else f"descriptive name for this {content_type}",
-                    content=str(modal_content),
-                )
-            else:
-                generic_prompt = PROMPTS["generic_prompt"].format(
-                    content_type=content_type,
-                    entity_name=entity_name
-                    if entity_name
-                    else f"descriptive name for this {content_type}",
-                    content=str(modal_content),
-                )
+            # Build generic analysis prompt (KB 主解析提示词覆盖 generic_prompt)
+            _tmpl = _pick_prompt(
+                prompt_overrides, "generic_prompt", bool(context),
+                PROMPTS["generic_prompt"],
+                PROMPTS.get("generic_prompt_with_context", PROMPTS["generic_prompt"]),
+            )
+            generic_prompt = _safe_format(
+                _tmpl,
+                context=context,
+                content_type=content_type,
+                entity_name=entity_name
+                if entity_name
+                else f"descriptive name for this {content_type}",
+                content=str(modal_content),
+            )
 
             # Call LLM for generic analysis
             response = await self.modal_caption_func(
@@ -1707,7 +1727,8 @@ class AsrModalProcessor(BaseModalProcessor):
         return enhanced_caption, entity_info, []
 
     async def generate_description_only(self, modal_content, content_type,
-                                        item_info=None, entity_name=None):
+                                        item_info=None, entity_name=None,
+                                        prompt_overrides=None):
         """Main entry point: ASR → segment → MapReduce → entity info."""
         audio_path = modal_content.get("audio_path")
         if not audio_path:
@@ -1936,7 +1957,6 @@ class AsrModalProcessor(BaseModalProcessor):
         max_batches = (getattr(self._config, "audio_summarize_max_batches", 20)
                        if self._config else 20)
         file_name = Path(audio_path).name
-        total_dur = asr_result.get("duration", 0)
         n_segs = len(segments)
 
         limit = max_batches * batch_size
@@ -2021,6 +2041,7 @@ class AsrModalProcessor(BaseModalProcessor):
         )[:2000]
         global_summary, entity_info = await self._final_synthesize(
             reduced_text, entity_name, item_info, audio_path, asr_result,
+            prompt_overrides=prompt_overrides,
         )
         return global_summary, entity_info
 
@@ -2043,11 +2064,17 @@ class AsrModalProcessor(BaseModalProcessor):
             return joined[:2000]
 
     async def _final_synthesize(self, reduced_text, entity_name, item_info,
-                                audio_path, asr_result):
+                                audio_path, asr_result, prompt_overrides=None):
         file_name = Path(audio_path).name
         context = self._get_context_for_item(item_info) if item_info else ""
 
-        prompt = PROMPTS["audio_global_prompt"].format(
+        # KB 主解析提示词覆盖 audio_global_prompt（无 _with_context 变体，has_context=False）
+        _tmpl = _pick_prompt(
+            prompt_overrides, "audio_global_prompt", False,
+            PROMPTS["audio_global_prompt"], PROMPTS["audio_global_prompt"],
+        )
+        prompt = _safe_format(
+            _tmpl,
             entity_name=entity_name or f"Audio content from {file_name}",
             reduced_summary=reduced_text,
             file_name=file_name,

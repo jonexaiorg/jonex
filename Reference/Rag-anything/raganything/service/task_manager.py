@@ -736,60 +736,20 @@ class TaskManager:
     async def get_document_chunks(
         self, doc_id: str, tenant_id: str, *, kb_id: str = "",
     ) -> dict | None:
-        """Return paginated chunks for a document_id via HTTP.
+        """Return all chunks for a document via the doc= anchor in file_path.
 
-        Each chunk entry is enriched with a ``chunk_id`` field (LightRAG
-        Text/KV storage layer ID, ``chunk-<md5hash>`` format), enabling
-        direct use with ``update_chunk``.
+        Calls GET /documents/chunks?doc_id=X (LightRAG text_chunks by doc=
+        anchor), which returns real chunk entries with chunk_id, content,
+        chunk_order_index, file_path (containing tstart=/tend= for video/audio
+        timeline metadata), tokens, etc.
 
-        # [jonex][TODO] 本实现有缺陷，"查看文档 Chunk 列表"接口（action get_doc_chunks →
-        #   kb-service get_document_chunks）对已入库文档恒返回空/结构不符，需重写。
-        #
-        # 问题（两点）：
-        #   1) 结构不符契约：这里调 get_documents（GET /documents/paginated）返回的是
-        #      「文档级」结构 {documents:[...], pagination, status_counts}，而 kb-service /
-        #      LightRAGAdapterV2 期望的是 {doc_id, total, chunks:[{chunk_id, content,
-        #      chunk_order_index, page_idx, line_start/end, ...}]}。键名（documents vs chunks）
-        #      与层级都对不上，下游 data.get("chunks") 恒空、total 恒 0。
-        #   2) 数据层级错：documents 是「文档」条目（doc-<md5>，content 只有 content_summary
-        #      摘要、无 chunk_order_index/page_idx/line 等位置元数据），不是真正的 text_chunks。
-        #      平台一个 KB 文档被拆成多个 doc-<md5>，其真正 chunk（chunk-<md5>）在 text_chunks 里，
-        #      file_path 带 doc=<kb_doc_id> 锚点。而这里把 documents 当 chunks、还用
-        #      compute_mdhash_id(content_summary) 伪造 chunk_id，与真实 chunk-<md5> 不一致。
-        #
-        # 修复方案：
-        #   - LightRAG 侧新增「按 doc= 锚点枚举 text_chunks」端点：遍历 text_chunks 按
-        #     file_path 含 doc=<doc_id> 过滤（doc= 锚点即 KB knowledge_documents.id），返回
-        #     chunk-<md5> + content + chunk_order_index + page_idx + line_start/end + tokens，
-        #     按 chunk_order_index 排序。（注：/documents/paginated 已支持 [jonex] doc_id
-        #     锚点过滤，但只到文档级，拿不到 chunk 位置元数据。）
-        #   - 本方法改调该端点，返回契约结构 {doc_id, total, chunks:[...]}；同时清理
-        #     content 里的 <!--yx:HASH--> 标记（与 references / get_chunk 口径一致）。
-        #   - 单片直查已由 get_chunk_by_id（GET /documents/chunks/{chunk_id}）解决，可复用其
-        #     返回字段口径。
-        #   详见 docs/rag-fallback-recall-detail-and-chunk-lookup-plan.md §9（P11 及核实过程）。
+        Fixed from the previous broken implementation that called
+        /documents/paginated (document-level data, no chunk position metadata).
         """
         if self._http_client is not None:
-            result = await self._http_client.get_documents(
-                tenant_id=tenant_id, kb_id=kb_id,
-                document_id=doc_id, page=1, page_size=200,
+            return await self._http_client.get_document_chunks(
+                doc_id, tenant_id=tenant_id, kb_id=kb_id,
             )
-            if result:
-                from lightrag.utils import compute_mdhash_id
-                # Handle both /documents/paginated ({documents: [...]}) and
-                # /documents ({statuses: {processed: [...]}}) formats
-                entries = result.get("documents") or []
-                if not entries:
-                    for status_list in result.get("statuses", {}).values():
-                        if isinstance(status_list, list):
-                            entries.extend(status_list)
-                for entry in entries:
-                    content = entry.get("content_summary", "")
-                    if content:
-                        entry["chunk_id"] = compute_mdhash_id(
-                            content, prefix="chunk-"
-                        )
-            return result
         return None
 
     async def get_chunk_by_id(
@@ -1257,7 +1217,16 @@ class TaskManager:
                 # 再进入本体抽取，避免读到新旧并集（P0-3）。
                 if task.execution_mode == "reparse_strict":
                     task.new_rag_doc_ids = list(ctx.collected_doc_ids)
-                    await self._reparse_converge_old(task)
+                    converged = await self._reparse_converge_old(task)
+                    if not converged:
+                        # [jonex] review-fix：旧 doc 未确认删净 → 判失败（current_step 保持 cleanup），
+                        # 不进入本体抽取、不置 COMPLETED，避免旧数据残留却暴露 READY（P0-3）。
+                        # KB 对账 3-A 动态超时会据 cleanup_total 兜底判死、前端可见可重传。
+                        self._fail_task(
+                            task, ErrorCode.LIGHTRAG_ERROR,
+                            "reparse 严格收敛失败：旧 doc 未确认删净（LightRAG 删除未收敛），请重试",
+                        )
+                        return
 
                 # ── Ontology extraction (by document_id filter) ──
                 # [jonex] #5: all-duplicated guard — skip ontology when every chunk
@@ -1392,22 +1361,40 @@ class TaskManager:
             ) from e
         return list(old_ids)
 
-    async def _reparse_converge_old(self, task: TaskInfo) -> None:
-        """推新全部成功后按差集 old−new 收敛旧 doc，进入 cleanup 状态机；删净后轮询读一致性。"""
+    async def _reparse_converge_old(self, task: TaskInfo) -> bool:
+        """推新全部成功后按差集 old−new 收敛旧 doc，进入 cleanup 状态机；删净后轮询读一致性。
+
+        返回是否已收敛（旧 doc 确认从 LightRAG 删净）：
+        - True：无需删 / 已删净 → 调用方可继续本体抽取并置 COMPLETED；
+        - False：轮询超时仍有残留 → 保持 current_step="cleanup"、把 delete_pending 恢复为残留，
+          交调用方判失败，由 KB 对账 3-A 动态超时兜底（避免旧数据残留却暴露 READY，P0-3）。
+        """
         old = set(task.old_rag_doc_ids or [])
         new = set(task.new_rag_doc_ids or [])
         delete_set = old - new
         if not delete_set:
-            return
+            return True
         task.current_step = "cleanup"
         task.delete_pending_ids = list(delete_set)
+        task.cleanup_total = len(delete_set)  # [jonex] 3-A：记录初始待删总量
         self._repo.save(task)
         await self._run_cleanup(task)
         # 读一致性（P0-3 option a）：轮询确认旧 doc 不可见，再进入本体抽取
-        await self._poll_old_ids_gone(task, delete_set)
-        if not task.delete_pending_ids and not task.compensate_pending_ids:
-            task.current_step = "done"
+        residual = await self._poll_old_ids_gone(task, delete_set)
+        if residual:
+            # [jonex] review-fix：poll 超时残留 → 不切 done、不暴露 READY；
+            # 恢复 pending 为真实残留并保持 cleanup，让调用方判失败 + 3-A 兜底。
+            task.delete_pending_ids = list(residual)
+            task.current_step = "cleanup"
             self._repo.save(task)
+            logger.warning(
+                "[jonex] reparse converge 未收敛 task=%s 残留=%d，保持 cleanup 交 3-A 兜底",
+                task.task_id, len(residual),
+            )
+            return False
+        task.current_step = "done"
+        self._repo.save(task)
+        return True
 
     async def _reparse_compensate(self, task: TaskInfo, ctx) -> None:
         """[jonex] 阶段4 失败补偿：删除本次已产生的 new−old，使旧数据完整保留。"""
@@ -1418,6 +1405,7 @@ class TaskManager:
             return
         task.current_step = "cleanup"
         task.compensate_pending_ids = list(compensate)
+        task.cleanup_total = len(compensate)  # [jonex] 3-A：记录初始待删总量
         self._repo.save(task)
         await self._run_cleanup(task)
 
@@ -1425,45 +1413,76 @@ class TaskManager:
         """删除 delete_pending_ids（差集删旧）与 compensate_pending_ids（失败补偿）。
 
         删成功即从列表移除并持久化 → 容器重启可续跑（只删剩余，不重跑解析管线）。
-        delete_doc 收 deletion_started 视为已发起；删除失败保留在列表待重试。
+
+        [jonex] 2-A：改为**整批删除**——一次 delete_docs(doc_ids=[...]) 让 LightRAG 在单个 busy
+        会话内连删，避免逐个 id 各自抢 busy 锁被反复拒（服务持续繁忙）。整批受理
+        （deletion_started）即视为已发起、清空该 field；整批仍 busy/失败则**保留 pending 不动**
+        （不逐个降级），交由 _poll_old_ids_gone 收敛 + KB 对账 3-A 动态超时兜底。
         """
         for field in ("delete_pending_ids", "compensate_pending_ids"):
             ids = list(getattr(task, field, []) or [])
-            remaining = list(ids)
-            for did in ids:
-                try:
-                    await self._http_client.delete_doc(did, tenant_id=task.tenant_id, kb_id=task.kb_id)
-                    remaining.remove(did)
-                    setattr(task, field, list(remaining))
-                    self._repo.save(task)
-                except Exception as e:
-                    logger.warning(
-                        f"cleanup delete failed task={task.task_id} field={field} doc={did}: {e}"
-                    )
-            setattr(task, field, list(remaining))
-            self._repo.save(task)
+            if not ids:
+                continue
+            logger.info(
+                f"[jonex][2-A] cleanup 批量删除开始 task={task.task_id} field={field} count={len(ids)}"
+            )
+            try:
+                resp = await self._http_client.delete_docs(
+                    ids, tenant_id=task.tenant_id, kb_id=task.kb_id,
+                )
+                status = str((resp or {}).get("status", "")).lower()
+                # deletion_started / 未知非 busy 状态 → 整批已受理，清空 pending
+                setattr(task, field, [])
+                self._repo.save(task)
+                logger.info(
+                    f"[jonex][2-A] cleanup 批量删除已受理 task={task.task_id} field={field} "
+                    f"count={len(ids)} status={status or 'ok'}"
+                )
+            except Exception as e:
+                # 整批仍 busy/失败：保留 pending，等待下次续删 / 兜底判死
+                logger.warning(
+                    f"[jonex][2-A] cleanup 批量删除失败（保留 {len(ids)} 待删）"
+                    f" task={task.task_id} field={field}: {e}"
+                )
 
-    async def _poll_old_ids_gone(self, task: TaskInfo, old_ids: set[str]) -> None:
+    async def _poll_old_ids_gone(self, task: TaskInfo, old_ids: set[str]) -> set[str]:
         """轮询确认旧 doc 已从 LightRAG 不可见（delete_doc 后台异步删除的收敛确认）。
 
-        bounded：最多 RAG_CLEANUP_POLL_TRIES 次、每次间隔 RAG_CLEANUP_POLL_DELAY 秒；
-        超时仍未收敛则保留 cleanup 状态（可恢复），记 warning，不强制 completed。
+        bounded：最多 RAG_CLEANUP_POLL_TRIES(+按量缩放) 次、每次间隔 RAG_CLEANUP_POLL_DELAY 秒。
+        返回残留集合（空 set = 已收敛）；查询失败/超时残留时返回非空，调用方据此判失败并兜底。
         """
-        tries = int(os.getenv("RAG_CLEANUP_POLL_TRIES", "15"))
+        base_tries = int(os.getenv("RAG_CLEANUP_POLL_TRIES", "15"))
         delay = float(os.getenv("RAG_CLEANUP_POLL_DELAY", "2"))
+        # [jonex] 2-A：轮询窗口随删除量缩放——整批后台删除 N 个 doc（每个含 O(剩余chunk) 的
+        # KG rebuild）耗时正比于 N，固定 30s(15×2) 对大批量必然超时并把 current_step 卡在
+        # cleanup。按 per-doc 预留时间放大 tries，使窗口 ≈ base + per_doc_sec × N。
+        per_doc_sec = float(os.getenv("RAG_CLEANUP_POLL_PER_DOC_SEC", "2"))
+        n = max(0, len(old_ids))
+        scaled = base_tries + int((per_doc_sec * n) / max(0.1, delay))
+        tries = max(base_tries, scaled)
+        logger.info(
+            "[jonex][2-A] cleanup poll start task=%s old_ids=%d tries=%d delay=%.1fs window≈%.0fs",
+            task.task_id, n, tries, delay, tries * delay,
+        )
+        residual: set[str] = set(old_ids)
         for _ in range(max(1, tries)):
             try:
                 current = set(await self._list_doc_ids_by_document(task))
             except Exception as e:
                 logger.warning("cleanup poll query failed task=%s: %s", task.task_id, e)
-                return
-            if not (old_ids & current):
-                return
+                return set(old_ids)  # 查询失败 → 保守视为未收敛（残留=全部）
+            residual = old_ids & current
+            if not residual:
+                logger.info(
+                    "[jonex][2-A] cleanup poll 收敛 task=%s: 旧 doc 已全部不可见", task.task_id,
+                )
+                return set()
             await asyncio.sleep(delay)
         logger.warning(
-            "cleanup poll timeout task=%s: 旧 doc 仍可见，保留 cleanup 状态待收敛",
-            task.task_id,
+            "[jonex][2-A] cleanup poll timeout task=%s: 旧 doc 仍可见 %d 个，保留 cleanup 状态待收敛",
+            task.task_id, len(residual),
         )
+        return residual
 
     async def _resume_cleanup(self, task: TaskInfo) -> None:
         """[jonex] 阶段4 P0-J：容器重启后只恢复 cleanup（续删剩余 doc），不重跑解析管线。
@@ -1481,7 +1500,21 @@ class TaskManager:
                 )
             else:
                 delete_set = set(task.old_rag_doc_ids or []) - set(task.new_rag_doc_ids or [])
-                await self._poll_old_ids_gone(task, delete_set)
+                residual = await self._poll_old_ids_gone(task, delete_set)
+                if residual:
+                    # [jonex] review-fix：重启续删后旧 doc 仍未确认删净 → 判失败，
+                    # 保持 current_step=cleanup（_fail_task 不重置），由 KB 对账 3-A 动态超时兜底，
+                    # 不置 COMPLETED，避免旧数据残留却暴露 READY（P0-3）。
+                    task.delete_pending_ids = list(residual)
+                    self._fail_task(
+                        task, ErrorCode.LIGHTRAG_ERROR,
+                        "reparse 严格收敛失败：旧 doc 未确认删净（续删仍残留），请重试",
+                    )
+                    logger.warning(
+                        "[jonex] resume converge 未收敛 task=%s 残留=%d，判失败交 3-A 兜底",
+                        task.task_id, len(residual),
+                    )
+                    return
                 task.current_step = "done"
                 task.status = TaskStatus.COMPLETED
                 task.completed_at = datetime.now(timezone.utc)

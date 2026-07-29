@@ -1,9 +1,9 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 """
-Jonex platform - Milvus vector database utility module
+悦溪平台 - Milvus 向量数据库工具模块
 
-Provides vector database connection, collection management, vector insertion and retrieval functions
+提供向量数据库的连接、集合管理、向量插入和检索等功能
 """
 
 from typing import List, Dict, Any, Optional, Tuple
@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from .config import get_config
 from .logger import get_logger
 from .exceptions import DatabaseError, InvalidParameterError, ResourceNotFoundError
+from jonex_core.common.i18n import translate
 
 logger = get_logger(__name__)
 
@@ -29,7 +30,7 @@ try:
     MILVUS_AVAILABLE = True
 except ImportError:
     MILVUS_AVAILABLE = False
-    # Provide placeholders so class definitions pass syntax check (instantiation will raise DatabaseError in __init__)
+    # 提供占位符，让类定义能通过语法检查（实例化时会在 __init__ 里抛出 DatabaseError）
     connections = None  # type: ignore
     utility = None  # type: ignore
     Collection = None  # type: ignore
@@ -39,7 +40,7 @@ except ImportError:
     MilvusException = Exception  # type: ignore
 
 
-# ==================== Data type mapping ====================
+# ==================== 数据类型映射 ====================
 if MILVUS_AVAILABLE:
     _MILVUS_TYPE_MAP = {
         "BOOL": DataType.BOOL,
@@ -59,18 +60,18 @@ else:
 
 
 class MilvusClient:
-    """Milvus vector database client"""
+    """Milvus 向量数据库客户端"""
 
     def __init__(self, alias: Optional[str] = None):
         """
-        Initialize Milvus client
+        初始化 Milvus 客户端
 
         Args:
-            alias: Connection alias, default is MILVUS_ALIAS from configuration
+            alias: 连接别名，默认为配置中的 MILVUS_ALIAS
         """
         if not MILVUS_AVAILABLE:
-            logger.warning("pymilvus not installed, vector database functionality unavailable")
-            raise DatabaseError("pymilvus not installed, please run: pip install pymilvus>=2.3.0")
+            logger.warning("pymilvus 未安装，向量数据库功能不可用")
+            raise DatabaseError("pymilvus 未安装，请执行: pip install pymilvus>=2.3.0")
 
         config = get_config()
         self.alias = alias or config.MILVUS_ALIAS
@@ -86,7 +87,7 @@ class MilvusClient:
         self._default_index = config.MILVUS_DEFAULT_INDEX
 
     def connect(self) -> None:
-        """Establish Milvus connection"""
+        """建立 Milvus 连接"""
         if self._connected:
             return
 
@@ -103,48 +104,48 @@ class MilvusClient:
 
             connections.connect(alias=self.alias, **connect_params)
             self._connected = True
-            logger.info(f"✅ Milvus connection successful: {self.host}:{self.port}")
+            logger.info(f"✅ Milvus 连接成功: {self.host}:{self.port}")
         except MilvusException as e:
-            raise DatabaseError(f"Milvus connection failed: {str(e)}") from e
+            raise DatabaseError(f"Milvus 连接失败: {str(e)}") from e
 
     def disconnect(self) -> None:
-        """Close Milvus connection"""
+        """关闭 Milvus 连接"""
         if self._connected:
             try:
                 connections.disconnect(self.alias)
                 self._connected = False
-                logger.info("✅ Milvus connection closed")
+                logger.info("✅ Milvus 连接已关闭")
             except MilvusException as e:
-                logger.warning(f"Milvus close connection exception: {e}")
+                logger.warning(f"Milvus 关闭连接异常: {e}")
 
     def check_health(self) -> bool:
         """
-        Check Milvus health status
+        检查 Milvus 健康状态
 
         Returns:
-            bool: Health status
+            bool: 健康状态
         """
         try:
             if not self._connected:
                 self.connect()
             version = utility.get_server_version()
-            logger.info(f"Milvus service normal, version: {version}")
+            logger.info(f"Milvus 服务正常，版本: {version}")
             return True
         except Exception as e:
-            logger.error(f"Milvus health check failed: {e}")
+            logger.error(f"Milvus 健康检查失败: {e}")
             return False
 
-    # ==================== Collection management ====================
+    # ==================== 集合管理 ====================
 
     def has_collection(self, collection_name: str) -> bool:
         """
-        Check if collection exists
+        检查集合是否存在
 
         Args:
-            collection_name: Collection name
+            collection_name: 集合名称
 
         Returns:
-            bool: Whether exists
+            bool: 是否存在
         """
         if not self._connected:
             self.connect()
@@ -159,17 +160,17 @@ class MilvusClient:
         enable_dynamic_field: bool = True,
     ) -> Collection:
         """
-        Create vector collection
+        创建向量集合
 
         Args:
-            collection_name: Collection name
-            fields: Field definition list, each field includes: name, type, params, description, etc.
-            description: Collection description
-            auto_id: Whether to auto-generate primary key
-            enable_dynamic_field: Whether to enable dynamic field
+            collection_name: 集合名称
+            fields: 字段定义列表，每个字段包含: name, type, params, description 等
+            description: 集合描述
+            auto_id: 是否自动生成主键
+            enable_dynamic_field: 是否启用动态字段
 
         Returns:
-            Collection: Created collection object
+            Collection: 创建的集合对象
 
         Example:
             fields = [
@@ -181,14 +182,14 @@ class MilvusClient:
             client.create_collection("my_collection", fields)
         """
         if self.has_collection(collection_name):
-            logger.warning(f"Collection already exists: {collection_name}")
+            logger.warning(f"集合已存在: {collection_name}")
             return Collection(collection_name, using=self.alias)
 
         schema_fields = []
         for field in fields:
             field_type = _MILVUS_TYPE_MAP.get(field["type"].upper())
             if not field_type:
-                raise InvalidParameterError(f"Unsupported field type: {field['type']}")
+                raise InvalidParameterError(message=translate("err.vector.unsupported_field_type", params={"type": field['type']}, fallback=f"不支持的字段类型: {field['type']}"))
 
             field_params = field.get("params", {})
             if field_type == DataType.FLOAT_VECTOR and "dim" not in field_params:
@@ -218,46 +219,46 @@ class MilvusClient:
             auto_id=auto_id,
         )
 
-        logger.info(f"✅ Collection created successfully: {collection_name}")
+        logger.info(f"✅ 集合创建成功: {collection_name}")
         return collection
 
     def get_collection(self, collection_name: str) -> Collection:
         """
-        Get collection object
+        获取集合对象
 
         Args:
-            collection_name: Collection name
+            collection_name: 集合名称
 
         Returns:
-            Collection: Collection object
+            Collection: 集合对象
         """
         if not self.has_collection(collection_name):
-            raise ResourceNotFoundError(f"Collection does not exist: {collection_name}")
+            raise ResourceNotFoundError(message=translate("err.vector.collection_not_found", params={"collection_name": collection_name}, fallback=f"集合不存在: {collection_name}"))
         return Collection(collection_name, using=self.alias)
 
     def drop_collection(self, collection_name: str) -> None:
         """
-        Delete collection
+        删除集合
 
         Args:
-            collection_name: Collection name
+            collection_name: 集合名称
         """
         if self.has_collection(collection_name):
             utility.drop_collection(collection_name, using=self.alias)
-            logger.info(f"✅ Collection deleted successfully: {collection_name}")
+            logger.info(f"✅ 集合删除成功: {collection_name}")
 
     def list_collections(self) -> List[str]:
         """
-        List all collections
+        列出所有集合
 
         Returns:
-            List[str]: Collection name list
+            List[str]: 集合名称列表
         """
         if not self._connected:
             self.connect()
         return utility.list_collections(using=self.alias)
 
-    # ==================== Index management ====================
+    # ==================== 索引管理 ====================
 
     def create_index(
         self,
@@ -268,14 +269,14 @@ class MilvusClient:
         params: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
-        Create vector index
+        创建向量索引
 
         Args:
-            collection_name: Collection name
-            field_name: Vector field name
-            index_type: Index type (IVF_FLAT, IVF_SQ8, IVF_PQ, HNSW, FLAT, etc.)
-            metric_type: Distance metric type (COSINE, L2, IP)
-            params: Index parameters (e.g.: nlist, M, efConstruction, etc.)
+            collection_name: 集合名称
+            field_name: 向量字段名
+            index_type: 索引类型（IVF_FLAT, IVF_SQ8, IVF_PQ, HNSW, FLAT 等）
+            metric_type: 距离度量类型（COSINE, L2, IP）
+            params: 索引参数（如 nlist, M, efConstruction 等）
         """
         collection = self.get_collection(collection_name)
 
@@ -283,7 +284,7 @@ class MilvusClient:
         metric_type = metric_type or self._default_metric
         params = params or {}
 
-        # Set default parameters based on index type
+        # 根据索引类型设置默认参数
         if index_type == "IVF_FLAT" and "nlist" not in params:
             params["nlist"] = 1024
         elif index_type == "HNSW" and "M" not in params:
@@ -297,53 +298,53 @@ class MilvusClient:
         }
 
         collection.create_index(field_name, index_params)
-        logger.info(f"✅ Index created successfully: {collection_name}.{field_name} ({index_type})")
+        logger.info(f"✅ 索引创建成功: {collection_name}.{field_name} ({index_type})")
 
     def load_collection(self, collection_name: str) -> None:
         """
-        Load collection into memory (must be called before query)
+        将集合加载到内存（查询前必须调用）
 
         Args:
-            collection_name: Collection name
+            collection_name: 集合名称
         """
         collection = self.get_collection(collection_name)
         collection.load()
-        logger.debug(f"Collection loaded: {collection_name}")
+        logger.debug(f"集合已加载: {collection_name}")
 
     def release_collection(self, collection_name: str) -> None:
         """
-        Release collection from memory
+        从内存释放集合
 
         Args:
-            collection_name: Collection name
+            collection_name: 集合名称
         """
         collection = self.get_collection(collection_name)
         collection.release()
-        logger.debug(f"Collection released: {collection_name}")
+        logger.debug(f"集合已释放: {collection_name}")
 
-    # ==================== Data operations ====================
+    # ==================== 数据操作 ====================
 
     def insert(self, collection_name: str, data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Insert vector data
+        插入向量数据
 
         Args:
-            collection_name: Collection name
-            data: Data list, each item is field name to value mapping
+            collection_name: 集合名称
+            data: 数据列表，每项为字段名到值的映射
 
         Returns:
-            Dict: Insert result information
+            Dict: 插入结果信息
 
         Example:
             data = [
-                {"id": 1, "vector": [0.1, 0.2, ...], "content": "Test text", "metadata": {"source": "doc1"}},
-                {"id": 2, "vector": [0.3, 0.4, ...], "content": "Test text2", "metadata": {"source": "doc2"}},
+                {"id": 1, "vector": [0.1, 0.2, ...], "content": "测试文本", "metadata": {"source": "doc1"}},
+                {"id": 2, "vector": [0.3, 0.4, ...], "content": "测试文本2", "metadata": {"source": "doc2"}},
             ]
             client.insert("my_collection", data)
         """
         collection = self.get_collection(collection_name)
 
-        # Convert to list format grouped by field (required by Milvus API)
+        # 转换为按字段分组的列表格式（Milvus API 要求）
         field_names = collection.schema.names
         insert_data = []
         for field in collection.schema.fields:
@@ -354,7 +355,7 @@ class MilvusClient:
 
         result = collection.insert(insert_data)
 
-        logger.info(f"✅ Data inserted successfully: {collection_name}, Count: {len(data)}")
+        logger.info(f"✅ 数据插入成功: {collection_name}, 数量: {len(data)}")
         return {
             "insert_count": result.insert_count,
             "primary_keys": result.primary_keys,
@@ -362,18 +363,18 @@ class MilvusClient:
 
     def delete(self, collection_name: str, expr: str) -> int:
         """
-        Delete data by expression
+        按表达式删除数据
 
         Args:
-            collection_name: Collection name
-            expr: Delete expression, e.g. "id in [1, 2, 3]"
+            collection_name: 集合名称
+            expr: 删除表达式，如 "id in [1, 2, 3]"
 
         Returns:
-            int: Deleted count
+            int: 删除数量
         """
         collection = self.get_collection(collection_name)
         result = collection.delete(expr)
-        logger.info(f"✅ Data deleted successfully: {collection_name}, Count: {result.delete_count}")
+        logger.info(f"✅ 数据删除成功: {collection_name}, 数量: {result.delete_count}")
         return result.delete_count
 
     def search(
@@ -387,20 +388,20 @@ class MilvusClient:
         params: Optional[Dict[str, Any]] = None,
     ) -> List[List[Dict[str, Any]]]:
         """
-        Vector similarity search
+        向量相似度搜索
 
         Args:
-            collection_name: Collection name
-            query_vectors: Query vector list
-            vector_field: Vector field name
-            filter_expr: Filter expression
-            output_fields: Return field list
-            limit: Result count
-            params: Search parameters (e.g.: ef, nprobe, etc.)
+            collection_name: 集合名称
+            query_vectors: 查询向量列表
+            vector_field: 向量字段名
+            filter_expr: 过滤表达式
+            output_fields: 返回字段列表
+            limit: 返回结果数量
+            params: 搜索参数（如 ef, nprobe 等）
 
         Returns:
-            List[List[Dict]]: Search results, each query corresponds to a result list,
-            each result contains id, score, and fields specified by output_fields
+            List[List[Dict]]: 搜索结果，每个查询对应一个结果列表，
+            每个结果包含 id, score, 以及 output_fields 指定的字段
 
         Example:
             results = client.search(
@@ -413,11 +414,11 @@ class MilvusClient:
         """
         collection = self.get_collection(collection_name)
 
-        # Ensure collection is loaded
+        # 确保集合已加载
         try:
             collection.load()
         except MilvusException:
-            # May already be loaded
+            # 可能已加载
             pass
 
         params = params or {"nprobe": 16}
@@ -431,7 +432,7 @@ class MilvusClient:
             output_fields=output_fields or [],
         )
 
-        # Convert to more friendly format
+        # 转换为更友好的格式
         formatted_results = []
         for hits in results:
             hit_list = []
@@ -455,16 +456,16 @@ class MilvusClient:
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
         """
-        Scalar query (based on non-vector fields)
+        标量查询（基于非向量字段）
 
         Args:
-            collection_name: Collection name
-            expr: Query expression, e.g. "id > 100"
-            output_fields: Return field list
-            limit: Result count limit
+            collection_name: 集合名称
+            expr: 查询表达式，如 "id > 100"
+            output_fields: 返回字段列表
+            limit: 返回结果数量限制
 
         Returns:
-            List[Dict]: Query result list
+            List[Dict]: 查询结果列表
         """
         collection = self.get_collection(collection_name)
 
@@ -478,17 +479,17 @@ class MilvusClient:
 
     def upsert(self, collection_name: str, data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Update or insert data (Upsert)
+        更新或插入数据（Upsert）
 
         Args:
-            collection_name: Collection name
-            data: Data list
+            collection_name: 集合名称
+            data: 数据列表
 
         Returns:
-            Dict: Operation result
+            Dict: 操作结果
         """
-        # Milvus currently has no native upsert, here we delete first then insert
-        # Note: Requires primary key field
+        # Milvus 目前没有原生 upsert，这里先删除再插入
+        # 注意：需要主键字段
         collection = self.get_collection(collection_name)
         primary_key = None
 
@@ -498,28 +499,28 @@ class MilvusClient:
                 break
 
         if not primary_key:
-            raise InvalidParameterError("Upsert requires collection to have a primary key field")
+            raise InvalidParameterError(message=translate("err.vector.upsert_requires_pk", fallback="Upsert 需要集合有主键字段"))
 
-        # Extract all primary keys and delete old data
+        # 提取所有主键并删除旧数据
         ids = [item[primary_key] for item in data]
         if ids:
             id_str = ", ".join(str(i) for i in ids)
             self.delete(collection_name, f"{primary_key} in [{id_str}]")
 
-        # Insert new data
+        # 插入新数据
         return self.insert(collection_name, data)
 
 
-# ==================== Global instance ====================
+# ==================== 全局实例 ====================
 _global_milvus_client: Optional[MilvusClient] = None
 
 
 def get_milvus_client() -> MilvusClient:
     """
-    Get global Milvus client instance (singleton)
+    获取全局 Milvus 客户端实例（单例）
 
     Returns:
-        MilvusClient: Client instance
+        MilvusClient: 客户端实例
     """
     global _global_milvus_client
     if _global_milvus_client is None:
@@ -529,10 +530,10 @@ def get_milvus_client() -> MilvusClient:
 
 def check_milvus_health() -> bool:
     """
-    Check Milvus health status (convenience function)
+    检查 Milvus 健康状态（便捷函数）
 
     Returns:
-        bool: Health status
+        bool: 健康状态
     """
     if not MILVUS_AVAILABLE:
         return False
@@ -546,9 +547,9 @@ def check_milvus_health() -> bool:
 @asynccontextmanager
 async def milvus_context():
     """
-    Milvus async context manager
+    Milvus 异步上下文管理器
 
-    Usage:
+    用法:
         async with milvus_context() as client:
             results = client.search(...)
     """
@@ -557,5 +558,5 @@ async def milvus_context():
         client.connect()
         yield client
     finally:
-        # Keep connection for reuse, do not close proactively
+        # 保持连接以供复用，不主动关闭
         pass

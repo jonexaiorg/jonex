@@ -1,129 +1,116 @@
-import React from 'react'
-import { Input, Button, Switch, Tag, message } from 'antd'
-import {
-  SearchOutlined,
-  CloudUploadOutlined,
-  ApiOutlined,
-  CloudServerOutlined,
-  DatabaseOutlined,
-  SettingOutlined,
-} from '@ant-design/icons'
-import { colors, radius } from '@jonex/platform-theme/tokens'
-import type { DataAccessMethod } from '../../types/management'
+import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Spin, Result, Button } from 'antd';
+import { CloudOutlined, FolderOpenOutlined, UploadOutlined, WifiOutlined, ApiOutlined } from '@ant-design/icons';
+import { colors } from '@jonex/platform-theme/tokens';
+import { listDataAccessMethods, type DataAccessItem } from '../../api/dataAccess';
+import './index.css';
 
-const initialMethods: DataAccessMethod[] = []
+const BUILT_IN_ACCESS_METHOD_IDS = new Set([
+  'dam_demo_api',
+  'dam_api_push_demo',
+  'dam_demo_storage',
+  'dam_demo_file',
+  'dam_demo_mqtt',
+]);
 
-const iconMap: Record<string, React.ReactNode> = {
-  file: <CloudUploadOutlined />,
-  api: <ApiOutlined />,
-  storage: <CloudServerOutlined />,
-  database: <DatabaseOutlined />,
-}
-
-const typeLabel: Record<string, string> = {
-  file: '文件上传',
-  api: 'API 同步',
-  storage: '对象存储',
-  database: '数据库',
+function getTypeIcons(
+  t: (key: string, options?: Record<string, unknown>) => string,
+): Record<string, { icon: React.ReactNode; label: string; desc: string }> {
+  return {
+    api: { icon: <CloudOutlined />, label: t('dataSource.apiAccess'), desc: t('dataSource.apiAccessDesc') },
+    api_push: { icon: <ApiOutlined />, label: t('dataSource.apiPushAccess'), desc: t('dataSource.apiPushAccessDesc') },
+    storage: {
+      icon: <FolderOpenOutlined />,
+      label: t('dataSource.storageAccess'),
+      desc: t('dataSource.storageAccessDesc'),
+    },
+    file: {
+      icon: <UploadOutlined />,
+      label: t('dataSource.fileUploadAccess'),
+      desc: t('dataSource.fileUploadAccessDesc'),
+    },
+    mqtt: { icon: <WifiOutlined />, label: t('dataSource.mqttAccess'), desc: t('dataSource.mqttAccessDesc') },
+  };
 }
 
 export default function DataAccess() {
-  const [search, setSearch] = React.useState('')
-  const [methods, setMethods] = React.useState<DataAccessMethod[]>(initialMethods)
+  const { t } = useTranslation();
+  const [items, setItems] = useState<DataAccessItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const typeIcons = React.useMemo(() => getTypeIcons(t), [t]);
 
-  const handleToggle = (id: string, enabled: boolean) => {
-    setMethods((prev) => prev.map((m) => (m.id === id ? { ...m, enabled } : m)))
-    message.success(enabled ? '已启用' : '已禁用')
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await listDataAccessMethods(0, 100);
+      setItems(result.items);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t('dataSource.loadFailed'));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+        <Spin size="large" />
+      </div>
+    );
   }
-
-  const filtered = methods.filter(
-    (m) =>
-      m.name.includes(search) ||
-      m.description.includes(search) ||
-      typeLabel[m.type].includes(search),
-  )
+  if (error) {
+    return (
+      <Result
+        status="error"
+        title={t('dataSource.loadFailed')}
+        subTitle={error}
+        extra={
+          <Button type="primary" onClick={load}>
+            {t('common.retry')}
+          </Button>
+        }
+      />
+    );
+  }
 
   return (
     <div>
       <div className="yx-page-title">
-        <h1>数据接入方式</h1>
-        <p style={{ color: colors.textSecondary, margin: '4px 0 0', fontSize: 14 }}>
-          配置平台数据接入方式，管理数据源连接
-        </p>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: colors.brandDark, margin: 0 }}>
+          {t('dataSource.pageTitle')}
+        </h1>
       </div>
+      <div className="access-grid">
+        {items.map((item) => {
+          const cfg = typeIcons[item.access_type] || { icon: <CloudOutlined />, label: item.access_type, desc: '' };
+          const isActive = item.status === 'active';
+          const isBuiltIn = BUILT_IN_ACCESS_METHOD_IDS.has(item.id);
 
-      <div className="yx-toolbar" style={{ marginBottom: 20 }}>
-        <Input
-          prefix={<SearchOutlined />}
-          placeholder="搜索接入方式..."
-          style={{ width: 280 }}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
-
-      <div className="yx-config-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
-        {filtered.map((m) => (
-          <div
-            key={m.id}
-            style={{
-              background: colors.white,
-              border: `1px solid ${colors.border}`,
-              borderRadius: radius.card,
-              padding: 24,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 14,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 12,
-                  background: m.enabled ? `${colors.accent}18` : `${colors.textMuted}18`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 22,
-                  color: m.enabled ? colors.accent : colors.textMuted,
-                }}
-              >
-                {iconMap[m.type]}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 15, color: colors.textPrimary }}>{m.name}</div>
-                <div style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>
-                  <Tag style={{ fontSize: 11 }}>{typeLabel[m.type]}</Tag>
-                </div>
-              </div>
-              <Switch
-                checked={m.enabled}
-                onChange={(checked) => handleToggle(m.id, checked)}
-              />
+          return (
+            <div key={item.id} className={`access-card${isActive ? ' active' : ' grey'}`}>
+              <div className="icon-big">{cfg.icon}</div>
+              <h3>{isBuiltIn ? cfg.label : item.name}</h3>
+              <p>{isBuiltIn ? cfg.desc : item.description || cfg.desc}</p>
+              <span className="status-tag">
+                {isActive ? (
+                  <>
+                    <span className="dot-green" /> {t('dataSource.enabled')}
+                  </>
+                ) : (
+                  t('dataSource.comingSoon')
+                )}
+              </span>
             </div>
-            <p style={{ color: colors.textSecondary, fontSize: 13, margin: 0, lineHeight: 1.6 }}>{m.description}</p>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {m.enabled && (
-                <Button size="small" icon={<SettingOutlined />}>
-                  配置
-                </Button>
-              )}
-              {!m.enabled && (
-                <Button size="small" disabled>
-                  暂不可用
-                </Button>
-              )}
-            </div>
-          </div>
-        ))}
-        {filtered.length === 0 && (
-          <div className="yx-empty-state" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 48, color: colors.textMuted }}>
-            暂无匹配的数据接入方式
-          </div>
-        )}
+          );
+        })}
       </div>
     </div>
-  )
+  );
 }

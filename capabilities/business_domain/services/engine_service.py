@@ -1,7 +1,10 @@
-
+"""
+业务领域 — 引擎管理服务（数据接入 + 解析器 + 模型）
+"""
 import uuid
 
 from jonex_core.common import get_db_session
+from jonex_core.common.i18n import translate
 
 from capabilities.business_domain.repository import (
     DataAccessMethodRepository,
@@ -12,9 +15,9 @@ from capabilities.business_domain.services import _check_tenant
 
 
 class EngineService:
+    """引擎管理：数据接入 + 解析器 + 模型"""
 
-
-
+    # Data Access Methods
     async def list_access_methods(self, tenant_id: str, offset: int = 0, limit: int = 20) -> dict:
         tenant_id = _check_tenant(tenant_id)
         async with get_db_session() as session:
@@ -48,7 +51,7 @@ class EngineService:
             await session.commit()
             return obj.to_dict()
 
-
+    # Parser Configs
     async def list_parsers(self, tenant_id: str, offset: int = 0, limit: int = 20) -> dict:
         tenant_id = _check_tenant(tenant_id)
         async with get_db_session() as session:
@@ -83,7 +86,7 @@ class EngineService:
             await session.commit()
             return obj.to_dict()
 
-
+    # Model Providers
     async def list_providers(self, tenant_id: str, offset: int = 0, limit: int = 20) -> dict:
         tenant_id = _check_tenant(tenant_id)
         async with get_db_session() as session:
@@ -124,4 +127,10 @@ class EngineService:
         async with get_db_session() as session:
             repo = ModelProviderRepository(session)
             await repo.get_required(provider_id, tenant_id)
-        return {"success": True, "message": "连接测试通过（mock）"}
+        return {
+            "success": True,
+            "message": translate(
+                "success.model.connection_mock",
+                fallback="连接测试通过（模拟）",
+            ),
+        }

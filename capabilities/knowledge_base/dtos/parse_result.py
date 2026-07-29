@@ -1,4 +1,4 @@
-
+"""Knowledge Base parse result DTOs."""
 
 from typing import Any, Optional
 

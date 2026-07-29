@@ -1,81 +1,298 @@
-import React, { useState } from 'react'
-import { Input, Button, Card, Table, Tag, Modal, Select, Space, message } from 'antd'
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons'
-
-const mockSpaces = [
-  { name: '金融风控空间', code: 'finance-risk', desc: '金融风控领域相关知识管理与检索', createdAt: '2026-05-22', status: '启用' },
-  { name: '医疗健康空间', code: 'medical-health', desc: '医疗健康领域知识库与诊断方案', createdAt: '2026-05-20', status: '启用' },
-  { name: '智能制造空间', code: 'smart-manufacturing', desc: '智能制造设备故障诊断与预测性维护', createdAt: '2026-05-18', status: '维护中' },
-  { name: '教育培训空间', code: 'edu-training', desc: '在线教育内容管理与课程推荐', createdAt: '2026-05-15', status: '启用' },
-  { name: '法律咨询空间', code: 'legal-consult', desc: '法律法规数据库与合规审查', createdAt: '2026-05-10', status: '启用' },
-]
-
-const mockUsers = [
-  { name: '张明远', dept: '系统管理部', avatar: '张' },
-  { name: '李思雨', dept: '业务运营部', avatar: '李' },
-  { name: '王浩', dept: '数据管理部', avatar: '王' },
-  { name: '陈雪', dept: '知识工程部', avatar: '陈' },
-  { name: '赵一鸣', dept: '技术开发部', avatar: '赵' },
-]
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Input, Button, Table, Tag, Modal, Space, message, Result, Spin } from 'antd';
+import {
+  PlusOutlined,
+  SearchOutlined,
+  ReloadOutlined,
+  TeamOutlined,
+  WarningOutlined,
+  DeleteOutlined,
+} from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import { emitSpacesInvalidated, emitSpaceChanged } from '@jonex/shell-sdk';
+import { listSpaces, updateSpace, deleteSpace } from '../../api/domainSpace';
+import { getSpaceStatusMap, type DomainSpace } from '../../types/domainSpace';
+import { useStore } from '../../store';
+import SpaceFormModal from '../../features/SpaceForm/SpaceFormModal';
+import SpacePermissionModal from './SpacePermissionModal';
+import type { SpacePermissionModalHandle } from './SpacePermissionModal';
+import './index.scss';
 
 export default function DomainSpace() {
-  const [search, setSearch] = useState('')
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
-  const [permOpen, setPermOpen] = useState(false)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [currentSpace, setCurrentSpace] = useState<any>(null)
-  const [spaces, setSpaces] = useState(mockSpaces)
+  const { t } = useTranslation();
+  const { global } = useStore();
+  const navigate = useNavigate();
+  const [spaces, setSpaces] = useState<DomainSpace[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const toggleStatus = (code: string) => {
-    setSpaces((prev) => prev.map((s) => s.code === code ? { ...s, status: s.status === '启用' ? '维护中' : '启用' } : s))
-  }
+  // modal state（表单由 SpaceFormModal 内部管理）
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<DomainSpace | null>(null);
+  const permRef = useRef<SpacePermissionModalHandle>(null);
+  const [deleting, setDeleting] = useState<DomainSpace | null>(null);
+
+  const loadSpaces = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await listSpaces(0, 100);
+      setSpaces(result.items);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t('common.loadFailed'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSpaces();
+  }, [loadSpaces]);
+
+  const filtered = spaces.filter((s) => {
+    if (!search) return true;
+    return s.name.includes(search) || (s.description || '').includes(search);
+  });
+
+  // ── CRUD handlers ──
+  // 新建走独立页面（不再用弹窗）
+  const openCreate = () => {
+    navigate('/domain-space/new');
+  };
+
+  const openEdit = (space: DomainSpace) => {
+    setEditing(space);
+    setFormOpen(true);
+  };
+
+  // SpaceFormModal 保存成功回调（仅编辑）：同步本页列表 + 全局切换器列表 + 广播失效
+  const handleSaved = async () => {
+    setFormOpen(false);
+    setEditing(null);
+    await loadSpaces();
+    await global.refreshSpaces();
+    emitSpacesInvalidated();
+  };
+
+  const handleDelete = async () => {
+    if (!deleting) return;
+    setSubmitting(true);
+    try {
+      const wasCurrent = global.currentSpaceId === deleting.id;
+      await deleteSpace(deleting.id);
+      message.success(t('common.deleteSuccess'));
+      setDeleting(null);
+      await loadSpaces();
+      // refreshSpaces 内部：若删的是当前空间会回落首个并持久化（broadcast:false）
+      await global.refreshSpaces();
+      if (wasCurrent) {
+        // 广播新选中，让 Shell / 其它标签页更新高亮与页面
+        emitSpaceChanged(global.currentSpaceId);
+      }
+      emitSpacesInvalidated();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : t('common.deleteFailed'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // 状态切换：启用 → 禁用 → 启用；维护中 → 启用
+  const toggleStatus = async (space: DomainSpace) => {
+    let newStatus: DomainSpace['status'];
+    if (space.status === 'active') {
+      newStatus = 'disabled';
+    } else {
+      newStatus = 'active';
+    }
+    try {
+      await updateSpace(space.id, { status: newStatus });
+      setSpaces((prev) => prev.map((s) => (s.id === space.id ? { ...s, status: newStatus } : s)));
+      const cfg = getSpaceStatusMap(t)[newStatus];
+      message.success(t('domainSpace.statusChanged', { status: cfg.label }));
+      await global.refreshSpaces();
+      emitSpacesInvalidated();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : t('common.operationFailed'));
+    }
+  };
+
+  // ── 权限弹窗（由 SpacePermissionModal 内部管理） ──
+  const handlePermSaved = () => {
+    loadSpaces();
+  };
 
   const columns = [
-    { title: '空间名称', dataIndex: 'name', key: 'name', width: 160 },
-    { title: '编码', dataIndex: 'code', key: 'code', width: 150, render: (v: string) => <code>{v}</code> },
-    { title: '描述', dataIndex: 'desc', key: 'desc', ellipsis: true },
-    { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 130 },
-    { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: (v: string, r: any) => (
-      <Tag color={v === '启用' ? 'success' : 'warning'} style={{ cursor: 'pointer' }} onClick={() => toggleStatus(r.code)}>{v}</Tag>
-    )},
-    { title: '权限设置', key: 'perm', width: 90, render: (_: any, r: any) => <Button type="link" size="small" onClick={() => { setCurrentSpace(r); setPermOpen(true) }}>设置权限</Button> },
-    { title: '操作', key: 'actions', width: 140, render: (_: any, r: any) => (
-      <Space><a className="yx-table-action" onClick={() => { setCurrentSpace(r); setEditOpen(true) }}>编辑</a><a className="yx-table-action" style={{ color: '#dc2626' }} onClick={() => { setCurrentSpace(r); setDeleteOpen(true) }}>删除</a></Space>
-    )},
-  ]
+    {
+      title: t('domainSpace.name'),
+      dataIndex: 'name',
+      key: 'name',
+      width: 160,
+      render: (v: string) => <span style={{ color: '#3b82f6', cursor: 'pointer' }}>{v}</span>,
+    },
+    {
+      title: t('domainSpace.description'),
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+      render: (v: string | null) => v || '—',
+    },
+    {
+      title: t('domainSpace.createdAt'),
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 150,
+      render: (v: string | null) => v?.slice(0, 16) || '—',
+    },
+    {
+      title: t('domainSpace.status'),
+      dataIndex: 'status',
+      key: 'status',
+      width: 90,
+      render: (v: string, r: DomainSpace) => {
+        const cfg = getSpaceStatusMap(t)[v] || { label: v, color: 'default' };
+        return (
+          <Tag color={cfg.color} style={{ cursor: 'pointer' }} onClick={() => toggleStatus(r)}>
+            {cfg.label}
+          </Tag>
+        );
+      },
+    },
+    // 权限设置-当前先隐藏，实现不够
+    {
+      title: t('domainSpace.permissionSettings'),
+      key: 'permission',
+      width: 110,
+      render: (_: unknown, r: DomainSpace) => (
+        <span className="yx-perm-badge" onClick={() => permRef.current?.open(r)}>
+          <TeamOutlined style={{ fontSize: 11, marginRight: 4 }} />
+          {t('domainSpace.setPermission')}
+        </span>
+      ),
+    },
+    {
+      title: t('domainSpace.actions'),
+      key: 'actions',
+      width: 120,
+      render: (_: unknown, r: DomainSpace) => (
+        <Space>
+          <a className="yx-table-action" onClick={() => openEdit(r)}>
+            {t('common.edit')}
+          </a>
+          <a className="yx-table-action" style={{ color: '#dc2626' }} onClick={() => setDeleting(r)}>
+            {t('common.delete')}
+          </a>
+        </Space>
+      ),
+    },
+  ];
+
+  // ── render ──
+  if (loading && spaces.length === 0) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Result
+        status="error"
+        title={t('common.loadFailed')}
+        subTitle={error}
+        extra={
+          <Button type="primary" icon={<ReloadOutlined />} onClick={loadSpaces}>
+            {t('common.retry')}
+          </Button>
+        }
+      />
+    );
+  }
 
   return (
-    <div>
-      <div className="yx-page-title"><h1>领域空间管理</h1></div>
-      <Card className="yx-card">
-        <div className="yx-toolbar">
-          <Input prefix={<SearchOutlined />} placeholder="搜索空间名称..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 240 }} />
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setCurrentSpace(null); setCreateOpen(true) }}>新建领域空间</Button>
-        </div>
-        <Table columns={columns} dataSource={spaces.filter((s) => s.name.includes(search))} rowKey="code" pagination={{ total: 23, pageSize: 5 }} size="middle" />
-      </Card>
+    <div className="yx-domain-space-page">
+      {/* 页面标题 */}
+      <div className="yx-page-header">
+        <h1 className="yx-page-title">{t('domainSpace.management')}</h1>
+      </div>
 
-      <Modal title={currentSpace ? '编辑领域空间' : '新建领域空间'} open={createOpen || editOpen} onCancel={() => { setCreateOpen(false); setEditOpen(false) }} onOk={() => { message.success(currentSpace ? '保存成功' : '创建成功'); setCreateOpen(false); setEditOpen(false) }}>
-        <div className="yx-form-row"><label>空间名称</label><input type="text" className="ant-input" defaultValue={currentSpace?.name || ''} /></div>
-        <div className="yx-form-row"><label>空间编码</label><input type="text" className="ant-input" defaultValue={currentSpace?.code || ''} /></div>
-        <div className="yx-form-row"><label>空间描述</label><textarea className="ant-input" defaultValue={currentSpace?.desc || ''} rows={3} /></div>
-      </Modal>
+      {/* 工具栏 */}
+      <div className="yx-toolbar">
+        <Input
+          prefix={<SearchOutlined style={{ color: '#94a3b8', fontSize: 14 }} />}
+          placeholder={t('domainSpace.searchPlaceholder')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ width: 280 }}
+        />
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          {t('domainSpace.create')}
+        </Button>
+      </div>
 
-      <Modal title="确认删除" open={deleteOpen} onCancel={() => setDeleteOpen(false)} onOk={() => { message.success('已删除'); setDeleteOpen(false) }} okButtonProps={{ danger: true }} okText="确认删除" cancelText="取消">
-        <p>确定要删除空间 <strong>{currentSpace?.name}</strong> 吗？<br /><span style={{ color: '#94a3b8', fontSize: 13 }}>此操作不可恢复，请谨慎操作。</span></p>
-      </Modal>
+      {/* 表格 */}
+      <div className="yx-card">
+        <Table
+          columns={columns}
+          dataSource={filtered}
+          rowKey="id"
+          pagination={{
+            total: filtered.length,
+            pageSize: 10,
+            showTotal: (total, range) => t('domainSpace.total', { total, from: range[0], to: range[1] }),
+          }}
+          size="middle"
+          locale={{ emptyText: t('domainSpace.empty') }}
+        />
+      </div>
 
-      <Modal title="权限设置" open={permOpen} onCancel={() => setPermOpen(false)} onOk={() => { message.success('权限保存成功'); setPermOpen(false) }} width={600}>
-        <Input prefix={<SearchOutlined />} placeholder="搜索用户或角色..." style={{ marginBottom: 16 }} />
-        {mockUsers.map((u) => (
-          <div key={u.name} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 600, flexShrink: 0 }}>{u.avatar}</div>
-            <div style={{ flex: 1 }}><div style={{ fontSize: 14, fontWeight: 500 }}>{u.name}</div><div style={{ fontSize: 12, color: '#94a3b8' }}>{u.dept}</div></div>
-            <Select defaultValue="查看" style={{ width: 100 }} options={[{ value: '查看', label: '查看' }, { value: '管理', label: '管理' }]} />
+      {/* ── Create/Edit Modal（复用 SpaceFormModal） ── */}
+      <SpaceFormModal
+        open={formOpen}
+        editing={editing}
+        onClose={() => {
+          setFormOpen(false);
+          setEditing(null);
+        }}
+        onSaved={handleSaved}
+      />
+
+      {/* ── Delete Confirm Modal ── */}
+      <Modal
+        wrapClassName="yx-domain-space-modal"
+        title={
+          <span>
+            <WarningOutlined style={{ color: '#ef4444', marginRight: 8 }} />
+            {t('domainSpace.confirmDelete')}
+          </span>
+        }
+        open={!!deleting}
+        onCancel={() => setDeleting(null)}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 12 }}>
+            <Button onClick={() => setDeleting(null)}>{t('common.cancel')}</Button>
+            <Button danger type="primary" loading={submitting} onClick={handleDelete}>
+              {t('domainSpace.confirmDelete')}
+            </Button>
           </div>
-        ))}
+        }
+        width={420}
+      >
+        <div style={{ textAlign: 'center', padding: '12px 0' }}>
+          <DeleteOutlined style={{ fontSize: 48, color: '#ef4444', marginBottom: 16, display: 'block' }} />
+          <p style={{ fontSize: 16, color: '#1e293b', fontWeight: 500 }}>
+            {t('domainSpace.confirmDeleteMessage', { name: deleting?.name || '' })}
+          </p>
+          <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 8 }}>{t('domainSpace.deleteWarning')}</p>
+        </div>
       </Modal>
+
+      <SpacePermissionModal ref={permRef} onSaved={handlePermSaved} />
     </div>
-  )
+  );
 }

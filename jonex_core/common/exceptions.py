@@ -1,15 +1,15 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 """
-Jonex platform - unified exception system
+悦溪平台 - 统一异常体系
 
-Defines the hierarchy and error code specification for all platform business exceptions
-Error code specification:
-  1xxx - Common error
-  2xxx - Capability-related errors
-  3xxx - Authentication/authorization errors
-  4xxx - Data-related errors
-  5xxx - Service dependency errors
+定义平台所有业务异常的层级结构和错误码规范
+错误码规范：
+  1xxx - 通用错误
+  2xxx - 能力相关错误
+  3xxx - 认证授权错误
+  4xxx - 数据相关错误
+  5xxx - 服务依赖错误
 """
 
 from typing import Optional, Dict, Any
@@ -17,259 +17,273 @@ from typing import Optional, Dict, Any
 
 class JonexException(Exception):
     """
-    Jonex platform base exception class
+    悦溪平台基础异常类
 
-    All custom exceptions must inherit from this class for unified handling
+    所有自定义异常必须继承自该类，便于统一处理
     """
     code: int = 1000
     status_code: int = 500
-    default_message: str = "Internal server error"
+    default_message: str = "服务器内部错误"
 
     def __init__(
         self,
         message: Optional[str] = None,
         details: Optional[Dict[str, Any]] = None,
         cause: Optional[Exception] = None,
+        params: Optional[Dict[str, Any]] = None,
     ):
         """
         Args:
-            message: User-friendly error message
-            details: Additional error details (no sensitive info)
-            cause: Original exception (for chain tracing)
+            message: 用户友好的错误信息（显式传入时跳过翻译，作为 fallback）
+            details: 额外的错误详情（不包含敏感信息）
+            cause: 原始异常（用于链式追踪）
+            params: 模板占位符实参，供 translate(code, params=...) 渲染含变量消息
         """
         self.message = message or self.default_message
         self.details = details or {}
         self.cause = cause
+        self.params = params or {}
+        self._message_explicit = message is not None
         super().__init__(self.message)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dict (for response serialization)"""
+        """转为字典格式（用于响应序列化）"""
         result = {
             "code": self.code,
             "message": self.message,
         }
         if self.details:
             result["details"] = self.details
+        if self.params:
+            result["params"] = self.params
         return result
 
 
-# ==================== 1xxx Common error ====================
+# ==================== 1xxx 通用错误 ====================
 class InternalError(JonexException):
-    """Internal error"""
+    """内部错误"""
     code = 1000
     status_code = 500
-    default_message = "Internal server error"
+    default_message = "服务器内部错误"
 
 
 class InvalidParameterError(JonexException):
-    """Invalid parameter"""
+    """参数无效"""
     code = 1001
     status_code = 400
-    default_message = "Invalid request parameter"
+    default_message = "请求参数无效"
 
 
 class ResourceNotFoundError(JonexException):
-    """Resource not found"""
+    """资源未找到"""
     code = 1002
     status_code = 404
-    default_message = "Requested resource not found"
+    default_message = "请求的资源不存在"
 
 
 class ResourceConflictError(JonexException):
-    """Resource conflict"""
+    """资源冲突"""
     code = 1003
     status_code = 409
-    default_message = "Resource state conflict"
+    default_message = "资源状态冲突"
 
 
 class OperationNotSupportedError(JonexException):
-    """Operation not supported"""
+    """操作不支持"""
     code = 1004
     status_code = 405
-    default_message = "Operation not supported"
+    default_message = "操作不被支持"
 
 
-# ==================== 2xxx Capability-related errors ====================
+# ==================== 2xxx 能力相关错误 ====================
 class CapabilityError(JonexException):
-    """Capability error base class"""
+    """能力错误基类"""
     code = 2000
     status_code = 500
-    default_message = "Capability invocation failed"
+    default_message = "能力调用失败"
 
 
 class CapabilityNotFoundError(CapabilityError):
-    """Capability not found"""
+    """能力未找到"""
     code = 2001
     status_code = 404
-    default_message = "Requested capability not found"
+    default_message = "请求的能力不存在"
 
 
 class CapabilityInvokeError(CapabilityError):
-    """Capability invocation failed"""
+    """能力调用失败"""
     code = 2002
     status_code = 500
-    default_message = "Capability execution failed"
+    default_message = "能力执行失败"
 
 
 class CapabilityTimeoutError(CapabilityError):
-    """Capability invocation timed out"""
+    """能力调用超时"""
     code = 2003
     status_code = 504
-    default_message = "Capability invocation timed out"
+    default_message = "能力调用超时"
 
 
 class CapabilityValidationError(CapabilityError):
-    """Capability input validation failed"""
+    """能力输入验证失败"""
     code = 2004
     status_code = 400
-    default_message = "Invalid capability input parameter"
+    default_message = "能力输入参数无效"
 
 
 class CapabilityIdFormatError(CapabilityError):
-    """Invalid capability ID format"""
+    """能力 ID 格式错误"""
     code = 2005
     status_code = 400
-    default_message = "Invalid capability ID format"
+    default_message = "能力 ID 格式无效"
 
 
-# ==================== 3xxx Authentication/authorization errors ====================
+# ==================== 3xxx 认证授权错误 ====================
 class AuthError(JonexException):
-    """Authentication error base class"""
+    """认证错误基类"""
     code = 3000
     status_code = 401
-    default_message = "Authentication failed"
+    default_message = "认证失败"
 
 
 class MissingApiKeyError(AuthError):
-    """Missing API Key"""
+    """缺少 API Key"""
     code = 3001
     status_code = 401
-    default_message = "Missing X-API-Key header"
+    default_message = "缺少 X-API-Key 请求头"
 
 
 class InvalidApiKeyError(AuthError):
-    """Invalid API Key"""
+    """API Key 无效"""
     code = 3002
     status_code = 401
-    default_message = "Invalid API Key"
+    default_message = "无效的 API Key"
+
+
+class InvalidCredentialsError(AuthError):
+    """登录凭据无效（用户名或密码错误）"""
+    code = 3008
+    status_code = 401
+    default_message = "用户名或密码错误"
 
 
 class TokenExpiredError(AuthError):
-    """Token Expired"""
+    """Token 已过期"""
     code = 3003
     status_code = 401
-    default_message = "Authentication token expired"
+    default_message = "认证 Token 已过期"
 
 
 class InternalAuthError(AuthError):
-    """Internal service authentication failed"""
+    """内部服务认证失败"""
     code = 3004
     status_code = 403
-    default_message = "Internal service authentication failed"
+    default_message = "内部服务认证失败"
 
 
 class TenantIsolationError(AuthError):
-    """Tenant isolation violation"""
+    """租户隔离违规"""
     code = 3005
     status_code = 403
-    default_message = "No access to tenant resources"
+    default_message = "无权访问该租户资源"
 
 
 class PermissionDeniedError(AuthError):
-    """Permission denied"""
+    """权限不足"""
     code = 3006
     status_code = 403
-    default_message = "Permission denied"
+    default_message = "权限不足"
 
 
 class RateLimitExceededError(AuthError):
-    """Rate limit exceeded"""
+    """限流超限"""
     code = 3007
     status_code = 429
-    default_message = "Too many requests, please retry later"
+    default_message = "请求过于频繁，请稍后重试"
 
 
-# ==================== 4xxx Data-related errors ====================
+# ==================== 4xxx 数据相关错误 ====================
 class DataError(JonexException):
-    """Data error base class"""
+    """数据错误基类"""
     code = 4000
     status_code = 500
-    default_message = "Data processing failed"
+    default_message = "数据处理失败"
 
 
 class DatabaseError(DataError):
-    """Database error"""
+    """数据库错误"""
     code = 4001
     status_code = 500
-    default_message = "Database operation failed"
+    default_message = "数据库操作失败"
 
 
 class CacheError(DataError):
-    """Cache error"""
+    """缓存错误"""
     code = 4002
     status_code = 500
-    default_message = "Cache operation failed"
+    default_message = "缓存操作失败"
 
 
 class DataIntegrityError(DataError):
-    """Data integrity error"""
+    """数据完整性错误"""
     code = 4003
     status_code = 400
-    default_message = "Data integrity constraint violation"
+    default_message = "数据完整性约束违反"
 
 
-# ==================== 5xxx Service dependency errors ====================
+# ==================== 5xxx 服务依赖错误 ====================
 class ServiceError(JonexException):
-    """Service error base class"""
+    """服务错误基类"""
     code = 5000
     status_code = 503
-    default_message = "Service unavailable"
+    default_message = "服务不可用"
 
 
 class ServiceUnavailableError(ServiceError):
-    """Service unavailable"""
+    """服务不可用"""
     code = 5001
     status_code = 503
-    default_message = "Dependency service unavailable"
+    default_message = "依赖服务不可用"
 
 
 class ServiceDiscoveryError(ServiceError):
-    """Service discovery error"""
+    """服务发现错误"""
     code = 5002
     status_code = 503
-    default_message = "Service discovery failed"
+    default_message = "服务发现失败"
 
 
 class UpstreamServiceError(ServiceError):
-    """Upstream service error"""
+    """上游服务错误"""
     code = 5003
     status_code = 502
-    default_message = "Upstream service returned error"
+    default_message = "上游服务返回错误"
 
 
 class ServiceTimeoutError(ServiceError):
-    """Service invocation timed out"""
+    """服务调用超时"""
     code = 5004
     status_code = 504
-    default_message = "Service invocation timed out"
+    default_message = "服务调用超时"
 
 
-# ==================== Exception mapping utility ====================
+# ==================== 异常映射工具 ====================
 EXCEPTION_REGISTRY: Dict[int, type] = {
-    # Common error
+    # 通用错误（支持平台错误码和 HTTP 状态码双映射）
+    400: InvalidParameterError,
     1000: InternalError,
     1001: InvalidParameterError,
     1002: ResourceNotFoundError,
     1003: ResourceConflictError,
     1004: OperationNotSupportedError,
-    # Capability-related
+    # 能力相关
     2000: CapabilityError,
     2001: CapabilityNotFoundError,
     2002: CapabilityInvokeError,
     2003: CapabilityTimeoutError,
     2004: CapabilityValidationError,
     2005: CapabilityIdFormatError,
-    # Authentication/authorization
+    # 认证授权
     3000: AuthError,
     3001: MissingApiKeyError,
     3002: InvalidApiKeyError,
@@ -278,12 +292,13 @@ EXCEPTION_REGISTRY: Dict[int, type] = {
     3005: TenantIsolationError,
     3006: PermissionDeniedError,
     3007: RateLimitExceededError,
-    # Data-related
+    3008: InvalidCredentialsError,
+    # 数据相关
     4000: DataError,
     4001: DatabaseError,
     4002: CacheError,
     4003: DataIntegrityError,
-    # Service dependency
+    # 服务依赖
     5000: ServiceError,
     5001: ServiceUnavailableError,
     5002: ServiceDiscoveryError,
@@ -294,12 +309,12 @@ EXCEPTION_REGISTRY: Dict[int, type] = {
 
 def get_exception_class(code: int) -> type:
     """
-    Get the corresponding exception class by error code
+    根据错误码获取对应的异常类
 
     Args:
-        code: Error code
+        code: 错误码
 
     Returns:
-        Exception class
+        异常类
     """
     return EXCEPTION_REGISTRY.get(code, JonexException)

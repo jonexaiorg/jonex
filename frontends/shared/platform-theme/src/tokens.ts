@@ -22,11 +22,11 @@ export const colors = {
   rowBorder: '#f1f5f9',
   iconBtnBg: '#f1f5f9',
   iconBtnHover: '#e2e8f0',
-  sidebarText: 'rgba(255,255,255,0.7)',
-  sidebarTextMuted: 'rgba(255,255,255,0.4)',
-  sidebarHover: 'rgba(255,255,255,0.08)',
-  sidebarActive: 'rgba(255,255,255,0.12)',
-  sidebarBorder: 'rgba(255,255,255,0.08)',
+  sidebarText: '#475569',
+  sidebarTextMuted: '#94a3b8',
+  sidebarHover: '#f1f5f9',
+  sidebarActive: '#eff6ff',
+  sidebarBorder: '#e2e8f0',
   successBg: '#ecfdf5',
   successText: '#059669',
   warningBg: '#fff7ed',
@@ -38,7 +38,7 @@ export const colors = {
   dangerBorder: '#fecaca',
   dangerHoverBg: '#fee2e2',
   overlay: 'rgba(0, 0, 0, 0.03)',
-} as const
+} as const;
 
 export const spacing = {
   sidebarWidth: 240,
@@ -50,7 +50,7 @@ export const spacing = {
   toolbarMb: 20,
   sectionHeaderMb: 16,
   paginationMt: 20,
-} as const
+} as const;
 
 export const radius = {
   card: 14,
@@ -60,15 +60,15 @@ export const radius = {
   input: 8,
   modal: 12,
   resultCard: 12,
-} as const
+} as const;
 
 export const shadows = {
-  sidebar: '2px 0 12px rgba(11, 43, 92, 0.15)',
+  sidebar: '0 0 10px rgba(0,0,0,0.05)',
   card: '0 1px 4px rgba(0,0,0,0.04)',
   header: '0 1px 3px rgba(0,0,0,0.03)',
   searchFocus: '0 0 0 3px rgba(59,130,246,0.1)',
   resultCardHover: '0 4px 12px rgba(59,130,246,0.06)',
-} as const
+} as const;
 
 export const typography = {
   fontFamily:
@@ -84,7 +84,7 @@ export const typography = {
   smallSize: 13,
   captionSize: 12,
   tinySize: 11,
-} as const
+} as const;
 
 export const nav = {
   sectionPadding: '16px 20px 6px',
@@ -102,18 +102,18 @@ export const nav = {
   iconWidth: 20,
   iconFontSize: 15,
   tagFutureFontSize: 10,
-} as const
+} as const;
 
 export const breadcrumb = {
   fontSize: 14,
   gap: 16,
-} as const
+} as const;
 
 export const cardGrid = {
   gap: 20,
   minWidth: 360,
-} as const
+} as const;
 
 export const pageBtn = {
   size: 34,
-} as const
+} as const;

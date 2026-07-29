@@ -1,4 +1,6 @@
-
+"""
+知识库能力 — 领域空间服务
+"""
 from __future__ import annotations
 
 import uuid
@@ -6,6 +8,8 @@ import uuid
 from sqlalchemy import select
 
 from jonex_core.common import get_db_session
+from jonex_core.common.audit import schedule_emit
+from jonex_core.common.audit_enums import ResourceType
 from jonex_core.common.tenant import require_tenant
 
 from ..models.space import SpacePermission
@@ -13,7 +17,7 @@ from ..repository import SpacePermissionRepository, SpaceRepository
 
 
 class SpaceService:
-
+    """领域空间 CRUD + 权限"""
 
     async def create(self, tenant_id: str, data: dict) -> dict:
         tenant_id = require_tenant(tenant_id)
@@ -27,6 +31,15 @@ class SpaceService:
                 owner_id=data.get("owner_id"),
             )
             await session.commit()
+            schedule_emit({
+                "tenant_id": tenant_id,
+                "log_type": "OPERATION",
+                "action": "create_space",
+                "outcome": "SUCCESS",
+                "service_name": "knowledge_base",
+                "resource": ResourceType.SPACE.value,
+                "resource_id": obj.id,
+            })
             return obj.to_dict()
 
     async def get(self, space_id: str, tenant_id: str) -> dict:
@@ -57,6 +70,15 @@ class SpaceService:
             if values:
                 obj = await repo.update(space_id, tenant_id, **values)
                 await session.commit()
+            schedule_emit({
+                "tenant_id": tenant_id,
+                "log_type": "OPERATION",
+                "action": "update_space",
+                "outcome": "SUCCESS",
+                "service_name": "knowledge_base",
+                "resource": ResourceType.SPACE.value,
+                "resource_id": space_id,
+            })
             return obj.to_dict()
 
     async def delete(self, space_id: str, tenant_id: str) -> bool:
@@ -66,7 +88,7 @@ class SpaceService:
             await repo.get_required(space_id, tenant_id)
             await repo.delete_soft(space_id, tenant_id)
 
-
+            # 级联删除权限记录
             existing_perm = await session.execute(
                 select(SpacePermission).where(
                     SpacePermission.space_id == space_id,
@@ -78,6 +100,15 @@ class SpaceService:
                 await session.delete(sp)
 
             await session.commit()
+            schedule_emit({
+                "tenant_id": tenant_id,
+                "log_type": "OPERATION",
+                "action": "delete_space",
+                "outcome": "SUCCESS",
+                "service_name": "knowledge_base",
+                "resource": ResourceType.SPACE.value,
+                "resource_id": space_id,
+            })
             return True
 
     async def get_permissions(self, space_id: str, tenant_id: str) -> list:
@@ -103,7 +134,7 @@ class SpaceService:
     async def set_permissions(self, space_id: str, tenant_id: str, permissions: list) -> bool:
         tenant_id = require_tenant(tenant_id)
         async with get_db_session() as session:
-
+            # 移除已有权限
             existing = await session.execute(
                 select(SpacePermission).where(
                     SpacePermission.space_id == space_id,
@@ -114,7 +145,7 @@ class SpaceService:
             for sp in existing.scalars().all():
                 await session.delete(sp)
 
-
+            # 添加新权限
             for perm in permissions:
                 perm_obj = SpacePermission(
                     id=uuid.uuid4().hex,
@@ -126,4 +157,13 @@ class SpaceService:
                 session.add(perm_obj)
 
             await session.commit()
+            schedule_emit({
+                "tenant_id": tenant_id,
+                "log_type": "OPERATION",
+                "action": "set_space_permissions",
+                "outcome": "SUCCESS",
+                "service_name": "knowledge_base",
+                "resource": ResourceType.SPACE.value,
+                "resource_id": space_id,
+            })
             return True

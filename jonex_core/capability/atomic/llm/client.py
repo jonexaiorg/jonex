@@ -1,14 +1,14 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 """
-LLM Client Abstract + Factory
+LLM Client 抽象 + 工厂
 
-Business/domain code unified through `get_llm_client()` to get LLMClient, no longer new specific adapter.
-- LOCAL: Directly invoke local adapter in-process (Default uses QwenLLMCapability)
-- REMOTE: Invoke independent LLM capability service via Sidecar reverse proxy
-- MOCK: Offline/test stub, no external dependencies
+业务/领域代码统一通过 `get_llm_client()` 获取 LLMClient，不再 new 具体适配器。
+- LOCAL：进程内直接调用本地适配器（默认走 QwenLLMCapability）
+- REMOTE：通过 Sidecar 反代调用独立 LLM 能力服务
+- MOCK：离线/测试桩，不依赖任何外部资源
 
-Replace provider (Qwen -> DeepSeek, etc.) only need to extend LocalLLMClient.factory or modify manifest endpoint.
+替换提供方（Qwen → DeepSeek 等）只需扩展 LocalLLMClient.factory 或修改清单 endpoint。
 """
 
 from __future__ import annotations
@@ -18,16 +18,17 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 from jonex_core.capability.locator import CapabilityMode, get_locator
-from jonex_core.common import get_config, get_logger
+from jonex_core.common import get_config, get_logger, require_tenant
+from jonex_core.common.i18n import translate
 
 logger = get_logger("capability.client.llm")
 
-# Currently used capability_id (can be overridden in manifest)
+# 当前使用的 capability_id（清单中可覆盖）
 LLM_CAPABILITY_ID = "atomic.llm.qwen.v1"
 
 
 class LLMClient(ABC):
-    """LLM Client contract: domain/business code only depends on this interface"""
+    """LLM 客户端契约：领域/业务代码只依赖此接口"""
 
     @abstractmethod
     async def chat_completion(
@@ -36,21 +37,21 @@ class LLMClient(ABC):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
     ) -> str:
-        """Chat completion"""
+        """聊天补全"""
 
     @abstractmethod
     async def embedding(self, text: str) -> List[float]:
-        """Text vectorization"""
+        """文本向量化"""
 
 
 # ============================================================
-# Local: Direct in-process adapter
+# Local：直连进程内适配器
 # ============================================================
 class LocalLLMClient(LLMClient):
-    """Direct connection to local adapter"""
+    """直连本地适配器"""
 
     def __init__(self, options: Optional[Dict[str, Any]] = None) -> None:
-        # Lazy import to avoid loading heavy dependencies in REMOTE/MOCK mode
+        # 延迟导入避免在 REMOTE/MOCK 模式下加载重依赖
         from jonex_core.capability.atomic.llm.qwen_adapter import QwenLLMCapability
 
         self._adapter = QwenLLMCapability()
@@ -69,21 +70,25 @@ class LocalLLMClient(LLMClient):
 
 
 # ============================================================
-# Remote: Via Sidecar reverse proxy
+# Remote：通过 Sidecar 反代
 # ============================================================
 class RemoteLLMClient(LLMClient):
-    """Invoke remote LLM service via Sidecar reverse proxy"""
+    """通过 Sidecar 反代调用远程 LLM 服务
+
+    TODO(G3.2): 当 #3（平台 LLMClient）有真实流量时，base_url 改指 llm-gateway:8787。
+    当前 endpoint 来自 capability locator，指向 Sidecar；后续应改为直连网关的 OpenAI 兼容端点。
+    """
 
     def __init__(
         self,
         endpoint: str,
+        tenant_id: str,
         capability_id: str = LLM_CAPABILITY_ID,
-        tenant_id: str = "system",
         options: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._endpoint = endpoint.rstrip("/")
         self._capability_id = capability_id
-        self._tenant_id = tenant_id
+        self._tenant_id = require_tenant(tenant_id)
         self._timeout = (options or {}).get("timeout", 30.0)
 
     async def chat_completion(
@@ -117,6 +122,8 @@ class RemoteLLMClient(LLMClient):
             UpstreamServiceError,
         )
 
+        payload = dict(payload)
+        payload["tenant_id"] = self._tenant_id
         request_body = {
             "capability_id": self._capability_id,
             "tenant_id": self._tenant_id,
@@ -125,18 +132,22 @@ class RemoteLLMClient(LLMClient):
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.post(f"{self._endpoint}/invoke", json=request_body)
+                resp = await client.post(
+                    f"{self._endpoint}/invoke",
+                    json=request_body,
+                    headers={"X-Tenant-ID": self._tenant_id},
+                )
                 resp.raise_for_status()
                 return resp.json()
         except httpx.TimeoutException as e:
             raise CapabilityTimeoutError(
-                message=f"LLM remote invocation timed out: {self._capability_id}",
+                message=translate("err.capability.llm_timeout", params={"capability_id": self._capability_id}, fallback=f"LLM 远程调用超时: {self._capability_id}"),
                 details={"endpoint": self._endpoint},
                 cause=e,
             )
         except httpx.HTTPStatusError as e:
             raise UpstreamServiceError(
-                message=f"LLM remote invocation failed: HTTP {e.response.status_code}",
+                message=translate("err.capability.llm_upstream_error", params={"status": str(e.response.status_code)}, fallback=f"LLM 远程调用失败: HTTP {e.response.status_code}"),
                 details={
                     "capability_id": self._capability_id,
                     "upstream_status": e.response.status_code,
@@ -147,10 +158,10 @@ class RemoteLLMClient(LLMClient):
 
 
 # ============================================================
-# Mock: Test stub
+# Mock：测试桩
 # ============================================================
 class MockLLMClient(LLMClient):
-    """Stub implementation with no external dependencies"""
+    """无外部依赖的桩实现"""
 
     def __init__(self, options: Optional[Dict[str, Any]] = None) -> None:
         self._embedding_dim = (options or {}).get("embedding_dim", 1536)
@@ -170,16 +181,16 @@ class MockLLMClient(LLMClient):
 
 
 # ============================================================
-# Factory
+# 工厂
 # ============================================================
 def get_llm_client(
     *,
     capability_id: str = LLM_CAPABILITY_ID,
-    tenant_id: str = "system",
+    tenant_id: Optional[str] = None,
 ) -> LLMClient:
-    """Returns the corresponding client based on the capability_runtime manifest.
+    """根据 capability_runtime 清单返回对应 Client。
 
-    Usage for business/domain code:
+    业务/领域代码用法：
         client = get_llm_client()
         text = await client.chat_completion([...])
     """
@@ -190,12 +201,13 @@ def get_llm_client(
         return MockLLMClient(spec.options)
 
     if spec.mode == CapabilityMode.REMOTE:
+        tenant_id = require_tenant(tenant_id)
         endpoint = spec.endpoint or get_config().SIDECAR_URL
         logger.debug(f"LLM client = REMOTE ({capability_id}, endpoint={endpoint})")
         return RemoteLLMClient(
             endpoint=endpoint,
-            capability_id=capability_id,
             tenant_id=tenant_id,
+            capability_id=capability_id,
             options=spec.options,
         )
 

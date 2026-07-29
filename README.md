@@ -1,274 +1,209 @@
-<p align="center">
-  <img src="./frontends/shell/public/logo.svg" alt="Jonex logo" width="320" />
-</p>
+# 悦溪平台 Jonex Platform
 
-<p align="center">
-  <strong>All-in-One Multimodal Parsing Engine + Ontology-Powered AI-Ready Knowledge Engine</strong><br />
-  Parse every modality. Compile knowledge with ontology. Reason before retrieval.
-</p>
+悦溪平台是一个插件化、多租户的 AI 能力平台，包含前端工作台、统一 API Gateway、Sidecar 能力治理层、多个后端 capability service、RAG 原子能力和基础设施组件。知识库能力支持 RAG + 本体知识引擎，覆盖 TBox 配置、Stage4 本体抽取、Neo4j ABox 图存储和增强搜索。
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/React-TypeScript-3178C6?logo=react&logoColor=white" alt="React and TypeScript" />
-  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose" />
-  <img src="https://img.shields.io/badge/Multi--Tenant-Ready-0051D8" alt="Multi-tenant ready" />
-  <img src="https://img.shields.io/badge/License-Apache--2.0-D22128" alt="Apache License 2.0" />
-</p>
+当前项目按“全新最终态”维护。新增子应用、新页面、新接口、新实体和新服务不要复制历史旧实现，应优先遵循：
 
-<p align="center">
-  <a href="#overview">Overview</a> |
-  <a href="#quick-start">Quick Start</a> |
-  <a href="#local-development">Local Development</a> |
-  <a href="#api-quickstart">API Quickstart</a> |
-  <a href="#integration-profile">Integration profile</a> |
-  <a href="#document-and-video-parsing">Document and video parsing</a> |
-  <a href="#runtime-requirements">Runtime requirements</a> |
-  <a href="#community-and-security">Community &amp; Security</a> |
-  <a href="#license">License</a>
-</p>
+- [jonex-platform-architecture.md](jonex-platform-architecture.md)：系统架构设计文档，包含前端、后端、部署、租户和能力体系。
+- [backend-development-standard.md](backend-development-standard.md)：后端开发规范。
+- [frontend-development-standard.md](frontend-development-standard.md)：前端开发规范。
+- [local-fullstack-debugging-guide.md](local-fullstack-debugging-guide.md)：本地前后端联调和 VSCode Debug 配置说明。
 
----
-
-## Overview
-
-Jonex unifies an all-in-one multimodal parsing engine with an AI-ready knowledge engine. Ontology compiles domain reasoning into the knowledge layer before retrieval begins.
-
-It is an end-to-end enterprise AI knowledge platform that turns raw content into reusable knowledge services. Jonex connects data ingestion, multimodal parsing, domain knowledge compilation, vector and graph indexing, source-grounded retrieval, feedback loops, and business applications in one governed system.
-
-<p align="center">
-  <img src="./docs/assets/jonex-knowledge-pipeline.png" alt="Jonex knowledge pipeline: from multimodal raw data to actionable knowledge" width="100%" />
-</p>
-
-
-## Quick Start
-
-Docker Compose is the fastest way to run the complete platform.
-
-### Docker requirements
-
-- Docker Engine or Docker Desktop
-- Docker Compose v2 with Buildx
-- `make` on macOS or Linux
-- Sufficient disk space and time for the first build, which downloads container images, Python dependencies, and RAG models
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/jonexaiorg/jonex.git
-cd jonex
-```
-
-### 2. Initialize configuration
-
-```bash
-make init
-```
-
-This creates:
-
-- `deploy/.env` for the platform, database, object storage, and LLM Gateway
-- `deploy/.env.rag` for LightRAG, embeddings, and parsing
-- Frontend `.env` files for Shell, Core Business, Ecosystem Management, Platform Management, and Dev Gateway
-
-### 3. Configure model connections
-
-Configure at least one OpenAI-compatible LLM and embedding provider in `deploy/.env`:
-
-```env
-LLMGW_UPSTREAM_LLM_HOST=https://your-openai-compatible-host/v1
-LLMGW_UPSTREAM_LLM_API_KEY=your_llm_api_key
-
-LLMGW_UPSTREAM_EMBED_HOST=https://your-embedding-host/v1
-LLMGW_UPSTREAM_EMBED_API_KEY=your_embedding_api_key
-```
-
-If your model names differ from the defaults, also update `LLM_MODEL` and `EMBEDDING_MODEL` in `deploy/.env.rag`.
-
-Keep `LIGHTRAG_API_KEY` identical in `deploy/.env` and `deploy/.env.rag`. For audio, video, or advanced image processing, also configure the VLM and ASR connections in `deploy/.env`.
-
-### 4. Build and start
-
-```bash
-make build
-make up
-make ps
-```
-
-The first build creates the shared `jonex/python-base:local` image before Compose builds the platform services in parallel.
-
-Use `make logs` to follow service logs when troubleshooting; press `Ctrl+C` to stop following them without stopping the platform.
-
-### 5. Open Jonex
-
-Visit:
+## 架构概览
 
 ```text
-http://localhost/
+用户浏览器
+  -> frontend-gateway (Nginx, 80)
+     -> shell / core-business / platform-management / ecosystem-management
+     -> /api/** -> API Gateway (8000)
+        -> Sidecar (8001)
+           -> platform (8006)
+           -> business-domain (8005)
+           -> knowledge-base (8003)
+           -> atomic-rag (8004) -> lightrag (9621)
+                                  -> llm-gateway (8787)  ← 所有 LLM/Embedding 出口
+                                                     -> TokenHub / Ollama 等上游
+
+PostgreSQL / Redis / Milvus / etcd / MinIO
 ```
 
-Local demo credentials:
+核心原则：
+
+- 浏览器生产环境只进入 `frontend-gateway`。
+- 前端业务请求统一调用 `/api/v1/**`。
+- Gateway 保持薄层，只做 HTTP 路由聚合。
+- Sidecar 统一做认证、租户上下文、内部 JWT、计量、限流、熔断和能力代理。
+- Capability Service 承载业务规则，按 `api/models/repository/services/dtos` 分层。
+- 所有业务数据必须显式使用合法 `tenant_id`，禁止默认租户兜底。
+
+知识库能力的本体链路由 knowledge-base service 编排：atomic-rag 产出解析结果和 `ontology_data`，knowledge-base service 负责文档状态、Neo4j 写入、增强搜索和 RAG 降级。
+
+## 目录结构
 
 ```text
-Username: admin
-Password: admin123
+jonex-platform/
+├── api_gateway/                 # FastAPI API Gateway
+├── capabilities/                # 后端 capability services
+│   ├── platform/
+│   ├── business_domain/
+│   └── knowledge_base/
+├── frontends/                   # pnpm workspace 前端工作区
+│   ├── shell/
+│   ├── core-business/
+│   ├── platform-management/
+│   ├── ecosystem-management/
+│   ├── shared/
+│   └── dev-gateway/             # 本地开发 Node.js 网关（替代 Nginx）
+├── jonex_core/                  # 公共内核、Sidecar、能力 SDK、数据库基础设施、LLM 网关
+├── deploy/                      # Docker、Nginx、PostgreSQL migrations
+├── tests/
+├── dev-guide.macos.md           # macOS/Linux 本地调试指南
+├── dev-guide.windows.md         # Windows 本地调试指南
 ```
 
-> **Security warning:** These credentials are for local evaluation only. Change or remove the default administrator account before binding Jonex to a non-loopback interface, sharing the deployment, or exposing it to any network. Complete the production checklist in [SECURITY.md](SECURITY.md) before deployment.
+## 前端应用
 
-### Windows PowerShell
+`frontends/` 是 pnpm workspace。Shell 是统一入口，业务子应用通过应用注册表挂载。
 
-```powershell
+| 应用 | 包名 | hosted 路径 | standalone 路径 | dev 端口 |
+|---|---|---|---|---|
+| Shell | `@jonex/shell` | `/` | `/` | `5173` |
+| 核心业务 | `@jonex/core-business` | `/apps/core-business` | `/core-business/` | `5175` |
+| 生态管理 | `@jonex/ecosystem-management` | `/apps/ecosystem-management` | `/ecosystem-management/` | `5176` |
+| 平台管理 | `@jonex/platform-management` | `/apps/platform-management` | `/platform-management/` | `5177` |
+
+生产应用清单以平台后端接口为准：
+
+```text
+GET /api/v1/platform/frontend/apps
+```
+
+`frontends/shell/public/app-manifest.json` 只作为本地开发和后端不可用时的 fallback。
+
+## 后端服务
+
+| 服务 | 目录 | dev 端口 | 职责 |
+|---|---|---|---|
+| API Gateway | `api_gateway/` | `8000` | 外部 API 路由聚合 |
+| Sidecar | `jonex_core/sidecar/` | `8001` | 认证、治理、能力代理 |
+| LLM 网关 | `jonex_core/llm_gateway/` | `8787` | OpenAI 兼容代理，统一 LLM/Embedding 出口计量 |
+| Knowledge Base | `capabilities/knowledge_base/` | `8003` | 知识库、文档状态机、RAG 接入、数据源接入（API/存储直连/API开放推送） |
+| Atomic RAG | `atomic-rag/` | `8004` | RAG 原子能力 |
+| Business Domain | `capabilities/business_domain/` | `8005` | 领域空间、服务、引擎、适配器 |
+| Platform | `capabilities/platform/` | `8006` | 登录、RBAC、菜单、应用注册、审计、任务 |
+
+## 本地开发
+
+详细本地调试流程（依赖安装、环境文件、VSCode Debug、Docker、RAG、登录鉴权）见：
+
+- macOS / Linux：[dev-guide.macos.md](dev-guide.macos.md)
+- Windows：[dev-guide.windows.md](dev-guide.windows.md)
+
+```bash
+# 快速起步（macOS/Linux）
+make init                    # 首次：初始化环境文件
+make dev-infra-up            # 启动中间件依赖
+make dev-gateway             # Dev Gateway http://localhost:8080
+make dev-frontend            # 启动前端
+
+# Windows
 .\jonex.ps1 init
-.\jonex.ps1 build
-.\jonex.ps1 up
-.\jonex.ps1 ps
+.\jonex.ps1 dev-infra-up
+.\jonex.ps1 dev-gateway
+.\jonex.ps1 dev-frontend
 ```
 
-Use `.\jonex.ps1 logs` when you need to follow service logs.
+## API 和租户约定
 
-If script execution is restricted:
+- 外部 API 统一为 `/api/v1/{capability}/**`。
+- 前端不得直连 Sidecar、capability service、容器名或宿主调试端口。
+- 知识库入站推送端点 `POST /api/v1/knowledge-base/ingest/{ds_id}` 是面向外部系统的公开端点，用 `X-Ingest-Key` 鉴权（非用户 JWT），租户由 ingest key 解析得到；仍经 Gateway → Sidecar，不绕过治理层。
+- 普通业务请求 body 不传 `tenant_id`。
+- 租户来自认证上下文、JWT 解析结果或 `X-Tenant-ID`。
+- `/api/v1/auth/login` 是认证引导端点，本地 seed 可直接使用 `admin/admin123` 登录；若同一用户名存在多个租户账号，需要携带 `X-Tenant-ID` 明确选择租户。
+- 本地开发和演示数据使用 `tenant_jonex_demo`。
+- `default`、`default_tenant`、`system` 只允许作为禁止值出现在校验规则和规范文档中。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\jonex.ps1 help
-```
+## 调用方式
 
-### Stop the platform
+平台对外只暴露 `frontend-gateway`，业务请求统一走 `/api/v1/**`。下面三种方式按使用场景区分。
+
+### 方式一：经 API Gateway（业务路径，前端与外部统一入口）
 
 ```bash
-make down
+# 知识库增强语义搜索（本体优先：Neo4j 图谱事实 → LLM 回答 → RAG fallback）
+curl "http://localhost/api/v1/knowledge-base/documents/search/enhanced?query=腾讯&knowledge_base_id=KB1&mode=hybrid&top_k=3" \
+     -H "Authorization: Bearer <access_token>"
+
+# 平台用户列表
+curl "http://localhost/api/v1/platform/users" \
+     -H "Authorization: Bearer <access_token>"
 ```
 
-On Windows:
+### 方式二：经 Sidecar 统一 invoke 契约（内部 / 集成调试）
 
-```powershell
-.\jonex.ps1 down
-```
-
-## Local Development
-
-Local development uses root-level environment files and VSCode Debug. It is separate from the Docker deployment configuration under `deploy/`.
-
-### Toolchain requirements
-
-- Python `>=3.12.13`
-- Node.js `>=20.18.0` (Node.js 22 LTS recommended)
-- pnpm `>=9.0.0`
-- A current stable version of uv
-
-### Initialize the local environment
+Sidecar（dev 端口 `8001`）提供统一的能力发现与调用入口，前端不得直连，仅用于内部集成或调试。
 
 ```bash
-cp docs/env/.env.local.example .env.local
-cp docs/env/.env.rag.local.example .env.rag.local
-mkdir -p .vscode
-cp docs/examples/launch.json.example .vscode/launch.json
-make frontends-install
+# 列出已注册能力
+curl http://localhost:8001/capabilities \
+     -H "Authorization: Bearer jonex_test_tenant_jonex_demo"
+
+# 统一 invoke 契约
+curl -X POST http://localhost:8001/invoke \
+     -H "Authorization: Bearer jonex_test_tenant_jonex_demo" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "capability_id": "business.knowledge_base.v1",
+           "payload": {"action": "list_documents", "knowledge_base_id": "KB1"}
+         }'
 ```
 
-Set local middleware addresses in `.env.local` to `127.0.0.1`, or replace `SERVER_IP` with a remote infrastructure host. Backend processes are started from VSCode Run and Debug; the Makefile no longer starts host backend processes.
+`/invoke` 请求体字段：
 
-Start the required local dependencies:
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `capability_id` | 是 | 能力 ID，如 `business.knowledge_base.v1` |
+| `payload` | 是 | 能力具体入参（含 action 与业务参数） |
+| `tenant_id` | 否 | 仅用于与认证上下文/Header 做一致性校验，不作为新租户来源 |
+| `user_id` | 否 | 调用方用户标识 |
+| `context` | 否 | 透传上下文 |
+
+返回 `InvokeResult`：`{request_id, success, code, message, data, latency_ms}`。流式能力使用 `/invoke/stream` 与 `/invoke/stream/rag`。
+
+### 方式三：直接访问 capability service（仅本地调试）
+
+各 capability service 在本地暴露独立端口（knowledge-base `8003`、business-domain `8005`、platform `8006`），仅用于本地断点调试，生产不对外。健康检查：
 
 ```bash
-make dev-infra-up  # PostgreSQL, Redis, etcd, MinIO, and Milvus
-# Or, when running the complete RAG stack locally:
-make dev-deps-up   # Middleware plus LightRAG and Atomic RAG
+curl http://localhost:8003/health
 ```
 
-Start the frontend gateway and applications in separate terminals:
+## 能力契约
 
-```bash
-make dev-gateway
-make dev-frontend
-```
+能力 ID 统一格式 `{kind}.{name}.v{major}`，例如 `business.knowledge_base.v1`、`domain.rag.text.v1`、`atomic.rag.lightrag.v1`。能力分三层：
 
-Open `http://localhost:8080`.
+- **Business**：用户可感知的业务域，拥有独立数据库 schema，可被 Gateway/Sidecar 调用。
+- **Domain**：模态/领域级编排，组合多个 atomic 能力，不承载子应用 CRUD。
+- **Atomic**：封装单一技术组件（LLM、Vector、Audio、RAG），对上提供稳定 client。
 
-## Your First Knowledge Search in Five Minutes
+完整契约与分层规则见 [backend-development-standard.md](backend-development-standard.md) 第 9 节「Capability 契约规范」。
 
-1. Sign in with the local demo credentials `admin / admin123`.
-2. Open Core Business and create or select a domain space.
-3. Create a knowledge base and organize it with folders or tags.
-4. Select a parser profile or preset for the content you plan to ingest.
-5. Upload files, or configure a REST API or S3-compatible data source.
-6. Wait for multimodal parsing and knowledge compilation to finish.
-7. Inspect the parsing results, compiled ontology, relationships, and knowledge graph.
-8. Open Knowledge Search, ask a question, verify its references, and submit feedback.
+## 文档索引
 
-## API Quickstart
-
-All external APIs are exposed through the unified Gateway.
-
-### Sign in
-
-```bash
-curl -X POST "http://localhost/api/v1/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}'
-```
-
-Use the returned `access_token` to call ontology-first search:
-
-```bash
-curl -X POST "http://localhost/api/v1/knowledge-base/search/ontology" \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "What are the key risks described in these documents?",
-    "knowledge_base_ids": ["<knowledge-base-id>"],
-    "mode": "hybrid",
-    "top_k": 5,
-    "with_reasoning": true
-  }'
-```
-
-The response includes the answer, matched knowledge bases, ontology instances, RAG usage, structured source references, and an optional reasoning trace.
-
-
-In production, the browser communicates only with Frontend Gateway. Business APIs, capability services, and infrastructure components are not directly exposed to frontend applications.
-
-## Integration profile
-
-- [RAG-Anything](https://github.com/HKUDS/RAG-Anything) and [MinerU](https://github.com/opendatalab/MinerU) can be connected for multimodal content processing and document parsing
-- [LightRAG](https://github.com/HKUDS/LightRAG) can be connected through the graph-enhanced retrieval adapter
-- [Neo4j](https://neo4j.com/) and [Milvus](https://milvus.io/) are packaged graph and vector persistence integrations
-- OpenAI-compatible endpoints provide replaceable LLM, embedding, reranking, VLM, and ASR services
-
-## Document and video parsing
-
-- Deploy the Atomic RAG parser with Docker Compose, run it as an independently scaled capability, or register a compatible parser service through a parser profile
-- Process video locally with ASR, keyframes, and vision-language models, or route media analysis to a configured cloud service
-- Scale parsing workers independently from the core platform; GPU acceleration is optional for model-heavy workloads
-
-## Runtime requirements
-
-| Deployment profile | Requirements |
+| 文档 | 用途 |
 |---|---|
-| Core platform | Docker Engine or Docker Desktop, Docker Compose v2 with Buildx, PostgreSQL 15, Redis 7, and object storage |
-| Vector retrieval | Milvus, etcd, and MinIO or compatible equivalents |
-| Ontology graph | A supported graph database service; Neo4j is the packaged integration |
-| CPU parsing | Suitable for evaluation and light workloads; capacity scales with file size and concurrency |
-| Accelerated parsing | Optional NVIDIA GPU and Container Toolkit for faster OCR, ASR, and vision-language processing; VRAM depends on the selected models |
-| Cloud parsing | A compatible parsing or media-analysis endpoint, credentials, object storage, and outbound network access |
+| [jonex-platform-architecture.md](jonex-platform-architecture.md) | 稳定系统架构、服务边界、目录结构、配置和开发规范。 |
+| [backend-development-standard.md](backend-development-standard.md) | 后端 capability service、租户、Repository、DTO 和接口开发规范。 |
+| [frontend-development-standard.md](frontend-development-standard.md) | 前端 workspace、子应用、路由、shared 包和页面开发规范。 |
+| [dev-guide.macos.md](dev-guide.macos.md) / [dev-guide.windows.md](dev-guide.windows.md) | 本地前后端调试（VSCode Debug、环境文件、RAG venv、常见问题）。 |
+| [PROJECT_ISSUES_AND_TODO.md](PROJECT_ISSUES_AND_TODO.md) | 项目议题、风险、后续演进和开发状态跟踪。 |
+| [docs/ontology-knowledge-engine-execution-plan.md](docs/ontology-knowledge-engine-execution-plan.md) | 本体知识引擎详细执行计划、阶段任务和历史决策。 |
 
-## Community and Security
+## 新功能入口
 
-- Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request.
-- Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-- Report vulnerabilities privately according to [SECURITY.md](SECURITY.md); do not include vulnerability details in a public issue.
-- See [CHANGELOG.md](CHANGELOG.md) for release notes and compatibility changes.
+新增后端功能时，从 [backend-development-standard.md](backend-development-standard.md) 开始，先确定实体、租户边界、Repository、Service、DTO 和 Gateway/Sidecar 调用链。
 
-## License
+新增前端功能时，从 [frontend-development-standard.md](frontend-development-standard.md) 开始，先确定应用归属、路由、注册表、shared 依赖、API service、页面状态和权限展示。
 
-Jonex is licensed under the [Apache License 2.0](LICENSE). Third-party components remain under their respective licenses; see [NOTICE](NOTICE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
----
-
-<p align="center">
-  <strong>Turn enterprise data into knowledge that is understandable, verifiable, and operational.</strong>
-</p>
-
----
-
-© 2026 JONEX
+系统整体设计以 [jonex-platform-architecture.md](jonex-platform-architecture.md) 为准。

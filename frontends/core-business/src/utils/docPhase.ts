@@ -15,22 +15,22 @@ export type DocPhase =
   | 'compiling'
   | 'compiled'
   | 'compile_failed'
-  | 'deleting' // 正交删除态，单独处理，不进主线
+  | 'deleting'; // 正交删除态，单独处理，不进主线
 
 /** 徽章图标语义键（由 DocumentStatusBadge 映射到具体 antd 图标）。 */
-export type PhaseIcon = 'clock' | 'spinner' | 'check' | 'error' | 'warning' | 'hourglass'
+export type PhaseIcon = 'clock' | 'spinner' | 'check' | 'error' | 'warning' | 'hourglass';
 
 export interface PhaseDisplay {
-  label: string
-  color: string
-  icon: PhaseIcon
+  label: string;
+  color: string;
+  icon: PhaseIcon;
   /** 是否已可搜索（待编译起为 true）。 */
-  searchable: boolean
-  canReparse: boolean
-  canRecompile: boolean
-  canDelete: boolean
+  searchable: boolean;
+  canReparse: boolean;
+  canRecompile: boolean;
+  canDelete: boolean;
   /** 副提示，如「已可搜索」。 */
-  hint?: string
+  hint?: string;
 }
 
 /**
@@ -43,32 +43,32 @@ export function deriveDocPhase(
 ): DocPhase | null {
   switch (status) {
     case 'pending':
-      return 'pending_parse'
+      return 'pending_parse';
     case 'parsing':
-      return 'parsing'
+      return 'parsing';
     case 'ingesting':
-      return 'ingesting'
+      return 'ingesting';
     case 'failed':
-      return 'parse_failed'
+      return 'parse_failed';
     case 'deleting':
-      return 'deleting'
+      return 'deleting';
     case 'deleted':
-      return null
+      return null;
     case 'ready':
       switch (ontologyStatus) {
         case 'pending':
-          return 'pending_compile'
+          return 'pending_compile';
         case 'extracting':
-          return 'compiling'
+          return 'compiling';
         case 'ready':
-          return 'compiled'
+          return 'compiled';
         case 'failed':
-          return 'compile_failed'
+          return 'compile_failed';
         default:
-          return 'pending_compile'
+          return 'pending_compile';
       }
     default:
-      return null
+      return null;
   }
 }
 
@@ -157,7 +157,7 @@ export const PHASE_DISPLAY: Record<DocPhase, PhaseDisplay> = {
     canRecompile: false,
     canDelete: false,
   },
-}
+};
 
 /** 列表筛选顺序（不含 deleting；它是正交删除态）。 */
 export const FILTER_PHASES: DocPhase[] = [
@@ -169,4 +169,4 @@ export const FILTER_PHASES: DocPhase[] = [
   'compiling',
   'compiled',
   'compile_failed',
-]
+];

@@ -1,4 +1,6 @@
-
+"""
+知识库能力 — 领域服务管理
+"""
 from __future__ import annotations
 
 import uuid
@@ -7,6 +9,7 @@ from sqlalchemy import select
 
 from jonex_core.common import get_db_session
 from jonex_core.common.exceptions import JonexException
+from jonex_core.common.i18n import translate
 from jonex_core.common.tenant import require_tenant
 
 from ..repository import (
@@ -23,7 +26,7 @@ from ..models.domain_service import (
 
 
 class DomainServiceService:
-
+    """领域服务 CRUD + 知识库关联 + API Key + 配置 + 权限"""
 
     async def create(self, tenant_id: str, data: dict) -> dict:
         tenant_id = require_tenant(tenant_id)
@@ -38,7 +41,7 @@ class DomainServiceService:
                 description=data.get("description"),
                 domain_type=data.get("domain_type"),
             )
-
+            # Handle KB associations
             kb_ids = data.get("kb_ids", [])
             if kb_ids:
                 kb_repo = ServiceKnowledgeBaseRepository(session)
@@ -62,7 +65,7 @@ class DomainServiceService:
             obj = await repo.get_required(service_id, tenant_id)
             kb_ids = await self._get_kb_ids(session, service_id, tenant_id)
 
-
+            # Fetch space name
             space_name = ""
             space_row = await session.execute(
                 select(Space.name).where(
@@ -75,7 +78,7 @@ class DomainServiceService:
             if space_result:
                 space_name = space_result
 
-
+            # Fetch KB names
             kb_name_map: dict[str, str] = {}
             if kb_ids:
                 kb_rows = await session.execute(
@@ -111,7 +114,7 @@ class DomainServiceService:
             items = await repo.list_all(tenant_id, offset, limit, extra_conditions=conditions)
             total = await repo.count(tenant_id, extra_conditions=conditions)
 
-
+            # Fetch KB associations for all services
             service_ids = [o.id for o in items]
             kb_map: dict[str, list[str]] = {}
             if service_ids:
@@ -125,7 +128,7 @@ class DomainServiceService:
                 for service_id, kb_id in result.all():
                     kb_map.setdefault(service_id, []).append(kb_id)
 
-
+            # Batch fetch space names
             space_ids = list({o.space_id for o in items})
             space_name_map: dict[str, str] = {}
             if space_ids:
@@ -138,7 +141,7 @@ class DomainServiceService:
                 )
                 space_name_map = {row[0]: row[1] for row in space_rows.all()}
 
-
+            # Batch fetch knowledge base names
             all_kb_ids: list[str] = []
             for kbs in kb_map.values():
                 all_kb_ids.extend(kbs)
@@ -175,10 +178,10 @@ class DomainServiceService:
             if values:
                 obj = await repo.update(service_id, tenant_id, **values)
 
-
+            # Handle KB associations update
             if "kb_ids" in data:
                 kb_repo = ServiceKnowledgeBaseRepository(session)
-
+                # Remove existing KB associations
                 existing = await session.execute(
                     select(ServiceKnowledgeBase).where(
                         ServiceKnowledgeBase.service_id == service_id,
@@ -189,7 +192,7 @@ class DomainServiceService:
                 for skb in existing.scalars().all():
                     await session.delete(skb)
 
-
+                # Add new KB associations
                 new_kb_ids = data.get("kb_ids", [])
                 for kb_id in new_kb_ids:
                     await kb_repo.create(
@@ -210,7 +213,7 @@ class DomainServiceService:
             await repo.get_required(service_id, tenant_id)
             await repo.delete_soft(service_id, tenant_id)
 
-
+            # Cascade delete KB associations
             existing_kb = await session.execute(
                 select(ServiceKnowledgeBase).where(
                     ServiceKnowledgeBase.service_id == service_id,
@@ -221,7 +224,7 @@ class DomainServiceService:
             for skb in existing_kb.scalars().all():
                 await session.delete(skb)
 
-
+            # Cascade delete permissions
             existing_perm = await session.execute(
                 select(ServicePermission).where(
                     ServicePermission.service_id == service_id,
@@ -245,7 +248,7 @@ class DomainServiceService:
             await session.commit()
             return {"api_key": new_key}
 
-
+    # ── API Key multi-key management ──
 
     async def list_api_keys(self, service_id: str, tenant_id: str) -> dict:
         tenant_id = require_tenant(tenant_id)
@@ -291,10 +294,10 @@ class DomainServiceService:
         async with get_db_session() as session:
             key_repo = ServiceApiKeyRepository(session)
             await key_repo.get_required(key_id, tenant_id)
-
+            # Ensure the key belongs to the given service
             key_obj = await session.get(ServiceApiKey, key_id)
             if not key_obj or key_obj.service_id != service_id:
-                raise JonexException(message="API Key 不属于该服务")
+                raise JonexException(message=translate("err.service.api_key_not_belong", fallback="API Key 不属于该服务"))
             await key_repo.delete_soft(key_id, tenant_id)
             await session.commit()
             return True
@@ -330,7 +333,7 @@ class DomainServiceService:
     async def set_permissions(self, service_id: str, tenant_id: str, permissions: list) -> bool:
         tenant_id = require_tenant(tenant_id)
         async with get_db_session() as session:
-
+            # Remove existing permissions
             existing = await session.execute(
                 select(ServicePermission).where(
                     ServicePermission.service_id == service_id,
@@ -341,7 +344,7 @@ class DomainServiceService:
             for sp in existing.scalars().all():
                 await session.delete(sp)
 
-
+            # Add new permissions
             for perm in permissions:
                 perm_obj = ServicePermission(
                     id=uuid.uuid4().hex,

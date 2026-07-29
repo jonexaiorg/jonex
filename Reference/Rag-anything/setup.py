@@ -64,6 +64,8 @@ extras_require = {
     "image": ["Pillow>=10.0.0"],  # For image format conversion (BMP, TIFF, GIF, WebP)
     "text": ["reportlab>=4.0.0"],  # For text file to PDF conversion (TXT, MD)
     "office": [],  # Office document processing requires LibreOffice (external program)
+    # [jonex] 本地 MinerU CLI 解析（RAG_PARSER=mineru）。online/selfhost 不需要，slim 镜像可省。
+    "local": ["mineru[core]"],  # [jonex]
     "paddleocr": [
         "paddleocr>=2.7.0",
         "pypdfium2>=4.25.0",

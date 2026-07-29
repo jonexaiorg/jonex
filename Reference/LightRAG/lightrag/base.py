@@ -840,6 +840,8 @@ class DocStatusStorage(BaseKVStorage, ABC):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        doc_id: str | None = None,
+        file_path: str | None = None,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -849,6 +851,9 @@ class DocStatusStorage(BaseKVStorage, ABC):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', 'id')
             sort_direction: Sort direction ('asc' or 'desc')
+            doc_id: [jonex] Filter by client-side document id, matched against the
+                ``doc=<id>|`` anchor embedded in file_path (file_source). None = no filter.
+            file_path: [jonex] Filter by exact file_path. None = no filter.
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)

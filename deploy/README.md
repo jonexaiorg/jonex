@@ -1,279 +1,244 @@
-# Jonex平台 Docker 部署指南
+# deploy
 
-## 🚀 快速开始
+`deploy/` 保存悦溪平台部署相关文件，包括 Docker 构建上下文、Nginx 配置和 PostgreSQL migration。
 
-### 1. 环境准备
+## 目录
 
-```bash
-# 检查 Docker 和 Docker Compose
-docker --version
-docker-compose --version
+```text
+deploy/
+├── docker/                      # 服务镜像 Dockerfile
+├── nginx/                       # frontend-gateway 与子前端 Nginx 配置
+└── postgres/
+    └── migrations/              # PostgreSQL 初始化和迁移脚本
 ```
 
-### 2. 初始化配置
+## 部署入口
 
-```bash
-# 进入项目根目录
-cd jonex-platform
+生产环境浏览器只访问 `frontend-gateway`：
 
-# 使用 Makefile 初始化
-make init
-
-# 或手动复制
-cp deploy/.env.example deploy/.env
-cp deploy/.env.rag.example deploy/.env.rag      # LightRAG 容器专属配置（含 LLM/Embedding/存储后端）
-# 编辑 deploy/.env 和 deploy/.env.rag 配置文件
-# 注意：deploy/.env 中的 LIGHTRAG_API_KEY 必须与 deploy/.env.rag 中的 LIGHTRAG_API_KEY 保持一致
+```text
+frontend-gateway:80
+  -> shell 和子前端静态资源
+  -> /api/** -> gateway:8000
+  -> LLM 调用：lightrag / knowledge-base -> llm-gateway:8787 -> 上游 LLM
 ```
 
-### 3. 启动服务
+后端服务、Sidecar、能力服务、RAG 服务、PostgreSQL、Redis、Milvus、etcd、MinIO 默认只在容器网络内访问。开发环境可以通过 `docker-compose.override.yml` 暴露常规调试端口；需要把单个业务后端或 `atomic-rag` 切到宿主机调试时，使用 `docker-compose.debug.yml`。
 
-**开发模式**（默认，自动加载 `docker-compose.override.yml`）：
+## Nginx 文件
+
+| 文件 | 职责 |
+|---|---|
+| `nginx/frontend-gateway.conf` | 唯一前端入口，聚合 shell、子应用、remote assets 和 `/api/**` 反代。 |
+| `nginx/expert-call.conf` | expert-call 子前端 standalone fallback 和 remote assets。 |
+
+新增前端子应用时，需要同步：
+
+- 子应用 Dockerfile。
+- 子应用 `nginx/default.conf`。
+- `deploy/nginx/frontend-gateway.conf` 中的 standalone 路由和 remote assets 反代。
+- 平台后端应用注册表。
+- `frontends/shell/public/app-manifest.json` 本地 fallback。
+
+## PostgreSQL migrations
+
+迁移脚本规则：
+
+- 新业务表默认带 `tenant_id`、时间戳、软删除字段，必要时带审计字段。
+- 平台共享元数据不带 `tenant_id`，例如应用、菜单、权限、系统配置。
+- 平台运行数据和业务数据必须带合法 `tenant_id`。
+- 本地开发和演示数据使用 `tenant_jonex_demo`。
+- 不写入默认业务租户。
+
+## 常用命令
+
 ```bash
-# 方式一：使用 Makefile（Linux/macOS）
 make build
-make up           # Gateway 8000 / Sidecar 8001 对外，便于直连调试
-
-# 方式二：使用 jonex.ps1（Windows）
-.\jonex.ps1 build
-.\jonex.ps1 up
-
-# 方式三：使用 docker-compose
-cd deploy
-docker-compose build
-docker-compose up -d
-```
-
-**生产模式**（仅暴露 Frontend 80）：
-```bash
-make up-prod                # 显式跳过 override.yml
-.\jonex.ps1 up-prod
-# 或：cd deploy && docker-compose -f docker-compose.yml up -d
-```
-
-### 4. 验证服务
-
-```bash
-# 查看服务状态
-make ps
-
-# 查看日志
-make logs
-
-# 健康检查
-make test
-
-# 访问健康检查接口
-curl http://localhost:8000/health   # 网关
-curl http://localhost:8001/health   # Sidecar
-```
-
-## 📦 服务列表
-
-| 服务名称 | 容器内端口 | 开发模式宿主端口 | 生产模式宿主端口 | 说明 |
-|---------|-----------|----------------|-----------------|------|
-| **frontend** | 80 | 80 | **80** | 前端 Nginx，唯一对外入口（静态资源 + /api 反向代理） |
-| **gateway** | 8000 | 8000 | 仅容器内 | API 网关（业务路由聚合、CORS） |
-| **sidecar** | 8000 | 8001 | 仅容器内 | 内部能力代理（认证、计量、限流） |
-| **knowledge-base-service** | 8000 | 8003 | 仅容器内 | 知识库能力服务 |
-| **atomic-rag** | 8000 | 8004 | 仅容器内 | RAG 原子能力服务（解析 + HTTP 调 lightrag） |
-| **lightrag** | 9621 | 9621 | 仅容器内 | LightRAG 引擎 + WebUI（源码自建镜像 jonex-lightrag-source，源码集成于 Reference/LightRAG，think 开关默认关闭 Qwen3.5 思考模式） |
-| **redis** | 6379 | 6379 | 6379 | Redis 缓存 / 服务发现 |
-| **neo4j** | 7687 / 7474(browser) | — | 仅容器内 | Neo4j 5.26 图数据库（本体 ABox 存储，APOC 插件，持久化卷 jonex-neo4j-data） |
-| **milvus** / **etcd** / **minio** | - | - | 仅容器内 | 预留：知识库存储后端切 PG/Milvus 时启用（首版未连） |
-
-> 端口策略：开发模式自动加载 `docker-compose.override.yml`，把 Gateway 8000、Sidecar 8001、lightrag 9621、atomic-rag 8004 同时映射到宿主机便于直连调试；生产模式 (`make up-prod` / `.\jonex.ps1 up-prod`) 显式跳过 override，仅暴露 Frontend 80。
-
-> 知识库 RAG 链路：浏览器 → Frontend → Gateway（文件落地）→ Sidecar → knowledge-base 服务（业务层 CRUD + 状态机）→ Sidecar → atomic-rag（解析）→ lightrag（向量/图谱/LLM）。**lightrag 不直接对外**，所有调用必须经过 atomic-rag 包装。knowledge-base 不参与文件 IO，仅处理 file_path 字符串。
-
-## 🔧 常用命令
-
-### 使用 Makefile
-
-```bash
-# 查看所有命令
-make help
-
-# 构建镜像
-make build
-
-# 启动服务
 make up
-
-# 停止服务
-make down
-
-# 查看日志
+make ps
 make logs
-make logs-sidecar
-make logs-knowledge-base
-
-# 进入容器
-make shell-sidecar
-make shell-postgres
+make down
+make docker-local-up
 ```
 
-### 使用 Docker Compose
+- `make up`：加载 `docker-compose.override.yml`，适合本地整套 Docker 联调并暴露常规调试端口。
+- `make docker-local-up`：加载 `docker-compose.debug.yml`，适合其他服务留在 Docker、单个业务后端或 `atomic-rag` 在宿主机调试。`lightrag` 会暴露 `9621` 方便访问，但容器内 `atomic-rag` 默认仍通过 `http://lightrag:9621` 调用它。
+
+单服务：
 
 ```bash
-cd deploy
-
-# 构建所有镜像
-docker-compose build
-
-# 启动所有服务
-docker-compose up -d
-
-# 查看服务状态
-docker-compose ps
-
-# 查看日志
-docker-compose logs -f
-
-# 查看特定服务日志
-docker-compose logs -f sidecar
-docker-compose logs -f knowledge-base-service
-
-# 重启服务
-docker-compose restart
-
-# 停止服务
-docker-compose stop
-
-# 停止并删除容器
-docker-compose down
-
-# 停止并删除容器和数据卷（慎用）
-docker-compose down -v
+make rebuild-service SERVICE=platform-service
+make restart-service SERVICE=platform-service
+make logs-service SERVICE=platform-service
 ```
 
-## 📊 扩缩容
+前端镜像：
 
 ```bash
-
-# 或直接使用 docker-compose
-cd deploy
+make rebuild-frontend-gateway
+make rebuild-shell-frontend
+make rebuild-expert-call-frontend
+make rebuild-core-business-frontend
+make rebuild-platform-management-frontend
+make rebuild-ecosystem-management-frontend
 ```
 
-## 🔨 开发模式
+## 构建加速（已融入 compose 构建）
+
+构建优化已**直接整合进 `docker compose build`**：抽取共享基础镜像 `python-base`、用 `COMPOSE_BAKE` 委托 buildx 并行构建、保留 apt/pip/pnpm 缓存挂载。产出的就是 `docker compose up` 实际运行的 `deploy-*` 镜像，**不再有单独的一套 `jonex/*` 镜像**。运行时产物与优化前一致（依赖集合/端口/命令/健康检查/前端 dist 不变）。
+
+工作方式：四个能力服务 + gateway/sidecar/llm-gateway 这 7 个后端镜像的 Dockerfile 改为 `FROM ${PYTHON_BASE}`，compose 中通过 `additional_contexts: python-base: docker-image://jonex/python-base:local`（命名上下文用 `python-base`，避免与 Dockerfile 内 `AS base` 阶段别名撞名）复用预构建的共享基础层。
+
+### 一键构建
 
 ```bash
-# 开发模式启动（代码热重载）
-make dev
+# *nix / CI：先构建 python-base，再并行 compose build（输出秒级总耗时）
+bash deploy/scripts/build_all.sh
+bash deploy/scripts/build_all.sh gateway    # 仅构建某个 compose 服务
+
+# Windows（cmd）
+deploy\scripts\build_all.cmd
+
+# make（自动先构建 base，再 COMPOSE_BAKE 并行构建）
+make build            # 本地联调
+make build-gpu        # GPU
+make build-prod       # 生产
+make build-backend    # 仅后端
+make build-service SERVICE=gateway
 ```
 
-## 📈 监控
+等价的手动两步（脚本/Make 已封装）：
 
-### 健康检查
+```bash
+# 1) 构建共享基础镜像并 load 进本地镜像库（被 7 个后端服务复用）
+docker buildx build --load -t jonex/python-base:local -f deploy/docker/python-base.Dockerfile .
+# 2) 并行 compose 构建（委托 buildx bake）
+cd deploy && COMPOSE_BAKE=1 docker compose build
+```
+
+> `python-base` 不是 compose 服务，`docker compose up` 不会启动它；它只作为构建期的命名上下文被引用。首次/依赖清单变更后会重建该层，之后命中缓存。
+
+### 优化构成
+
+| 优化项 | 说明 |
+|---|---|
+| 共享基础镜像 | `python-base.Dockerfile` 收敛 7 个后端服务的公共层（时区 / 腾讯源 / apt / pip 依赖）|
+| 并行构建 | `COMPOSE_BAKE=1` 让 `docker compose build` 委托 buildx bake，按依赖图并行 |
+| 前端 pnpm store 缓存 | 5 个前端共享 `--mount=type=cache,id=jonex-pnpm-store`，依赖未变零下载 |
+| atomic-rag 层固化 | 固定层顺序，源码层为最后 `COPY`，仅源码变更只重建 1 层 |
+
+### 构建耗时度量（可选）
+
+```bash
+python deploy/scripts/build_benchmark.py --scenario cold --repeat 3 --baseline deploy/build-baseline.json
+python deploy/scripts/build_benchmark.py --scenario incremental --repeat 3 --baseline deploy/build-baseline.json
+```
+
+### 进阶：CI 跨机缓存（可选）
+
+如需在 CI 跨 runner 复用构建层缓存，可在 compose 各服务的 `build.cache_from` / `build.cache_to` 中声明 registry 或 GHA 缓存（配合 `docker-container` builder），`COMPOSE_BAKE=1 docker compose build` 会将其透传给 buildx。本地默认 `docker` 驱动不支持 cache 导出，无需配置。
+
+### 验证测试（可选）
+
+```bash
+# 构建优化相关的轻量单元 / 快照测试（无需 docker，毫秒级）
+uv run pytest tests/unit/test_python_base_dockerfile.py tests/unit/test_build_benchmark.py
+```
+
+> 优化是否生效，最直接的方式是 `make build`（或 `deploy\scripts\build_all.cmd`）后 `docker compose up -d` 做一次冒烟。
+
+## 健康检查与日志
 
 ```bash
 # 前端 Nginx 健康检查（生产唯一对外端口）
-curl http://localhost/health        # 返回 'ok'（text/plain）
+curl http://localhost/health        # 返回 'ok'
 
-# 开发模式下后端服务可直连
+# 开发模式（compose override 暴露端口）下后端可直连
 curl http://localhost:8000/health   # 网关
 curl http://localhost:8001/health   # Sidecar
-curl http://localhost:8003/health   # 知识库服务（首次需先 docker-compose up -d knowledge-base-service）
+curl http://localhost:8002/health   # 专家访谈
+curl http://localhost:8003/health   # 知识库
+curl http://localhost:8005/health   # 业务域
+curl http://localhost:8006/health   # 平台
+curl http://localhost:8787/health   # LLM 网关
 
-# 生产模式下后端不对外，需进容器或通过反代访问
-docker-compose exec gateway curl http://localhost:8000/health
+# 生产模式后端不对外，进容器访问
+docker exec jonex-gateway curl -s http://localhost:8000/health
 ```
 
-### 日志位置
-
-- 容器日志：通过 `docker logs` 查看
-- 应用日志：挂载到 `jonex-logs` 数据卷
-
-## 🗄️ 数据库管理
-
-### 连接数据库
+日志：
 
 ```bash
-# 使用 Makefile
+make logs                 # 全部
+make logs-service SERVICE=knowledge-base-service
+make logs-sidecar
+make logs-postgres
+```
+
+应用日志同时挂载到 `jonex-logs` 数据卷。
+
+## 数据库管理
+
+```bash
+# 连接 PostgreSQL
 make shell-postgres
+# 或：docker exec -it jonex-postgres psql -U jonex -d jonex
 
-# 或直接连接
-cd deploy
-docker-compose exec postgres psql -U jonex -d jonex
+# 初始化 / 重建 schema 与种子数据
+make init-db
 ```
 
-### 初始化本体表
+迁移脚本位于 `postgres/migrations/`，按编号顺序执行（`001_schemas` → `002_platform` → `003_expert_call` → `004_knowledge_base` → `005_business_domain` → `006_seed_data` → `007_comments`）。`postgres/init.sql` 为容器首次启动的聚合初始化入口。
 
-如果 PostgreSQL 数据卷在添加 `ontology` schema 之前已初始化，需要手动补建：
+> 说明：`001` 创建全部 schema（platform/expert_call/knowledge_base/business_domain/metering）；计量表 `metering.llm_usage_log` 并入 `002`；知识库文档存储列、数据源表、本体编译快照的可编辑字段均已并入 `004`；对应种子并入 `006`。
+
+若数据卷在新增某 schema 前已初始化，可手动补建：
 
 ```bash
-cd deploy
-docker-compose exec -T postgres psql -U jonex -d jonex < postgres/init.sql
+docker exec -i jonex-postgres psql -U jonex -d jonex < postgres/migrations/004_knowledge_base.sql
 ```
 
-或只建 ontology 部分：
+## GPU 加速（可选）
+
+宿主机有 NVIDIA GPU 且已安装 `nvidia-container-toolkit` 时，叠加 `docker-compose.gpu.yml` 为 atomic-rag 启用 GPU：
 
 ```bash
-docker exec jonex-postgres psql -U jonex -d jonex -c "CREATE SCHEMA IF NOT EXISTS ontology;"
-```
-
-## 🚀 GPU 加速（可选）
-
-宿主机有 NVIDIA GPU 并已安装 `nvidia-container-toolkit` 时，叠加 `docker-compose.gpu.yml` 为 atomic-rag 启用 GPU：
-
-```bash
-# 使用 Makefile（推荐）
-make docker-gpu-build    # 构建镜像
-make docker-gpu-up       # 启动（自动加载 gpu.yml）
-
-# 或手动指定
-cd deploy
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+make build-gpu     # 构建镜像
+make up-gpu        # 启动（自动加载 gpu.yml）
 
 # 验证 GPU 是否生效
 docker exec jonex-atomic-rag python -c "import torch; print(torch.cuda.is_available())"
 ```
 
-GPU 生效后 MinerU 解析器自动使用 CUDA，atomic-rag CPU 内存占用从 ~4G 降至 ~2G。
+GPU 生效后 MinerU 解析器自动使用 CUDA，atomic-rag CPU 内存占用显著下降。
 
-## 🧠 本体知识引擎（Ontology Engine）
+## 本体知识引擎运维
 
-文档解析 + LightRAG 入库完成后，可选开启 Stage 4 本体抽取，将结构化实体和关系写入 Neo4j 图数据库（`:OntologyEntity` 节点 / `[:ONT_REL]` 边），实现跨文档实体自动连通。
+文档解析 + LightRAG 入库完成后，可选开启 Stage 4 本体抽取。当前职责划分：
+
+- **atomic-rag** 负责抽取，产出 `ontology_data`（实体 / 关系），不直接写 Neo4j。
+- **knowledge-base** 的对账服务（`reconciliation_service`）负责把 `ontology_data` 写入 Neo4j，再回写 PostgreSQL 的 `ontology_status` 状态机（先写 Neo4j、成功后置 `READY`，失败置 `FAILED`）。
+- Neo4j schema 在 knowledge-base 启动时由 `ensure_ontology_schema()` 自动初始化，失败仅告警不阻塞服务。
+- Neo4j 不可用时，知识库查询和文档 READY 流程降级到普通 RAG，不阻塞基础能力。
 
 ### 启用方式
 
-在 `deploy/.env` 中添加：
+在 `deploy/.env` 中开启抽取开关并重启 atomic-rag：
 
 ```bash
+# deploy/.env
 ONTOLOGY_EXTRACT_ENABLED=true
+ONTOLOGY_SCHEMA_PATH=deploy/config/ontology/default.yaml
+
+make restart-service SERVICE=atomic-rag
 ```
 
-重启 atomic-rag：
-
-```bash
-cd deploy
-docker compose up -d atomic-rag
-```
-
-### 本体 schema 配置
-
-本体 TBox 定义在 YAML 文件中，默认路径 `deploy/config/ontology/default.yaml`：
-
-```yaml
-entity_types:
-  - name: Organization
-    aliases: ["公司", "企业"]
-    attributes:
-      - { name: legal_name, type: string }
-relation_types:
-  - name: BELONGS_TO
-    source: Person
-    target: Organization
-```
-
-自定义 schema 可通过 `ONTOLOGY_SCHEMA_PATH` 环境变量指定。
+本体 TBox 定义见 `deploy/config/ontology/default.yaml`（实体类型、别名、属性、关系类型）。
 
 ### Neo4j 容器
 
-Neo4j 随 `docker compose up` 自动启动，schema 由 knowledge-base 服务启动时自动初始化（`ensure_ontology_schema()`）：
-
 ```bash
-# 健康检查
+# 约束检查
 docker exec jonex-neo4j cypher-shell -u neo4j -p jonex_neo4j_123 "SHOW CONSTRAINTS;"
 
 # 查看本体实体
@@ -281,188 +246,78 @@ docker exec jonex-neo4j cypher-shell -u neo4j -p jonex_neo4j_123 \
   "MATCH (n:OntologyEntity) RETURN n.tenant_id, n.entity_type, n.canonical_name LIMIT 10;"
 ```
 
-### 本体查询（Ontology Query）
-
-增强搜索 API 实现本体优先分流，通过 API Gateway 调用：
+### 增强搜索（本体优先）
 
 ```bash
 curl "http://localhost:8000/api/v1/knowledge-base/documents/search/enhanced?query=腾讯&knowledge_base_id=KB1&mode=hybrid&top_k=3" \
      -H "Authorization: Bearer jonex_test_tenant123"
 ```
 
-返回格式：`{answer, source:"ontology"|"rag", ontology_instances:[...], rag_used:boolean}`
+返回 `{answer, source:"ontology"|"rag", ontology_instances:[...], rag_used:boolean}`：`source="ontology"` 表示基于 Neo4j 图谱事实 + LLM 回答；`source="rag"` 表示本体未命中、回退完整 RAG。
 
-- `source="ontology"`：基于 Neo4j 图谱事实 + LLM 回答，未使用 RAG
-- `source="rag"`：本体未命中或知识不足，回退到完整 RAG
+`ontology_status` 为 `pending`/`failed` 的文档由对账循环自动重试。
 
-解析结果实体/关系类型覆盖：
-
-```bash
-# 获取解析结果实体列表（Neo4j 实体类型叠加）
-curl "http://localhost:8000/api/v1/knowledge-base/bases/KB1/parse-result/entities?entity_type=Organization" \
-     -H "Authorization: Bearer jonex_test_tenant123"
-```
-
-### 本体重试
-
-`ontology_status` 为 `pending` 或 `failed` 的文档会由对账循环自动重试（最多 3 次），也可手动触发：
-
-```bash
-curl -X POST http://localhost:8003/invoke \
-  -H "Authorization: Bearer jonex_test_tenant123" \
-  -d '{"action": "retry_ontology_extract", "data": {"document_id": "...", "knowledge_base_id": "..."}}'
-```
-
-### 配置参考
-
-关键环境变量：
+### 本体相关环境变量
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `ONTOLOGY_EXTRACT_ENABLED` | `false` | 是否启用本体抽取 |
 | `ONTOLOGY_SCHEMA_PATH` | `deploy/config/ontology/default.yaml` | TBox schema 路径 |
-| `ONTOLOGY_LLM_BINDING_HOST` | `LLM_BINDING_HOST` | 本体抽取 LLM 地址 |
-| `ONTOLOGY_LLM_MODEL` | `deepseek-v4-flash` | 本体抽取 LLM 模型 |
 | `NEO4J_URI` | `bolt://localhost:7687` | Neo4j 连接地址 |
 | `NEO4J_USERNAME` | `neo4j` | Neo4j 用户名 |
 | `NEO4J_PASSWORD` | `jonex_neo4j_123` | Neo4j 密码 |
 
-### 扩展点（待实现）
-
-- **多 domain 支持**：`ONTOLOGY_SCHEMA_DIR` 加载多个 YAML 文件，按 `domain` 区分
-- **知识库→domain 映射**：通过 `extra_metadata` 指定知识库所属 domain
-- **本体查询增强**：查询结果用本体实体做事实校验 / rerank
-
-### 数据备份
+## 数据备份
 
 ```bash
-# 备份 PostgreSQL
+# PostgreSQL
 docker exec jonex-postgres pg_dump -U jonex jonex > backup_$(date +%Y%m%d).sql
 
-# 备份 Redis
+# Redis
 docker exec jonex-redis redis-cli BGSAVE
 docker cp jonex-redis:/data/dump.rdb ./redis_backup.rdb
 
-# 备份 Neo4j
+# Neo4j
 docker exec jonex-neo4j neo4j-admin database dump neo4j --to-path=/backups
 docker cp jonex-neo4j:/backups ./neo4j_backup
 ```
 
-## 🚀 生产部署
+## 故障排查
 
-### 1. 环境配置
-
-复制生产环境配置：
+服务无法启动：
 
 ```bash
-cp deploy/.env.example deploy/.env.production
-# 修改为生产环境配置
+make logs-service SERVICE=<service>     # 查看详细日志
+make restart-service SERVICE=<service>  # 重启单个服务
+make recreate-service SERVICE=<service> # 强制重建
 ```
 
-### 2. 使用生产环境配置启动
+数据库连接失败：
 
 ```bash
-cd deploy
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+make ps                                 # 检查容器状态
+make logs-postgres                      # 查看 PostgreSQL 日志
+docker exec jonex-postgres pg_isready -U jonex
 ```
 
-### 3. 建议配置
-
-- **高可用**：使用 PostgreSQL 主从复制
-- **缓存集群**：部署 Redis Cluster
-- **负载均衡**：使用 Nginx 或云服务商 LB
-- **监控告警**：接入 Prometheus + Grafana + Alertmanager
-
-## 🔍 故障排查
-
-### 服务无法启动
+性能问题：
 
 ```bash
-# 查看详细日志
-docker-compose logs --tail=100 [service_name]
-
-# 重启单个服务
-docker-compose restart [service_name]
-
-# 重建服务
-docker-compose up -d --force-recreate [service_name]
-```
-
-### 数据库连接失败
-
-```bash
-# 检查 PostgreSQL 是否正常运行
-docker-compose ps postgres
-
-# 查看 PostgreSQL 日志
-docker-compose logs postgres
-
-# 手动连接测试
-docker-compose exec postgres pg_isready -U jonex
-```
-
-### 性能问题
-
-```bash
-# 查看容器资源使用
-docker stats
-
-# 查看服务内部日志
+docker stats                            # 容器资源占用
 make logs-sidecar
+make logs-service SERVICE=knowledge-base-service
 ```
 
-## 📝 文件结构
-
-```
-deploy/
-├── docker/                          # Dockerfile
-│   ├── sidecar.Dockerfile          # Sidecar 代理镜像
-│   ├── capability.Dockerfile       # 能力服务镜像模板
-│   ├── gateway.Dockerfile          # API Gateway 镜像
-│   ├── frontend-entrypoint.py      # 运行时注入 window.__JONEX_CONFIG__
-│   ├── atomic-rag.Dockerfile       # RAG 原子能力服务镜像
-│   ├── atomic-rag-requirements.txt # atomic-rag 专属依赖
-│   └── lightrag-source.Dockerfile # LightRAG 源码自建镜像（Reference/LightRAG 1.4.16）
-├── nginx/
-│   └── frontend.conf               # 前端 Nginx 配置（CSP / SPA 回退 / API 反代）
-├── docker-compose.yml              # 生产 Compose 编排
-├── docker-compose.override.yml     # 开发模式覆盖（Gateway/Sidecar 端口对外）
-├── docker-compose.gpu.yml          # GPU 加速覆盖（NVIDIA GPU）
-├── docker-compose.mac.yml          # macOS 开发覆盖（CPU 降配）
-├── .env.example                    # 环境变量模板
-├── postgres/                       # PostgreSQL 配置
-├── config/                         # 运行时配置
-│   └── ontology/                   # 本体 schema 定义（TBox YAML）
-├── redis/                          # Redis 配置
-│   └── redis.conf                  # Redis 配置文件
-├── DEPLOYMENT_ARCHITECTURE.md      # 架构设计文档
-└── README.md                       # 本文档
-```
-
-## 🎯 快速部署步骤总结
+## 快速部署步骤
 
 ```bash
-# 1. 克隆项目
-git clone <repository-url>
-cd jonex-platform
-
-# 2. 初始化配置
-make init
-# 编辑 deploy/.env
-
-# 3. 构建并启动
-make build && make up
-
-# 4. 验证服务
-make test
-
-# 5. 查看日志
-make logs
+make init                # 初始化 .env / .env.rag（首次）
+# 编辑 deploy/.env、deploy/.env.rag，确保两边 LIGHTRAG_API_KEY 一致
+make build && make up    # 构建并启动本地 Docker 部署（加载 override）
+make ps                  # 验证状态
+make logs                # 查看日志
 ```
 
-## 📞 技术支持
+宿主机单服务调试使用 `make docker-local-up`。生产 / 服务器编排使用 `make build-prod` / `make up-prod` 或 `make build-server` / `make up-server`。
 
-如遇问题，请：
-1. 查看服务日志：`make logs`
-2. 检查配置文件：`deploy/.env`
-3. 参考架构设计文档：`DEPLOYMENT_ARCHITECTURE.md`
+详细部署拓扑见 [DEPLOYMENT_ARCHITECTURE.md](DEPLOYMENT_ARCHITECTURE.md)。

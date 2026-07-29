@@ -1,6 +1,9 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""Knowledge Base — 知识库级同义词组模型。
 
-
+对应表：knowledge_base.ontology_synonyms
+"""
 from sqlalchemy import Column, String
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -9,7 +12,7 @@ from jonex_core.common.entity import SoftDeleteMixin, TenantMixin, TimestampMixi
 
 
 class OntologySynonym(TenantMixin, TimestampMixin, SoftDeleteMixin, Base):
-
+    """KB 级、独立于具体实体的等价词组。"""
 
     __tablename__ = "ontology_synonyms"
     __table_args__ = {"schema": "knowledge_base"}
@@ -20,7 +23,7 @@ class OntologySynonym(TenantMixin, TimestampMixin, SoftDeleteMixin, Base):
     canonical = Column(String(255), nullable=True)
 
     def to_dict(self) -> dict:
-
+        # 对外不泄漏 tenant_id
         return {
             "id": self.id,
             "knowledge_base_id": self.knowledge_base_id,

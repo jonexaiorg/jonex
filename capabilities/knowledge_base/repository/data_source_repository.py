@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""KnowledgeDataSource 仓储。"""
 
 from jonex_core.common.repository import BaseRepository
 

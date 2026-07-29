@@ -1,6 +1,9 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""Knowledge Base — 文件夹模型。
 
-
+对应表：knowledge_base.folders
+"""
 from sqlalchemy import Boolean, Column, Integer, String
 
 from jonex_core.common.database import Base
@@ -8,7 +11,7 @@ from jonex_core.common.entity import SoftDeleteMixin, TenantMixin, TimestampMixi
 
 
 class Folder(TenantMixin, TimestampMixin, SoftDeleteMixin, Base):
-
+    """KB 级文件夹，用于文档分类与管理。"""
 
     __tablename__ = "folders"
     __table_args__ = {"schema": "knowledge_base"}

@@ -1,4 +1,6 @@
-
+"""
+业务领域 Repository 基类。
+"""
 
 from jonex_core.common.repository import BaseRepository
 

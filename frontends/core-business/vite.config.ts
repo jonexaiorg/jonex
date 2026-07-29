@@ -1,14 +1,14 @@
-import { defineConfig, loadEnv } from 'vite'
-import react from '@vitejs/plugin-react'
-import federation from '@originjs/vite-plugin-federation'
-import path from 'path'
-import { fileURLToPath } from 'url'
+import { defineConfig, loadEnv } from 'vite';
+import react from '@vitejs/plugin-react';
+import federation from '@originjs/vite-plugin-federation';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const pathSrc = path.resolve(__dirname, 'src')
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pathSrc = path.resolve(__dirname, 'src');
 
-const parentEnv = loadEnv('', path.resolve(__dirname, '..'), 'VITE_API_')
-const apiTarget = process.env.VITE_API_TARGET || parentEnv.VITE_API_TARGET || 'http://localhost:8000'
+const parentEnv = loadEnv('', path.resolve(__dirname, '..'), 'VITE_API_');
+const apiTarget = process.env.VITE_API_TARGET || parentEnv.VITE_API_TARGET || 'http://localhost:8000';
 
 export default defineConfig(() => {
   return {
@@ -24,6 +24,11 @@ export default defineConfig(() => {
         shared: {
           react: { singleton: true, requiredVersion: '^18.2.0' },
           'react-dom': { singleton: true, requiredVersion: '^18.2.0' },
+          // antd 系列必须 singleton 共享（详见 shell/vite.config.js 说明）：
+          // 避免 shell 与 remote 各带一份 antd/cssinjs、跨实例误删 head 样式，
+          // 导致 popup z-index 变量丢失、弹层被盖住。
+          antd: { singleton: true, requiredVersion: '^6.4.3' },
+          '@ant-design/icons': { singleton: true, requiredVersion: '^6.2.3' },
         },
       }),
     ],
@@ -58,5 +63,5 @@ export default defineConfig(() => {
         },
       },
     },
-  }
-})
+  };
+});

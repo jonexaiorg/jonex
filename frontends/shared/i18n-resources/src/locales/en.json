@@ -14,7 +14,7 @@
     "operation": "Actions",
     "status": "Status",
     "loading": "Loading...",
-    "noData": "No Data",
+    "noData": "No data available",
     "retry": "Retry",
     "detail": "Details",
     "close": "Close",
@@ -22,25 +22,28 @@
     "no": "No",
     "all": "All",
     "export": "Export",
-    "import": "Import"
+    "import": "Import",
+    "expandSidebar": "Expand Sidebar",
+    "collapseSidebar": "Collapse Sidebar"
   },
   "auth": {
-    "login": "Login",
-    "logout": "Logout",
+    "login": "Sign In",
+    "logout": "Sign Out",
     "username": "Username",
     "password": "Password",
     "admin": "Administrator",
+    "systemAdmin": "System Administrator",
     "user": "User",
-    "loginSuccess": "Login successful",
+    "loginSuccess": "Signed in successfully",
     "loginFailed": "Login failed",
-    "sessionExpired": "Session expired, please log in again",
-    "noPermission": "No permission to access"
+    "sessionExpired": "Your session has expired. Please sign in again.",
+    "noPermission": "You do not have permission to access this resource."
   },
   "error": {
     "networkError": "Network error, please try again later",
     "requestFailed": "Request failed",
     "unknownError": "Unknown error",
-    "timeout": "Request timeout",
+    "timeout": "Request timed out",
     "notFound": "Page not found",
     "serverError": "Server error",
     "tryAgain": "Please try again later",
@@ -95,7 +98,7 @@
   },
   "language": {
     "switch": "Switch Language",
-    "zh": "中文",
+    "zh": "Simplified Chinese",
     "en": "English"
   },
   "site": {
@@ -105,5 +108,43 @@
   "space": {
     "select": "Select Space",
     "add": "Add Space"
+  },
+  "shell": {
+    "enterUsername": "Enter your username",
+    "enterPassword": "Enter your password",
+    "selectTenant": "Please select a tenant",
+    "selectTenantPlaceholder": "Select tenant",
+    "selectTenantToContinue": "Please select a tenant to continue logging in",
+    "continueLogin": "Continue to Sign In",
+    "welcome": "Welcome, {{name}}",
+    "redirectNotAllowed": "Login successful, but the redirect URL is not in the allowed list",
+    "missingRedirectAppId": "Login successful, but missing redirect app identifier",
+    "loginSyncFailed": "Login successful, but login state synchronization failed. Please try again later",
+    "loginSubtitle": "Sign in to the Multimodal Domain Knowledge Engine",
+    "testAccount": "Test account: admin / admin123",
+    "welcomeToPlatform": "Welcome to Jonex Platform, {{name}}",
+    "platformSubtitle": "Intelligent knowledge management and AI capabilities",
+    "manifestLoadFailed": "Failed to load app manifest",
+    "appNotFound": "App not found",
+    "appNotFoundDetail": "App \"{{appId}}\" not found",
+    "appDisabled": "App is disabled",
+    "appDisabledDetail": "\"{{name}}\" has been disabled by the administrator",
+    "noAccess": "No access permission",
+    "noAccessDetail": "You do not have permission to access \"{{name}}\"",
+    "loadFailed": "Load failed",
+    "loadFailedDetail": "Unable to load \"{{name}}\": {{error}}",
+    "openStandalone": "Open App Separately",
+    "loadingApp": "Loading app...",
+    "loadAppFailed": "Failed to load app",
+    "cannotLoadSubApp": "Unable to load app",
+    "openInNewWindow": "Open in new window",
+    "appRunError": "App error",
+    "selectSpace": "Select space",
+    "addSpace": "Add space",
+    "builtInTenants": {
+      "demo": "Jonex Demo Tenant",
+      "alpha": "Jonex Alpha Test Tenant",
+      "beta": "Jonex Beta Test Tenant"
+    }
   }
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""API 出站拉取适配器（REST + JSON 列表，一期）。"""
 from __future__ import annotations
 
 import base64
@@ -11,6 +11,7 @@ from typing import Any, Optional
 import httpx
 
 from jonex_core.common.crypto import decrypt_secret
+from jonex_core.common.i18n import translate
 
 from .base import RemoteFile
 
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class ApiIngestionAdapter:
-
+    """通过 REST 接口拉取外部 JSON 文档列表并下载。"""
 
     def _headers(self, cfg: dict[str, Any]) -> dict:
         auth = cfg.get("auth") or {}
@@ -30,15 +31,15 @@ class ApiIngestionAdapter:
         elif atype == "api_key":
             headers[auth.get("header_name") or "X-API-Key"] = decrypt_secret(token_ref)
         elif atype == "basic":
-            raw = decrypt_secret(token_ref)
+            raw = decrypt_secret(token_ref)  # "user:pass"
             headers["Authorization"] = "Basic " + base64.b64encode(raw.encode()).decode()
         return headers
 
     async def test_connection(self, cfg: dict[str, Any]) -> dict:
         try:
             files = await self.list_remote_files(cfg)
-            return {"ok": True, "message": "连接成功", "sample_count": len(files)}
-        except Exception as e:
+            return {"ok": True, "message": translate("success.connection", fallback="连接成功"), "sample_count": len(files)}
+        except Exception as e:  # noqa: BLE001
             return {"ok": False, "message": str(e)}
 
     async def list_remote_files(

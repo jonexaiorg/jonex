@@ -1,4 +1,6 @@
-
+"""
+知识库 — 领域空间模型
+"""
 import uuid
 
 from sqlalchemy import Column, Integer, String, Text

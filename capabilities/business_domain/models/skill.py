@@ -1,4 +1,9 @@
+"""
+业务领域 — AI Skill MCP 化模型
 
+- SkillCatalog: 平台共享 Skill 目录，不带 tenant_id
+- TenantSkill: 租户启用状态，带 tenant_id
+"""
 import uuid
 
 from sqlalchemy import BigInteger, Column, String, Text
@@ -9,7 +14,7 @@ from jonex_core.common.entity import SoftDeleteMixin, TenantMixin, TimestampMixi
 
 
 class SkillCatalog(TimestampMixin, SoftDeleteMixin, Base):
-
+    """平台共享 Skill 目录 — 不带租户"""
 
     __tablename__ = "skill_catalog"
     __table_args__ = {"schema": "business_domain"}
@@ -73,7 +78,7 @@ class SkillCatalog(TimestampMixin, SoftDeleteMixin, Base):
 
 
 class TenantSkill(TenantMixin, TimestampMixin, SoftDeleteMixin, Base):
-
+    """租户技能启用状态 — 带 tenant_id"""
 
     __tablename__ = "tenant_skills"
     __table_args__ = {"schema": "business_domain"}

@@ -1,10 +1,14 @@
 #!/bin/sh
+# ============================================================
+# 悦溪平台前端 — 运行时配置注入
+# 替换 index.html 中的 __JONEX_CONFIG_PLACEHOLDER__ 为实际环境变量
+# ============================================================
 
 set -e
 
-API_BASE_URL="${API_BASE_URL:-http://gateway:8000}"
+API_BASE_URL="${API_BASE_URL:-/api}"
 ENV="${ENV:-production}"
-APP_TITLE="${APP_TITLE:-Jonex平台}"
+APP_TITLE="${APP_TITLE:-悦溪平台}"
 
 CONFIG="{\"API_BASE_URL\": \"${API_BASE_URL}\", \"ENV\": \"${ENV}\", \"APP_TITLE\": \"${APP_TITLE}\"}"
 

@@ -1,11 +1,11 @@
-import React from 'react'
-import { useTranslation } from 'react-i18next'
-import { Result, Button } from 'antd'
-import { useNavigate } from 'react-router-dom'
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { Result, Button } from 'antd';
+import { useNavigate } from 'react-router-dom';
 
 export default function NotFound() {
-  const { t } = useTranslation()
-  const navigate = useNavigate()
+  const { t } = useTranslation();
+  const navigate = useNavigate();
 
   return (
     <Result
@@ -18,5 +18,5 @@ export default function NotFound() {
         </Button>
       }
     />
-  )
+  );
 }

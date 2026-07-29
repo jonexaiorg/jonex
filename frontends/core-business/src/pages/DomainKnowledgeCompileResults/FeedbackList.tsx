@@ -1,115 +1,109 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Table, Space, Modal, message } from 'antd'
-import { EditOutlined, DeleteOutlined } from '@ant-design/icons'
-import type { ColumnsType } from 'antd/es/table'
-import {
-  getSearchFeedbackList,
-  toggleSearchFeedbackAdopted,
-  cancelSearchFeedback,
-} from '@/api/knowledgeSearch'
-import type { SearchFeedbackItem, SearchFeedbackType } from '@/types/knowledgeSearch'
-import { useTranslation } from 'react-i18next'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Table, Space, Modal, message } from 'antd';
+import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import type { ColumnsType } from 'antd/es/table';
+import { getSearchFeedbackList, toggleSearchFeedbackAdopted, cancelSearchFeedback } from '@/api/knowledgeSearch';
+import type { SearchFeedbackItem, SearchFeedbackType } from '@/types/knowledgeSearch';
+import { useTranslation } from 'react-i18next';
 
 interface FeedbackListProps {
-  kbId: string
-  feedbackType: SearchFeedbackType
-  title: string
+  kbId: string;
+  feedbackType: SearchFeedbackType;
+  title: string;
 }
 
-const PAGE_SIZE = 10
+const PAGE_SIZE = 10;
 
 export default function FeedbackList({ kbId, feedbackType, title }: FeedbackListProps) {
-  const { t } = useTranslation()
-  const [data, setData] = useState<SearchFeedbackItem[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [page, setPage] = useState(1)
-  const [keyword, setKeyword] = useState('')
+  const { t } = useTranslation();
+  const [data, setData] = useState<SearchFeedbackItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [keyword, setKeyword] = useState('');
   // 有关键词时缓存全量过滤结果，用于客户端分页
-  const [cachedFiltered, setCachedFiltered] = useState<SearchFeedbackItem[]>([])
-  const keywordRef = useRef(keyword)
-  keywordRef.current = keyword
+  const [cachedFiltered, setCachedFiltered] = useState<SearchFeedbackItem[]>([]);
+  const keywordRef = useRef(keyword);
+  keywordRef.current = keyword;
 
   // 有关键词时：拉取全量数据 → 客户端过滤 → 缓存 → 客户端分页
   const fullFetch = useCallback(async () => {
-    if (!kbId) return
-    setLoading(true)
+    if (!kbId) return;
+    setLoading(true);
     try {
-      const kw = keywordRef.current.trim()
+      const kw = keywordRef.current.trim();
       if (kw) {
         const result = await getSearchFeedbackList(kbId, {
           feedbackType,
           page: 1,
           pageSize: 100,
-        })
+        });
         const filtered = result.items.filter(
           (item) =>
             item.query.toLowerCase().includes(kw.toLowerCase()) ||
             (item.answer_preview || '').toLowerCase().includes(kw.toLowerCase()),
-        )
-        setCachedFiltered(filtered)
-        setTotal(filtered.length)
-        setData(filtered.slice(0, PAGE_SIZE))
+        );
+        setCachedFiltered(filtered);
+        setTotal(filtered.length);
+        setData(filtered.slice(0, PAGE_SIZE));
       }
     } catch (err: any) {
-      message.error(err?.message || t('common.loadFailed'))
+      message.error(err?.message || t('common.loadFailed'));
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [kbId, feedbackType])
+  }, [kbId, feedbackType]);
 
   // 无关键词时：正常服务端分页
   const pageFetch = useCallback(async () => {
-    if (!kbId) return
-    setLoading(true)
+    if (!kbId) return;
+    setLoading(true);
     try {
       const result = await getSearchFeedbackList(kbId, {
         feedbackType,
         page,
         pageSize: PAGE_SIZE,
-      })
-      setData(result.items)
-      setTotal(result.total)
+      });
+      setData(result.items);
+      setTotal(result.total);
     } catch (err: any) {
-      message.error(err?.message || t('common.loadFailed'))
+      message.error(err?.message || t('common.loadFailed'));
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [kbId, feedbackType, page])
+  }, [kbId, feedbackType, page]);
 
   // 关键词变化 → 全量拉取
   useEffect(() => {
     if (keyword.trim()) {
-      fullFetch()
+      fullFetch();
     }
-  }, [fullFetch, keyword])
+  }, [fullFetch, keyword]);
 
   // 无关键词时 → 服务端分页
   useEffect(() => {
     if (!keyword.trim()) {
-      pageFetch()
+      pageFetch();
     }
-  }, [pageFetch, keyword])
+  }, [pageFetch, keyword]);
 
   // 关键词模式下，翻页时从缓存切片
   useEffect(() => {
     if (keyword.trim()) {
-      const start = (page - 1) * PAGE_SIZE
-      setData(cachedFiltered.slice(start, start + PAGE_SIZE))
+      const start = (page - 1) * PAGE_SIZE;
+      setData(cachedFiltered.slice(start, start + PAGE_SIZE));
     }
-  }, [page, keyword, cachedFiltered])
+  }, [page, keyword, cachedFiltered]);
 
   const handleToggleAdopt = async (item: SearchFeedbackItem) => {
     try {
-      await toggleSearchFeedbackAdopted(item.id)
-      setData((prev) =>
-        prev.map((i) => (i.id === item.id ? { ...i, adopted: !i.adopted } : i)),
-      )
-      message.success(item.adopted ? t('compile.cancelAdopted') : t('compile.adopted'))
+      await toggleSearchFeedbackAdopted(item.id);
+      setData((prev) => prev.map((i) => (i.id === item.id ? { ...i, adopted: !i.adopted } : i)));
+      message.success(item.adopted ? t('compile.cancelAdopted') : t('compile.adopted'));
     } catch (err: any) {
-      message.error(err?.message || t('common.operationFailed'))
+      message.error(err?.message || t('common.operationFailed'));
     }
-  }
+  };
 
   const handleDelete = (item: SearchFeedbackItem) => {
     Modal.confirm({
@@ -124,22 +118,22 @@ export default function FeedbackList({ kbId, feedbackType, title }: FeedbackList
             sessionId: item.session_id,
             feedbackType: item.feedback_type,
             kbIds: [item.knowledge_base_id],
-          })
-          setData((prev) => prev.filter((i) => i.id !== item.id))
-          setTotal((prev) => Math.max(0, prev - 1))
-          message.success(t('common.deleteSuccess'))
+          });
+          setData((prev) => prev.filter((i) => i.id !== item.id));
+          setTotal((prev) => Math.max(0, prev - 1));
+          message.success(t('common.deleteSuccess'));
         } catch (err: any) {
-          message.error(err?.message || t('common.deleteFailed'))
+          message.error(err?.message || t('common.deleteFailed'));
         }
       },
-    })
-  }
+    });
+  };
 
   const truncate = (text: string | null, max = 80) => {
-    if (!text) return '—'
-    const cleaned = text.replace(/\s+/g, ' ').trim()
-    return cleaned.length > max ? cleaned.slice(0, max) + '...' : cleaned
-  }
+    if (!text) return '—';
+    const cleaned = text.replace(/\s+/g, ' ').trim();
+    return cleaned.length > max ? cleaned.slice(0, max) + '...' : cleaned;
+  };
 
   const columns: ColumnsType<SearchFeedbackItem> = useMemo(
     () => [
@@ -212,7 +206,7 @@ export default function FeedbackList({ kbId, feedbackType, title }: FeedbackList
       },
     ],
     [],
-  )
+  );
 
   return (
     <div>
@@ -251,5 +245,5 @@ export default function FeedbackList({ kbId, feedbackType, title }: FeedbackList
         locale={{ emptyText: <span style={{ color: '#94a3b8' }}>{t('compile.emptyFeedback')}</span> }}
       />
     </div>
-  )
+  );
 }

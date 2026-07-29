@@ -28,11 +28,11 @@ body {
   box-shadow: none;
 }
 
-.ant-input,
 .ant-select-selector,
 .ant-tag {
   border-radius: 10px !important;
 }
+
 
 .ant-card-bordered {
   box-shadow:
@@ -118,4 +118,235 @@ body {
   .login-card {
     width: 100%;
   }
+}
+
+/* ── 弹窗表单行 ── */
+.yx-form-row {
+  margin-bottom: 14px;
+
+  label {
+    display: block;
+    font-size: 13px;
+    color: #475569;
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    box-sizing: border-box;
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 80px;
+  }
+}
+
+/* 自定义分页 */
+.yx-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 16px 0 0;
+  border-top: 1px solid #eef2f6;
+  margin-top: 16px;
+}
+
+.yx-page-btn {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 12px;
+  background: transparent;
+  user-select: none;
+
+  &:hover {
+    border-color: #3b82f6;
+    color: #3b82f6;
+  }
+
+  &.active {
+    background: #3b82f6;
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    border: none;
+    cursor: default;
+
+    &:hover {
+      color: #fff;
+    }
+  }
+
+  &.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+
+    &:hover {
+      border-color: #e2e8f0;
+      color: #94a3b8;
+    }
+  }
+}
+
+.yx-page-info {
+  font-size: 13px;
+  color: #94a3b8;
+  margin-left: 12px;
+}
+
+/* ── 弹窗搜索框（权限弹窗内） ── */
+.yx-perm-search {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+/* ── 权限弹窗用户行 ── */
+.yx-perm-user-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #eef2f6;
+  margin-bottom: 8px;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #dbe7f5;
+    background: #fafcff;
+  }
+}
+
+.yx-perm-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.yx-perm-user-info {
+  flex: 1;
+
+  .yx-perm-user-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #1e293b;
+  }
+
+  .yx-perm-user-dept {
+    font-size: 12px;
+    color: #94a3b8;
+  }
+}
+
+.yx-perm-radio {
+  display: flex;
+  gap: 4px;
+
+  label {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    border: 1px solid #e2e8f0;
+    cursor: pointer;
+    color: #64748b;
+    transition: all 0.2s;
+
+    &:hover {
+      border-color: #3b82f6;
+      color: #3b82f6;
+    }
+
+    &.is-checked {
+      background: #eff6ff;
+      border-color: #3b82f6;
+      color: #3b82f6;
+      font-weight: 500;
+    }
+  }
+
+  input {
+    display: none;
+  }
+}
+
+/* ── 弹窗 header / footer ── */
+.yx-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #eef2f6;
+
+  h2 {
+    font-size: 17px;
+    font-weight: 600;
+    color: #0b2b5c;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.yx-modal-close-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 16px;
+  transition: all 0.2s;
+  padding: 0;
+
+  &:hover {
+    background: #e2e8f0;
+    color: #0b2b5c;
+  }
+}
+
+.yx-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid #eef2f6;
+}
+
+/* ── antd v6 cssVar 兜底（防御性，与全局 cssVar:false 双保险）──────────────
+   popup 的 z-index 原本走 :where(.hash).ant-dropdown { z-index: var(--ant-dropdown-z-index-popup) }，
+   该 CSS 变量在 cssinjs 引用计数清理 / Module Federation 多实例场景下可能被回收变
+   undefined → z-index 解析为 auto → 弹层被页面内容盖住。
+   这里用真实的双类选择器（specificity 0,2,0，胜过 antd 的 :where(...).ant-dropdown 的 0,1,0）
+   钉一个静态 z-index 兜底：静态值不经 cssinjs 管理、不会被回收，且始终覆盖变量方案。
+   仅覆盖菜单类 popup（dropdown / select 下拉），不动 modal/tooltip/popover 的相对层叠。 */
+.ant-dropdown.ant-dropdown,
+.ant-select-dropdown.ant-select-dropdown {
+  z-index: 1050;
 }

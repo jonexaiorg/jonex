@@ -23,7 +23,7 @@ Usage:
 import pytest
 from unittest.mock import patch, MagicMock
 import os
-from raganything.parser import MineruParser, DoclingParser
+from raganything.parsers import MineruParser, DoclingParser
 
 
 @pytest.fixture

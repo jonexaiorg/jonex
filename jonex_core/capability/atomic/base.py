@@ -1,9 +1,9 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-"""Atomic capability base class
+"""原子能力基类
 
-All atomic capabilities must inherit from this class to ensure a unified invocation contract.
-Atomic capabilities only encapsulate pure technical capabilities and do not contain business logic.
+所有原子能力必须继承此类，保证统一的调用契约。
+原子能力只做纯技术能力封装，不包含业务逻辑。
 """
 
 from abc import abstractmethod
@@ -14,35 +14,35 @@ from jonex_core.capability.models import CapabilityType, CapabilityRequest, Capa
 
 
 class AtomicCapability(BaseCapability):
-    """Atomic capability abstract base class
+    """原子能力抽象基类
 
-    All atomic capabilities (LLM, vector search, ASR, TTS, etc.) must inherit from this class,
-    and implement the validate_input and execute methods.
+    所有原子能力（LLM、向量检索、ASR、TTS等）必须继承此类，
+    实现 validate_input 和 execute 方法。
     """
 
     @abstractmethod
     async def validate_input(self, request: CapabilityRequest) -> bool:
         """
-        Validate the legitimacy of input parameters
+        验证输入参数的合法性
 
         Args:
-            request: Capability invocation request
+            request: 能力调用请求
 
         Returns:
-            bool: Whether the parameters are valid
+            bool: 参数是否合法
         """
         pass
 
     @abstractmethod
     async def execute(self, request: CapabilityRequest) -> CapabilityResponse:
         """
-        Execute atomic capability
+        执行原子能力
 
         Args:
-            request: Capability invocation request
+            request: 能力调用请求
 
         Returns:
-            CapabilityResponse: Standardized capability invocation result
+            CapabilityResponse: 标准化的能力调用结果
         """
         pass
 

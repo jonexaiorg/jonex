@@ -1,9 +1,9 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 """
-Jonex platform - Common utilities module
+悦溪平台 - 通用工具模块
 
-Provides database connection, cache, logging, configuration and other basic functionality
+提供数据库连接、缓存、日志、配置等基础功能
 """
 
 from .config import Settings, get_config, reload_config
@@ -14,12 +14,25 @@ from .database import (
     init_database,
     close_database,
     check_db_health,
-    TenantContext,
     AsyncSessionLocal,
 )
+from .tenant import (
+    DEFAULT_TENANT_IDS,
+    TenantContext,
+    extract_tenant_id,
+    is_default_tenant,
+    require_tenant,
+    tenant_scope,
+)
+from .entity import (
+    AuditMixin,
+    SoftDeleteMixin,
+    TenantMixin,
+    TimestampMixin,
+)
+from .repository import BaseRepository
 from .cache import (
     CacheUtil,
-    RedisUtil,
     TenantCache,
     get_redis_client,
     RedisPoolManager,
@@ -55,6 +68,7 @@ from .exceptions import (
     AuthError,
     MissingApiKeyError,
     InvalidApiKeyError,
+    InvalidCredentialsError,
     TokenExpiredError,
     InternalAuthError,
     TenantIsolationError,
@@ -76,7 +90,17 @@ from .response import (
     success_response,
     error_response,
 )
+from .audit import emit_audit, audit_action
 from .exception_handler import register_exception_handlers
+from .i18n import (
+    LocaleContext,
+    extract_locale,
+    get_current_locale,
+    translate,
+    install_locale_middleware,
+    transmit_locale_header,
+)
+from .object_storage import get_object_storage
 from .neo4j_client import (
     get_neo4j_driver,
     close_neo4j_driver,
@@ -84,11 +108,11 @@ from .neo4j_client import (
 )
 
 __all__ = [
-    # Configuration
+    # 配置
     "Settings",
     "get_config",
     "reload_config",
-    # Database
+    # 数据库
     "Base",
     "get_db",
     "get_db_session",
@@ -97,26 +121,35 @@ __all__ = [
     "check_db_health",
     "TenantContext",
     "AsyncSessionLocal",
-    # Cache
+    "DEFAULT_TENANT_IDS",
+    "extract_tenant_id",
+    "is_default_tenant",
+    "require_tenant",
+    "tenant_scope",
+    "AuditMixin",
+    "SoftDeleteMixin",
+    "TenantMixin",
+    "TimestampMixin",
+    "BaseRepository",
+    # 缓存
     "CacheUtil",
-    "RedisUtil",
     "TenantCache",
     "get_redis_client",
     "RedisPoolManager",
     "check_redis_health",
-    # Vector database
+    # 向量数据库
     "MilvusClient",
     "get_milvus_client",
     "check_milvus_health",
     "milvus_context",
     "MILVUS_AVAILABLE",
-    # Logging
+    # 日志
     "get_logger",
     "setup_logging",
     "set_request_id",
     "LogContext",
     "log_execution_time",
-    # Exception classes
+    # 异常类
     "JonexException",
     "InternalError",
     "InvalidParameterError",
@@ -132,6 +165,7 @@ __all__ = [
     "AuthError",
     "MissingApiKeyError",
     "InvalidApiKeyError",
+    "InvalidCredentialsError",
     "TokenExpiredError",
     "InternalAuthError",
     "TenantIsolationError",
@@ -147,10 +181,20 @@ __all__ = [
     "UpstreamServiceError",
     "ServiceTimeoutError",
     "get_exception_class",
-    # Response format
+    # 响应格式
     "StandardResponse",
     "success_response",
     "error_response",
-    # Exception handlers
+    # 异常处理器
     "register_exception_handlers",
+    # 国际化
+    "LocaleContext",
+    "extract_locale",
+    "get_current_locale",
+    "translate",
+    "install_locale_middleware",
+    "transmit_locale_header",
+    # 审计日志
+    "emit_audit",
+    "audit_action",
 ]

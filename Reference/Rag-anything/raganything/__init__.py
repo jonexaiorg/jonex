@@ -1,19 +1,18 @@
 from .raganything import RAGAnything as RAGAnything
 from .config import RAGAnythingConfig as RAGAnythingConfig
 
-# Core parser class is always available.
-from .parser import Parser as Parser
+# Core parser class — re-exported from the new parsers/ package.
+from .parsers import Parser as Parser
 
-# Optional: parser plugin APIs (only present in newer versions / when feature PR is merged).
+# Optional: parser plugin APIs.
 try:
-    from .parser import (
+    from .parsers import (
         register_parser as register_parser,
         unregister_parser as unregister_parser,
         list_parsers as list_parsers,
         get_supported_parsers as get_supported_parsers,
     )
 except ImportError:
-    # Older versions without the custom parser registry: keep base import working.
     pass
 
 # Optional: resilience utilities (may not exist in all installations).

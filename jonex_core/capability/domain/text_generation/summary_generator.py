@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-"""Text summary generation domain capability
+"""文本摘要生成领域能力
 
-Orchestrates atomic capabilities via LLMClient.
+通过 LLMClient 编排原子能力。
 """
 
 from typing import Optional
@@ -15,62 +15,65 @@ from jonex_core.capability.models import (
     CapabilityResponse,
     CapabilityType,
 )
-from jonex_core.common import get_logger
+from jonex_core.common import get_logger, require_tenant
 from jonex_core.common.exceptions import CapabilityInvokeError, InvalidParameterError
+from jonex_core.common.i18n import translate
 
 logger = get_logger("domain.text.summary")
 
 _PROMPTS = {
     "short":
-        "Please generate a very brief summary for the following content, within 50 characters:\n\n{content}\n\nSummary: ",
+        "请为以下内容生成一个非常简短的摘要，控制在50字以内：\n\n{content}\n\n摘要：",
     "medium":
-        "Please generate a concise summary for the following content, within 200 characters, retaining key information:\n\n{content}\n\nSummary: ",
+        "请为以下内容生成一个简洁的摘要，控制在200字以内，保留关键信息：\n\n{content}\n\n摘要：",
     "detailed":
-        "Please generate a detailed summary for the following content, within 500 characters, retaining all important information:\n\n{content}\n\nDetailed summary: ",
+        "请为以下内容生成一个详细的摘要，控制在500字以内，保留所有重要信息：\n\n{content}\n\n详细摘要：",
     "bullet_points":
-        "Please extract key points from the following content as a bulleted list, retaining all key information:\n\n{content}\n\nKey points: ",
+        "请为以下内容提取关键要点，以项目符号形式列出，保留所有关键信息：\n\n{content}\n\n要点列表：",
 }
 
 
 class SummaryGeneratorCapability(DomainCapability):
-    """Text summary generation domain capability"""
+    """文本摘要生成领域能力"""
 
     def __init__(self, llm_client: Optional[LLMClient] = None):
         super().__init__()
-        self.llm_client: LLMClient = llm_client or get_llm_client()
+        self.llm_client = llm_client
 
     def _build_metadata(self) -> CapabilityMetadata:
         return CapabilityMetadata(
             capability_id="text.summary_generator",
-            capability_name="Text summary generation",
+            capability_name="文本摘要生成",
             capability_type=CapabilityType.DOMAIN,
             version="v1",
-            description="Specialized text summary generation capability, supports summaries of different lengths and styles",
+            description="专业化的文本摘要生成能力，支持不同长度、风格的摘要",
             tags=["text", "summary"],
         )
 
     async def validate_input(self, request: CapabilityRequest) -> bool:
         if not request.payload:
-            raise InvalidParameterError(message="Summary generation request payload cannot be empty")
+            raise InvalidParameterError(message=translate("err.summary.payload_required", fallback="摘要生成请求 payload 不能为空"))
         action = request.payload.get("action", "medium")
         if action not in _PROMPTS:
-            raise InvalidParameterError(message=f"Unsupported action: {action}")
+            raise InvalidParameterError(message=translate("err.capability.unsupported_action", params={"action": action}, fallback=f"不支持的 action: {action}"))
         if "content" not in request.payload:
-            raise InvalidParameterError(message="content parameter must be provided")
+            raise InvalidParameterError(message=translate("err.capability.missing_action_param", params={"action": "generate", "param": "content"}, fallback="必须提供 content 参数"))
         return True
 
     async def execute(self, request: CapabilityRequest) -> CapabilityResponse:
         await self.validate_input(request)
 
+        tenant_id = require_tenant(request.tenant_id)
         action = request.payload.get("action", "medium")
         content = request.payload["content"]
+        llm_client = self.llm_client or get_llm_client(tenant_id=tenant_id)
 
         try:
             logger.info(
-                f"Generate summary: action={action}, content_length={len(content)}"
+                f"生成摘要: action={action}, content_length={len(content)}"
             )
             prompt = _PROMPTS[action].format(content=content)
-            summary = await self.llm_client.chat_completion(
+            summary = await llm_client.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
             )
@@ -83,14 +86,14 @@ class SummaryGeneratorCapability(DomainCapability):
                     "original_length": len(content),
                     "summary_length": len(summary),
                 },
-                message="Text summary generation succeeded",
+                message="文本摘要生成成功",
             )
         except CapabilityInvokeError:
             raise
         except Exception as e:
-            logger.error(f"Summary generation failed: {e}")
+            logger.error(f"摘要生成失败: {e}")
             raise CapabilityInvokeError(
-                message=f"Summary generation failed: {e}",
+                message=translate("err.summary.invoke_failed", fallback="摘要生成失败"),
                 details={"action": action, "content_length": len(content)},
                 cause=e,
             )

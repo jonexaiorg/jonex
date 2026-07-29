@@ -1,4 +1,6 @@
-
+"""
+知识库信息模型 — KnowledgeInfo
+"""
 import uuid
 
 from sqlalchemy import Column, Integer, String, Text
@@ -9,7 +11,7 @@ from jonex_core.common.entity import SoftDeleteMixin, TenantMixin, TimestampMixi
 
 
 class KnowledgeInfo(TenantMixin, TimestampMixin, SoftDeleteMixin, Base):
-
+    """知识库信息 — 领域知识管理的元数据主表"""
 
     __tablename__ = "knowledge_info"
     __table_args__ = {"schema": "knowledge_base"}

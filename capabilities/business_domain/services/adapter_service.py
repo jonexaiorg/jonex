@@ -1,4 +1,6 @@
-
+"""
+业务领域 — 生态适配器服务
+"""
 import uuid
 
 from jonex_core.common import get_db_session
@@ -8,7 +10,7 @@ from capabilities.business_domain.services import _check_tenant
 
 
 class AdapterService:
-
+    """生态适配器管理"""
 
     async def list(self, tenant_id: str, offset: int = 0, limit: int = 20) -> dict:
         tenant_id = _check_tenant(tenant_id)

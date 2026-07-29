@@ -1,87 +1,102 @@
-import React from 'react'
-import { Table, Tag, Space, Modal, message } from 'antd'
-import { useTranslation } from 'react-i18next'
-import type { ManualDocItem } from '@/types/domainKnowledge'
-import { deleteManualDocument } from '@/api/domainKnowledge'
-import { useDocumentViewer } from '@/components/DocumentViewer'
+import React from 'react';
+import { Table } from 'antd';
+import type { ManualDocItem } from '@/types/domainKnowledge';
+import { useDocumentViewer } from '@/components/DocumentViewer';
+import DocumentStatusBadge from '@/components/DocumentStatusBadge';
+import { useTranslation } from 'react-i18next';
+import Space from 'antd/es/space';
+import Tag from 'antd/es/tag';
 
-
-const STATUS_STEPS = ['Ingest', 'Parse', 'Compile']
-type StepState = 'done' | 'active' | 'pending'
+type StepState = 'done' | 'active' | 'pending';
 const stepColors: Record<StepState, { bg: string; text: string }> = {
   done: { bg: '#ecfdf5', text: '#10b981' },
   active: { bg: '#eff6ff', text: '#3b82f6' },
   pending: { bg: '#f1f5f9', text: '#cbd5e1' },
-}
+};
 
 function getStepStates(status: string): StepState[] {
-  const steps = status.split('·').map((s) => s.trim())
-  const result: StepState[] = ['pending', 'pending', 'pending']
+  const steps = status.split('·').map((s) => s.trim());
+  const result: StepState[] = ['pending', 'pending', 'pending'];
   for (let i = 0; i < Math.min(steps.length, 3); i++) {
-    result[i] = steps[i].includes('中') ? 'active' : 'done'
+    result[i] = steps[i].includes('中') ? 'active' : 'done';
   }
-  return result
+  return result;
 }
 
-function renderStatus(v: string) {
+function getStatusSteps(t: (key: string) => string) {
+  return [t('status.imported'), t('status.parsing'), t('status.compiling')];
+}
 
+function renderStatus(v: string, t: (key: string) => string) {
+  // 非链式状态（failed 等）
   if (!v.includes('·')) {
-    const isError = v === 'failed'
+    const isError = v === 'failed';
     return (
       <Tag
         style={{
-          fontSize: 11, padding: '2px 8px', border: 'none', fontWeight: 500,
+          fontSize: 11,
+          padding: '2px 8px',
+          border: 'none',
+          fontWeight: 500,
           background: isError ? '#fef2f2' : '#f1f5f9',
           color: isError ? '#ef4444' : '#64748b',
         }}
       >
-        {isError ? 'Parsing Failed' : v}
+        {isError ? t('status.failed') : v}
       </Tag>
-    )
+    );
   }
-  const states = getStepStates(v)
+  const states = getStepStates(v);
+  const STATUS_STEPS = getStatusSteps(t);
   return (
     <Space size={4}>
       {STATUS_STEPS.map((label, i) => {
-        const s = states[i]
+        const s = states[i];
         return (
           <React.Fragment key={i}>
             <span
               style={{
                 display: 'inline-block',
-                fontSize: 11, padding: '2px 8px', border: 'none', fontWeight: 500,
-                background: stepColors[s].bg, color: stepColors[s].text,
-                borderRadius: 4, lineHeight: '18px',
+                fontSize: 11,
+                padding: '2px 8px',
+                border: 'none',
+                fontWeight: 500,
+                background: stepColors[s].bg,
+                color: stepColors[s].text,
+                borderRadius: 4,
+                lineHeight: '18px',
               }}
             >
               {label}
             </span>
-            {i < STATUS_STEPS.length - 1 && (
-              <span style={{ color: '#d1d5db', fontSize: 10 }}>·</span>
-            )}
+            {i < STATUS_STEPS.length - 1 && <span style={{ color: '#d1d5db', fontSize: 10 }}>·</span>}
           </React.Fragment>
-        )
+        );
       })}
     </Space>
-  )
+  );
 }
 
 interface Props {
-  kbId: string
-  docs: ManualDocItem[]
-  loading?: boolean
-
-  onChanged?: () => void
-
-  emptyText?: string
-
-  pageSize?: number
+  kbId: string;
+  docs: ManualDocItem[];
+  loading?: boolean;
+  /** 数据变更后回调（删除成功等），供页面刷新列表 */
+  onChanged?: () => void;
+  /** 空列表文案 */
+  emptyText?: string;
+  /** 分页配置，默认每页 10 条 */
+  pageSize?: number;
+  /** 是否显示删除按钮 */
+  showDelete?: boolean;
+  /** 删除回调（确认弹窗由父组件处理） */
+  onDelete?: (doc: ManualDocItem) => void;
 }
 
-
-
-
-
+/**
+ * 数据源文档列表表格（4 种数据源统一复用）。
+ * 列：文档名称 / 类型 / 大小 / 上传人 / 上传时间 / 状态 / 操作（查看 + 可选删除）。
+ */
 export default function DataSourceDocTable({
   kbId,
   docs,
@@ -89,59 +104,82 @@ export default function DataSourceDocTable({
   onChanged,
   emptyText,
   pageSize = 10,
+  showDelete = false,
+  onDelete,
 }: Props) {
-  const { t } = useTranslation()
-  const resolvedEmptyText = emptyText ?? t('dataSource.noDocuments')
-  const { openDocument, viewer } = useDocumentViewer()
+  const { t } = useTranslation();
+  const resolvedEmptyText = emptyText ?? t('common.noData');
+  const { openDocument, viewer } = useDocumentViewer();
 
-
+  // 查看：全部走统一弹层（音视频/图片/PDF/文本/其他）
   const handleView = (doc: ManualDocItem) => {
-    openDocument({ docId: doc.id, fileName: doc.name })
-  }
-
-
-  const handleDelete = (doc: ManualDocItem) => {
-    Modal.confirm({
-      title: t('dataSource.deleteDocument'),
-      content: t('dataSource.deleteDocumentConfirm'),
-      okText: t('dataSource.delete'),
-      okButtonProps: { danger: true },
-      cancelText: t('dataSource.cancel'),
-      onOk: async () => {
-        try {
-          await deleteManualDocument(kbId, doc.id)
-          message.success(t('common.deletedSuccess'))
-          onChanged?.()
-        } catch (err: any) {
-          message.error(err?.message || t('common.deleteFailed'))
-        }
-      },
-    })
-  }
+    openDocument({ docId: doc.id, fileName: doc.name });
+  };
 
   const columns = [
     {
-      title: t('dataSource.documentName'), dataIndex: 'name', key: 'name', width: 240,
+      title: t('common.fileName'),
+      dataIndex: 'name',
+      key: 'name',
+      width: 240,
       render: (v: string) => <a className="yx-table-action">{v}</a>,
     },
-    { title: t('dataSource.documentType'), dataIndex: 'type', key: 'type', width: 80 },
-    { title: t('dataSource.documentSize'), dataIndex: 'size', key: 'size', width: 90 },
-    { title: t('dataSource.documentUploader'), dataIndex: 'uploader', key: 'uploader', width: 90 },
-    { title: t('dataSource.documentTime'), dataIndex: 'uploadTime', key: 'uploadTime', width: 160 },
     {
-      title: t('dataSource.documentStatus'), dataIndex: 'status', key: 'status', width: 200,
-      render: (v: string) => renderStatus(v),
+      title: t('common.fileType'),
+      dataIndex: 'type',
+      key: 'type',
+      width: 80,
     },
     {
-      title: t('knowledgeSearch.actions'), key: 'actions', width: 100,
+      title: t('common.fileSize'),
+      dataIndex: 'size',
+      key: 'size',
+      width: 90,
+    },
+    {
+      title: t('common.uploader'),
+      dataIndex: 'uploader',
+      key: 'uploader',
+      width: 90,
+    },
+    {
+      title: t('common.uploadTime'),
+      dataIndex: 'uploadTime',
+      key: 'uploadTime',
+      width: 160,
+    },
+    {
+      title: t('common.status'),
+      dataIndex: 'status',
+      key: 'status',
+      width: 200,
       render: (_: unknown, record: ManualDocItem) => (
-        <>
-          <a className="yx-table-action" onClick={() => handleView(record)}>{t('domainKnowledge.roleView')}</a>
-          <a className="yx-table-action" onClick={() => handleDelete(record)}>{t('dataSource.delete')}</a>
-        </>
+        <DocumentStatusBadge
+          docStatus={record.docStatus}
+          ontologyStatus={record.ontologyStatus}
+          errorMessage={record.errorMessage}
+          ontologyError={record.ontologyError}
+        />
       ),
     },
-  ]
+    {
+      title: t('common.actions'),
+      key: 'actions',
+      width: showDelete ? 130 : 80,
+      render: (_: unknown, record: ManualDocItem) => (
+        <Space size={8}>
+          <a className="yx-table-action" onClick={() => handleView(record)}>
+            {t('common.preview')}
+          </a>
+          {showDelete && onDelete && (
+            <a className="yx-table-action" style={{ color: '#ef4444' }} onClick={() => onDelete(record)}>
+              {t('common.delete')}
+            </a>
+          )}
+        </Space>
+      ),
+    },
+  ];
 
   return (
     <>
@@ -156,5 +194,5 @@ export default function DataSourceDocTable({
       />
       {viewer}
     </>
-  )
+  );
 }

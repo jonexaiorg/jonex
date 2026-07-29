@@ -25,6 +25,12 @@ export default defineConfig({
       shared: {
         react: { singleton: true, requiredVersion: '^18.2.0' },
         'react-dom': { singleton: true, requiredVersion: '^18.2.0' },
+        // antd 系列必须 singleton 共享：否则 shell 与各 remote 各自打包一份
+        // antd + cssinjs，两套 cssinjs 往同一个 document.head 写样式并按 data-*-hash
+        // 去重，先挂载方回收 <style> 时会误删另一方仍依赖的样式（表现为 popup
+        // z-index 变量丢失、弹层被内容盖住）。共享后全窗口只有一份 antd/cssinjs。
+        antd: { singleton: true, requiredVersion: '^6.4.3' },
+        '@ant-design/icons': { singleton: true, requiredVersion: '^6.2.3' },
       },
     }),
   ],
@@ -43,6 +49,14 @@ export default defineConfig({
       },
       // —— 子应用 remote assets（Module Federation） ——
       // 请求 /remotes/xxx/... → 子应用 vite dev server，去掉 /remotes 前缀
+      '/remotes/expert-call/': {
+        target: 'http://localhost:5174',
+        changeOrigin: true,
+        rewrite: (path) =>
+          path.includes('remoteEntry.js')
+            ? '/@id/__x00__virtual:__federation_remote_expertCall_entry' + (path.includes('?') ? path.substring(path.indexOf('?')) : '')
+            : path.replace(/^\/remotes/, ''),
+      },
       '/remotes/core-business/': {
         target: 'http://localhost:5175',
         changeOrigin: true,
@@ -68,6 +82,10 @@ export default defineConfig({
             : path.replace(/^\/remotes/, ''),
       },
       // —— 子应用 standalone SPA 回退 ——
+      '/expert-call/': {
+        target: 'http://localhost:5174',
+        changeOrigin: true,
+      },
       '/core-business/': {
         target: 'http://localhost:5175',
         changeOrigin: true,

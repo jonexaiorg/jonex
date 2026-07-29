@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""Ingestion 适配器协议与数据结构。"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,11 +10,11 @@ from typing import Any, Optional, Protocol, runtime_checkable
 
 @dataclass
 class RemoteFile:
-    external_id: str
-    name: str
+    external_id: str            # 外部唯一标识（去重用）
+    name: str                  # 文件名
     size: Optional[int] = None
     modified_at: Optional[datetime] = None
-    uri: Optional[str] = None
+    uri: Optional[str] = None  # 下载地址 / 对象 key
 
 
 @runtime_checkable

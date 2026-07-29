@@ -1,12 +1,12 @@
-
+"""DTOs for KB-level ontology synonyms."""
 from typing import Optional
 
 try:
     from pydantic.v1 import BaseModel, Field
-except ImportError:
+except ImportError:  # pragma: no cover
     from pydantic import BaseModel, Field
 
-
+# 校验上限（service 层强制）
 MAX_TERMS_PER_GROUP = 50
 MAX_TERM_LENGTH = 128
 MAX_IMPORT_GROUPS = 500

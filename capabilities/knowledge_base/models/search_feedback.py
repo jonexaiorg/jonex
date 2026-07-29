@@ -1,6 +1,10 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""Knowledge Base search feedback entities.
 
-
+每条反馈记录绑定到引用的具体知识库（knowledge_base_id），
+一次搜索结果引用多个知识库时会分别写入多条记录。
+"""
 
 from datetime import datetime
 from uuid import uuid4
@@ -17,7 +21,7 @@ def _iso(value: datetime | None) -> str | None:
 
 
 class KnowledgeSearchFeedback(Base, TenantMixin, TimestampMixin):
-
+    """搜索结果反馈（按知识库维度存储）"""
 
     __tablename__ = "knowledge_search_feedback"
     __table_args__ = (

@@ -1,31 +1,44 @@
-import { redirect } from 'react-router-dom'
-import loadableComponent from '@/utils/loadable'
+import { redirect } from 'react-router-dom';
+import { isEmbedded } from '@jonex/shell-sdk';
+import loadableComponent from '@/utils/loadable';
 
-const BasicLayout = loadableComponent(() => import('@/components/BasicLayout'))
-const HostedLayout = loadableComponent(() => import('@/components/HostedLayout'))
-const KnowledgeSearch = loadableComponent(() => import('@/pages/KnowledgeSearch'))
-const DomainSpace = loadableComponent(() => import('@/pages/DomainSpace'))
-const DomainSpacePermission = loadableComponent(() => import('@/pages/DomainSpacePermission'))
-const DomainKnowledge = loadableComponent(() => import('@/pages/DomainKnowledge'))
-const DomainKnowledgeDetail = loadableComponent(() => import('@/pages/DomainKnowledgeDetail'))
-const DomainKnowledgeDatasourceManual = loadableComponent(() => import('@/pages/DomainKnowledgeDatasourceManual'))
-const DomainKnowledgeDatasourceStorage = loadableComponent(() => import('@/pages/DomainKnowledgeDatasourceStorage'))
-const DomainKnowledgeDatasourceSync = loadableComponent(() => import('@/pages/DomainKnowledgeDatasourceSync'))
-const DomainKnowledgeSourceData = loadableComponent(() => import('@/pages/DomainKnowledgeSourceData'))
-const DomainKnowledgeCompileResults = loadableComponent(() => import('@/pages/DomainKnowledgeCompileResults'))
-const DomainKnowledgeDataSource = loadableComponent(() => import('@/pages/DomainKnowledgeDataSource'))
-const DomainKnowledgeParser = loadableComponent(() => import('@/pages/DomainKnowledgeParser'))
-const DomainKnowledgeEngine = loadableComponent(() => import('@/pages/DomainKnowledgeEngine'))
-const DomainKnowledgeGraph = loadableComponent(() => import('@/pages/DomainKnowledgeGraph'))
-const DomainKnowledgeInstanceDetail = loadableComponent(() => import('@/pages/DomainKnowledgeInstanceDetail'))
-const DomainKnowledgeRelationDetail = loadableComponent(() => import('@/pages/DomainKnowledgeRelationDetail'))
-const DomainManagement = loadableComponent(() => import('@/pages/DomainManagement'))
-const DomainManagementServices = loadableComponent(() => import('@/pages/DomainManagementServices'))
-const DomainManagementSearch = loadableComponent(() => import('@/pages/DomainManagementSearch'))
-const NotFound = loadableComponent(() => import('@/pages/NotFound'))
+const BasicLayout = loadableComponent(() => import('@/components/BasicLayout'));
+const HostedLayout = loadableComponent(() => import('@/components/HostedLayout'));
+const KnowledgeSearch = loadableComponent(() => import('@/pages/KnowledgeSearch'));
+const DomainSpace = loadableComponent(() => import('@/pages/DomainSpace'));
+const DomainSpaceCreate = loadableComponent(() => import('@/pages/DomainSpaceCreate'));
+const DomainSpaceSettings = loadableComponent(() => import('@/pages/DomainSpaceSettings'));
+const DomainSpacePermission = loadableComponent(() => import('@/pages/DomainSpacePermission'));
+const DomainKnowledge = loadableComponent(() => import('@/pages/DomainKnowledge'));
+const DomainKnowledgeDetail = loadableComponent(() => import('@/pages/DomainKnowledgeDetail'));
+const DomainKnowledgeBlank = loadableComponent(() => import('@/pages/DomainKnowledgeBlank'));
+const DomainKnowledgeDatasourceManual = loadableComponent(() => import('@/pages/DomainKnowledgeDatasourceManual'));
+const DomainKnowledgeDatasourceStorage = loadableComponent(() => import('@/pages/DomainKnowledgeDatasourceStorage'));
+const DomainKnowledgeDatasourceSync = loadableComponent(() => import('@/pages/DomainKnowledgeDatasourceSync'));
+const DomainKnowledgeDatasourceApiPush = loadableComponent(() => import('@/pages/DomainKnowledgeDatasourceApiPush'));
+const DomainKnowledgeSourceData = loadableComponent(() => import('@/pages/DomainKnowledgeSourceData'));
+const DomainKnowledgeCompileResults = loadableComponent(() => import('@/pages/DomainKnowledgeCompileResults'));
+const DomainKnowledgeDocumentResult = loadableComponent(() => import('@/pages/DomainKnowledgeDocumentResult'));
+const DomainKnowledgeDataSource = loadableComponent(() => import('@/pages/DomainKnowledgeDataSource'));
+const DomainKnowledgeParser = loadableComponent(() => import('@/pages/DomainKnowledgeParser'));
+const DomainKnowledgeEngine = loadableComponent(() => import('@/pages/DomainKnowledgeEngine'));
+const DomainKnowledgeGraph = loadableComponent(() => import('@/pages/DomainKnowledgeGraph'));
+const DomainKnowledgeInstanceDetail = loadableComponent(() => import('@/pages/DomainKnowledgeInstanceDetail'));
+const DomainKnowledgeRelationDetail = loadableComponent(() => import('@/pages/DomainKnowledgeRelationDetail'));
+const DomainKnowledgeInstanceList = loadableComponent(() => import('@/pages/DomainKnowledgeInstanceList'));
+const KnowledgeTracking = loadableComponent(() => import('@/pages/KnowledgeTracking'));
+const DomainKnowledgeRelationList = loadableComponent(() => import('@/pages/DomainKnowledgeRelationList'));
+const DomainManagement = loadableComponent(() => import('@/pages/DomainManagement'));
+const DomainManagementServices = loadableComponent(() => import('@/pages/DomainManagementServices'));
+const DomainManagementSearch = loadableComponent(() => import('@/pages/DomainManagementSearch'));
+const NotFound = loadableComponent(() => import('@/pages/NotFound'));
 
-export function getRoutes(mode: 'standalone' | 'hosted' = 'standalone') {
-  const Layout = mode === 'hosted' ? HostedLayout : BasicLayout
+export function getRoutes(mode: 'standalone' | 'hosted' = 'standalone', t?: (key: string) => string) {
+  // hosted (MF mount) or embed (Shell iframe embed, URL with ?embed=1) both use shell-less layout,
+  // only render the content area, shell (sidebar/header) is handled by Shell.
+  const inIframe = typeof window !== 'undefined' && window.parent !== window;
+  const Layout = mode === 'hosted' || (isEmbedded() && inIframe) ? HostedLayout : BasicLayout;
+  const T = t || ((s: string) => s);
 
   return [
     {
@@ -40,29 +53,93 @@ export function getRoutes(mode: 'standalone' | 'hosted' = 'standalone') {
       path: '',
       element: Layout,
       children: [
-        { path: 'knowledge-search', element: KnowledgeSearch, title: '领域知识检索' },
-        { path: 'domain-space', element: DomainSpace, title: '领域空间管理' },
-        { path: 'domain-space/permissions', element: DomainSpacePermission, title: '权限管理' },
-        { path: 'domain-knowledge', element: DomainKnowledge, title: '领域知识管理' },
-        { path: 'domain-knowledge/:id', element: DomainKnowledgeDetail, title: '知识库详情' },
-        { path: 'domain-knowledge/:id/datasource/manual', element: DomainKnowledgeDatasourceManual, title: '手动上传数据源' },
-        { path: 'domain-knowledge/:id/datasource/storage', element: DomainKnowledgeDatasourceStorage, title: '文件存储直连' },
-        { path: 'domain-knowledge/:id/datasource/sync', element: DomainKnowledgeDatasourceSync, title: 'API同步数据源' },
-        { path: 'domain-knowledge/:id/source-data', element: DomainKnowledgeSourceData, title: '源数据查看' },
-        { path: 'domain-knowledge/:id/compile-results', element: DomainKnowledgeCompileResults, title: '编译结果' },
-        { path: 'domain-knowledge/:id/data-source', element: DomainKnowledgeDataSource, title: '数据源配置' },
-        { path: 'domain-knowledge/:id/parser', element: DomainKnowledgeParser, title: '解析配置' },
-        { path: 'domain-knowledge/:id/engine', element: DomainKnowledgeEngine, title: '引擎配置' },
-        { path: 'domain-knowledge/:id/graph', element: DomainKnowledgeGraph, title: '知识图谱' },
-        { path: 'domain-knowledge/:id/graph/instances/:instanceId', element: DomainKnowledgeInstanceDetail, title: '实体实例详情' },
-        { path: 'domain-knowledge/:id/graph/relations/:relationId', element: DomainKnowledgeRelationDetail, title: '关系详情' },
-        { path: 'domain-management', element: DomainManagement, title: '领域服务管理' },
-        { path: 'domain-management/services', element: DomainManagementServices, title: '服务管理' },
-        { path: 'domain-management/search', element: DomainManagementSearch, title: '知识检索' },
+        { path: 'knowledge-search', element: KnowledgeSearch, title: T('knowledgeSearch.pageTitle') },
+        { path: 'domain-space', element: DomainSpace, title: T('domainSpace.management') },
+        { path: 'domain-space/new', element: DomainSpaceCreate, title: T('domainSpace.create') },
+        { path: 'domain-space/:id/settings', element: DomainSpaceSettings, title: T('route.domainSpaceSettings') },
+        { path: 'domain-space/permissions', element: DomainSpacePermission, title: T('domainPermission.title') },
+        { path: 'domain-knowledge', element: DomainKnowledge, title: T('domainKnowledge.management') },
+        { path: 'domain-knowledge/:id', element: DomainKnowledgeBlank, title: T('domainKnowledge.detail') },
+        {
+          path: 'domain-knowledge/:id/detail',
+          element: DomainKnowledgeDetail,
+          title: T('route.domainKnowledgeSettings'),
+        },
+        {
+          path: 'domain-knowledge/:id/datasource/manual',
+          element: DomainKnowledgeDatasourceManual,
+          title: T('route.datasourceManual'),
+        },
+        {
+          path: 'domain-knowledge/:id/datasource/storage/:dsId',
+          element: DomainKnowledgeDatasourceStorage,
+          title: T('route.datasourceStorage'),
+        },
+        {
+          path: 'domain-knowledge/:id/datasource/sync/:dsId',
+          element: DomainKnowledgeDatasourceSync,
+          title: T('route.datasourceSync'),
+        },
+        {
+          path: 'domain-knowledge/:id/datasource/api-push/:dsId',
+          element: DomainKnowledgeDatasourceApiPush,
+          title: T('route.datasourceApiPush'),
+        },
+        {
+          path: 'domain-knowledge/:id/source-data',
+          element: DomainKnowledgeSourceData,
+          title: T('knowledgeSource.title'),
+        },
+        {
+          path: 'domain-knowledge/:id/compile-results',
+          element: DomainKnowledgeCompileResults,
+          title: T('route.compileResults'),
+        },
+        {
+          path: 'domain-knowledge/:id/documents/:docId/result',
+          element: DomainKnowledgeDocumentResult,
+          title: T('route.documentResult'),
+        },
+        {
+          path: 'domain-knowledge/:id/data-source',
+          element: DomainKnowledgeDataSource,
+          title: T('route.dataSourceConfig'),
+        },
+        { path: 'domain-knowledge/:id/parser', element: DomainKnowledgeParser, title: T('route.parserConfig') },
+        { path: 'domain-knowledge/:id/engine', element: DomainKnowledgeEngine, title: T('route.engineConfig') },
+        {
+          path: 'domain-knowledge/:id/graph',
+          element: DomainKnowledgeGraph,
+          title: T('domainKnowledge.graphBreadcrumb'),
+        },
+        {
+          path: 'domain-knowledge/:id/graph/instances/:instanceId',
+          element: DomainKnowledgeInstanceDetail,
+          title: T('route.instanceDetail'),
+        },
+        {
+          path: 'domain-knowledge/:id/graph/relations/:relationId',
+          element: DomainKnowledgeRelationDetail,
+          title: T('route.relationDetail'),
+        },
+        {
+          path: 'domain-knowledge/:id/result/instances/:entityType',
+          element: DomainKnowledgeInstanceList,
+          title: T('route.ontologyInstanceDetail'),
+        },
+        { path: 'domain-knowledge/:id/tracking', element: KnowledgeTracking, title: T('route.tracking') },
+        {
+          path: 'domain-knowledge/:id/result/relations/:relationName',
+          element: DomainKnowledgeRelationList,
+          title: T('route.relationInstanceList'),
+        },
+        { path: 'domain-management', element: DomainManagement, title: T('domainManagement.title') },
+        { path: 'domain-management/services', element: DomainManagementServices, title: T('route.services') },
+        { path: 'domain-management/search', element: DomainManagementSearch, title: T('route.domainManagementSearch') },
       ],
     },
-    { path: '*', element: NotFound, title: '404' },
-  ]
+    { path: '*', element: NotFound, title: T('common.pageNotFound') },
+  ];
 }
 
-export default getRoutes('standalone')
+export default getRoutes('standalone');

@@ -1,8 +1,9 @@
-
+"""Knowledge Base service facade."""
 
 from .document_service import DocumentService
 from .data_source_service import DataSourceService
 from .folder_service import FolderService
+from .tag_service import TagService
 from .knowledge_info_service import KnowledgeInfoService
 from .ontology_compiler import OntologyCompiler
 from .ontology_query_service import OntologyQueryService
@@ -20,6 +21,7 @@ class KnowledgeBaseService:
     def __init__(self):
         self.documents = DocumentService()
         self.folders = FolderService()
+        self.tags = TagService()
         self.data_sources = DataSourceService()
         self.knowledge_infos = KnowledgeInfoService()
         self.search = SearchService()

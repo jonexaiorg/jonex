@@ -14,6 +14,15 @@
     "previous": "Previous",
     "loading": "Loading...",
     "noData": "No data available",
+    "noDescription": "No description",
+    "status": "Status",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "loadFailed": "Load failed",
+    "operationFailed": "Operation failed",
+    "saveFailed": "Save failed",
+    "nameRequired": "Please enter a name",
+    "confirmDelete": "Confirm Delete",
     "error": "Error",
     "success": "Success",
     "yes": "Yes",
@@ -23,30 +32,41 @@
     "year": " Year",
     "months": " months",
     "operationSuccessful": "Operation successful",
-    "pass": "pass",
-    "notPass": "not pass",
+    "pass": "Passed",
+    "notPass": "Failed",
     "clearFilters": "Clear Filters",
     "backTo": "Back to {{title}}",
-    "copySuccess": "Copy Success",
-    "saveSuccess": "Save Success",
+    "copySuccess": "Copied",
+    "saveSuccess": "Saved successfully",
     "prompt": "Prompt",
     "noChanges": "No changes",
-    "columnsSettings": "Columns Settings",
+    "columnsSettings": "Column Settings",
     "selectAll": "Select All",
-    "loginSuccess": "Login Success",
-    "logoutFailed": "Logout Failed",
-    "deleteSuccess": "Delete Success",
+    "loginSuccess": "Signed in successfully",
+    "logoutFailed": "Sign-out failed",
+    "deleteSuccess": "Deleted successfully",
     "page": "Page",
     "chapters": "Chapters",
     "interrupt": "Interrupt",
-    "totalPage": "Total {{total}}",
+    "totalPage": "{{total}} items",
     "dataError": "Data error",
     "pageNotFound": "Page not found",
-    "backHome": "Back to home"
+    "backHome": "Back to home",
+    "name": "Name",
+    "description": "Description",
+    "createdAt": "Created",
+    "actions": "Actions",
+    "type": "Type",
+    "deleteFailed": "Delete failed",
+    "close": "Close",
+    "requestFailed": "Request failed",
+    "maturityProduction": "Production",
+    "maturityPilot": "Piloting",
+    "maturityPlanning": "Planning"
   },
   "auth": {
     "signIn": "Sign In",
-    "signInSSO": "Sign in with Company SSO",
+    "signInSSO": "Sign in with your organization's SSO",
     "signOut": "Sign Out",
     "email": "Email",
     "password": "Password",
@@ -55,7 +75,7 @@
     "forgotPassword": "Forgot password?",
     "signInDescription": "Access your management dashboard",
     "welcomeBack": "Welcome back",
-    "neddHelp": "Need help accessing your account?",
+    "neddHelp": "Need help signing in?",
     "systemAdmin": "System Administrator",
     "admin": "admin",
     "user": "user",
@@ -77,14 +97,14 @@
     "invalidEmail": "Please enter a valid email address",
     "verificationCodeDesc": "Enter the verification code shown in the image",
     "password": "Please enter your password",
-    "minLength": "Minimum length is {min} characters",
-    "maxLength": "Maximum length is {max} characters",
+    "minLength": "Enter at least {{min}} characters",
+    "maxLength": "Enter no more than {{max}} characters",
     "placeholder": "Please enter",
     "selectPlaceholder": "Please select",
-    "confirmDelete": "Are you sure to delete this data?"
+    "confirmDelete": "Are you sure you want to delete this item?"
   },
   "language": {
-    "chinese": "中文",
+    "chinese": "Simplified Chinese",
     "english": "English",
     "switchLanguage": "Switch Language"
   },
@@ -96,7 +116,146 @@
     "network": "Network error. Please check your connection."
   },
   "navigation": {
-    "home": "Home"
+    "home": "Home",
+    "ecosystemManagement": "Integrations",
+    "adapterManagement": "Integration Adapters",
+    "businessMarketplace": "Domain Marketplace",
+    "skills": "AI Skills",
+    "promptTemplates": "Prompt Templates",
+    "templateDomains": "Template Domains",
+    "templateScenarios": "Template Scenarios",
+    "templateObjects": "Template Objects",
+    "templateRelations": "Template Relations"
+  },
+  "promptTemplate": {
+    "title": "Prompt Templates",
+    "description": "Create and manage reusable prompt templates.",
+    "create": "New Template",
+    "edit": "Edit Template",
+    "view": "View Template",
+    "delete": "Delete Template",
+    "copy": "Copy Template",
+    "version": "Version History",
+    "systemScope": "System Templates",
+    "domainScope": "Domain Templates",
+    "allCategories": "All Categories",
+    "searchPlaceholder": "Search by name or keyword...",
+    "name": "Template Name",
+    "category": "Category",
+    "descriptionField": "Description",
+    "content": "Prompt Content",
+    "status": "Status",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "versionRemark": "Version Notes",
+    "versionRemarkHint": "Describe what changed in this version.",
+    "contentPlaceholder": "Enter prompt content using placeholders such as {{variable}}",
+    "variableHint": "Use placeholders such as {{variable}} and {{userQuestion}}.",
+    "currentVersion": "Current Version",
+    "versionHistory": "Version History",
+    "rollback": "Rollback",
+    "rollbackConfirm": "Rollback to v{{version}}?",
+    "rollbackConfirmDesc": "This creates a new version and preserves the existing history.",
+    "deleteConfirm": "Are you sure you want to delete this template?",
+    "deleteConfirmDesc": "This action cannot be undone.",
+    "copySuccess": "Prompt copied to clipboard",
+    "createSuccess": "Template created",
+    "updateSuccess": "Template updated",
+    "deleteSuccess": "Template deleted",
+    "rollbackSuccess": "Rolled back to version {{version}}",
+    "noSystemTemplates": "No system templates available",
+    "noDomainTemplates": "No domain templates yet.",
+    "loadError": "Failed to load",
+    "countText": "{{count}} templates",
+    "fromSystemCopy": "Copied from system template",
+    "fromDomainCopy": "Copied from domain template",
+    "copyTemplateSuccess": "Template copied to current tenant",
+    "copyFailed": "Copy failed",
+    "saveFailed": "Save failed",
+    "retry": "Retry",
+    "createTitle": "New Prompt Template",
+    "editTitle": "Edit Prompt Template",
+    "viewTitle": "Prompt Template Details",
+    "nameRequired": "Please enter template name",
+    "namePlaceholder": "Enter a template name, e.g., Smart Q&A Assistant",
+    "categoryRequired": "Please select a category",
+    "categoryPlaceholder": "Please select a category",
+    "versionRemarkPlaceholder": "Briefly describe the changes, e.g., improved refusal logic",
+    "targetVersion": "New Version (Optional)",
+    "targetVersionExtra": "Leave blank to increment the patch version automatically, or enter a specific version.",
+    "targetVersionPlaceholder": "e.g., 2.0",
+    "descriptionPlaceholder": "Briefly describe the template's purpose",
+    "contentRequired": "Please enter prompt content",
+    "contentTextareaPlaceholder": "Enter prompt content using placeholders such as {{variable}}",
+    "contentExample": "\n\nExample:\nYou are a professional knowledge assistant...\nContext: {{retrievedContent}}\nUser question: {{userQuestion}}",
+    "confirmDeleteBtn": "Confirm Delete",
+    "loadHistoryError": "Failed to load version history",
+    "rollbackFailed": "Rollback failed",
+    "copyContent": "Copy Content",
+    "versionColumn": "Version",
+    "versionDetailLabel": "Version",
+    "currentTag": "Current",
+    "contentPreview": "Content Preview / Change Description",
+    "updatedBy": "Updated By",
+    "updatedAt": "Updated At",
+    "viewBtn": "View",
+    "rollbackBtn": "Confirm Rollback",
+    "versionCountLabel": "Total",
+    "versionCountUnit": "versions",
+    "versionDetailTitle": "Version Content",
+    "updateInfo": "Last Updated / Updated By",
+    "updateDescription": "Change Description",
+    "noDescription": "No description",
+    "viewFullInfo": "View Full Details",
+    "copyToTenant": "Copy to current tenant",
+    "copyText": "Copy Text",
+    "copyPromptText": "Copy prompt text",
+    "versionBtn": "Versions",
+    "builtInVersionNote": "Built-in template",
+    "systemUser": "System",
+    "systemBuiltIns": {
+      "docSummary": {
+        "name": "Document Summary",
+        "description": "Summarizes long documents and highlights their key points.",
+        "content": "Read the following document and write a summary of no more than 200 words. Include:\n- Main topic\n- Three key arguments\n- Conclusions and recommendations\n\nDocument: {{document_content}}"
+      },
+      "emailReply": {
+        "name": "Email Reply",
+        "description": "Drafts a concise, professional reply based on an incoming email.",
+        "content": "Write a concise, professional reply to the following email. Requirements:\n- Use a professional and courteous tone.\n- Address every question raised.\n- Keep the reply under 200 words.\n\nEmail: {{email_content}}"
+      },
+      "knowledgeQa": {
+        "name": "Knowledge Q&A Assistant",
+        "description": "Answers general knowledge questions accurately using the supplied context.",
+        "content": "You are a precise and professional knowledge assistant. Answer the user's question using only the context below.\n1. Do not invent information.\n2. Use a clear, structured response.\n3. If the context is insufficient, say so.\n\nContext: {{retrieved_content}}\nUser question: {{user_question}}"
+      }
+    },
+    "domainBuiltIns": {
+      "contractReview": {
+        "name": "Contract Compliance Review",
+        "description": "Identifies risky or noncompliant contract clauses and recommends revisions.",
+        "content": "Review the following contract as a legal compliance specialist. Provide:\n- A list of risky clauses with their locations\n- An explanation of each compliance issue\n- Recommended revisions\n\nContract: {{contract_content}}"
+      },
+      "reportAnalysis": {
+        "name": "Business Report Analysis",
+        "description": "Analyzes business reports to identify trends, anomalies, and actionable insights.",
+        "content": "Analyze the following report data and provide:\n1. Year-over-year and period-over-period changes in key metrics\n2. Likely causes of unusual fluctuations\n3. Trend forecasts and recommendations\n\nReport data: {{report_data}}"
+      }
+    }
+  },
+  "scenarioCatalog": {
+    "title": "Scenario Catalog",
+    "subtitle": "Explore industry scenarios and available integrations.",
+    "industry": "Industry: {{industry}}",
+    "adapterCount": "· Adapters: {{count}}"
+  },
+  "promptCategory": {
+    "generalQA": "General Q&A",
+    "documentProcessing": "Document Processing",
+    "financialAnalysis": "Financial Analysis",
+    "contractReview": "Contract Review",
+    "dataAnalysis": "Data Analysis",
+    "other": "Other"
   },
   "site": {
     "title": ""
@@ -106,8 +265,403 @@
     "completed": "Completed",
     "paused": "Paused",
     "planned": "Planned",
-    "allStatus": "All Status",
+    "allStatus": "All Statuses",
+    "active": "Active",
+    "inactive": "Inactive",
+    "draft": "Draft",
+    "archived": "Archived",
     "success": "Success",
     "failed": "Failed"
+  },
+  "compile": {
+    "attrType": {
+      "string": "String",
+      "text": "Text",
+      "number": "Number",
+      "date": "Date",
+      "enum": "Enum",
+      "boolean": "Boolean"
+    },
+    "cardinality": {
+      "oneToOne": "One-to-One",
+      "oneToMany": "One-to-Many",
+      "manyToOne": "Many-to-One",
+      "manyToMany": "Many-to-Many"
+    },
+    "constraintTargetType": {
+      "object": "Object",
+      "attribute": "Attribute Field",
+    "relation": "Relationship"
+    },
+    "constraintType": {
+      "unique": "Unique",
+      "exists": "Exists",
+      "conditional": "Conditional",
+      "range": "Range"
+    }
+  },
+  "templateScenarios": {
+    "backToDomains": "Back to Template Domains",
+    "pageTitle": "Template Scenarios",
+    "pageSubtitle": "Manage reusable scenarios and their ontology definitions by domain.",
+    "domainScenes": "Scenarios",
+    "sceneCount": "{{count}} scenarios",
+    "allDomains": "All Domains",
+    "createScene": "Create Scenario",
+    "loadingScenes": "Loading scenarios...",
+    "noMatchScene": "No matching scenarios",
+    "selectSceneHint": "Select a scenario from the list.",
+    "selectSceneFromLeft": "Select a Scenario",
+    "noSceneDescription": "No scenario description",
+    "refresh": "Refresh",
+    "objectTemplate": "Object Definitions",
+    "relationTemplate": "Relationship Definitions",
+    "constraintTemplate": "Constraint Definitions",
+    "constraintNote": "Constraints are maintained as metadata and are not included in template compilation.",
+    "relationNote": "Object and relationship definitions are included in template compilation. Constraints are maintained as metadata only.",
+    "createObject": "Create Object",
+    "createRelation": "Create Relation",
+    "createConstraint": "Create Constraint",
+    "noObjectTemplates": "No object templates",
+    "noRelationTemplates": "No relationship definitions",
+    "noConstraintTemplates": "No constraint definitions",
+    "sceneName": "Scenario Name",
+    "sceneNameInput": "Enter a scenario name",
+    "sceneDescPlaceholder": "Enter a scenario description",
+    "domainLabel": "Associated Domain",
+    "selectDomain": "Please select an associated domain",
+    "objectNameInput": "Please enter object name",
+    "objectDescPlaceholder": "Please enter object description",
+    "attrDefSection": "Attributes",
+    "addAttribute": "Add Attribute",
+    "attributes": "Attributes",
+    "attrType": "Attribute Type",
+    "relationType": "Relationship Type",
+    "attrNamePlaceholder": "Attribute Name",
+    "attrDescPlaceholder": "Attribute Description",
+    "uniquePrimaryKey": "Primary Key",
+    "attrNameRequired": "Please enter attribute name",
+    "sourceObjectSelect": "Source Object",
+    "selectSourceObject": "Please select source object",
+    "targetObjectSelect": "Target Object",
+    "selectTargetObject": "Please select target object",
+    "relationNameLabel": "Relationship Name",
+    "relationNameInput": "Enter a relationship name",
+    "relationDescPlaceholder": "Enter a relationship description",
+    "selectRelationType": "Select a relationship type",
+    "constraintName": "Constraint Name",
+    "constraintNameInput": "Please enter constraint name",
+    "constraintTargetType": "Constraint Target Type",
+    "constraintTargetObject": "Constraint Target Object",
+    "selectConstraintTarget": "Please select target object",
+    "constraintType": "Constraint Type",
+    "constraintExpression": "Constraint Expression",
+    "constraintExpressionInput": "Please enter constraint expression",
+    "suggestion": "Suggestion",
+    "suggestionInput": "Please enter suggestion when constraint is violated",
+    "editScene": "Edit Scenario",
+    "createSceneTitle": "Create Scenario",
+    "editObject": "Edit Object",
+    "createObjectTitle": "Create Object",
+    "editRelation": "Edit Relation",
+    "createRelationTitle": "Create Relation",
+    "editConstraint": "Edit Constraint",
+    "createConstraintTitle": "Create Constraint",
+    "deleteScene": "Delete Scenario",
+    "deleteObject": "Delete Object",
+    "deleteRelation": "Delete Relation",
+    "deleteConstraint": "Delete Constraint",
+    "confirmDelete": "Delete",
+    "deleteConfirmContent": "Are you sure you want to delete {{name}}? This action cannot be undone.",
+    "sceneUpdated": "Scenario updated",
+    "sceneCreated": "Scenario created",
+    "updateSceneFailed": "Failed to update scenario",
+    "createSceneFailed": "Failed to create scenario",
+    "objectUpdated": "Object updated",
+    "objectCreated": "Object created",
+    "updateObjectFailed": "Failed to update object",
+    "createObjectFailed": "Failed to create object",
+    "relationUpdated": "Relation updated",
+    "relationCreated": "Relation created",
+    "updateRelationFailed": "Failed to update relationship",
+    "createRelationFailed": "Failed to create relationship",
+    "constraintUpdated": "Constraint updated",
+    "constraintCreated": "Constraint created",
+    "saveConstraintFailed": "Failed to save constraint",
+    "sceneDeleted": "Scenario deleted",
+    "objectDeleted": "Object deleted",
+    "relationDeleted": "Relation deleted",
+    "constraintDeleted": "Constraint deleted",
+    "deleteFailed": "Delete failed",
+    "loadSceneFailed": "Failed to load scenarios",
+    "loadSceneDataFailed": "Failed to load scenario template data",
+    "loadDomainsFailed": "Failed to load template domains",
+    "createDomainFirstWarning": "Please create template domains first",
+    "createObjectFirstWarning": "Please create object templates first",
+    "constraintNameWarning": "Please enter constraint name",
+    "constraintTargetWarning": "Please select constraint target",
+    "ariaLabelEditScene": "Edit scenario",
+    "ariaLabelDeleteScene": "Delete scenario",
+    "noDescription": "No description",
+    "noAttributes": "No attributes",
+    "builtIn": {
+      "internetGeneral": {
+        "name": "General Internet Knowledge Extraction",
+        "description": "Extracts entities and relationships from general internet-industry content."
+      },
+      "creditRisk": {
+        "name": "Credit Risk Assessment",
+        "description": "Assesses business credit risk using corporate financial data."
+      },
+      "investmentAdvisory": {
+        "name": "Intelligent Investment Advisory",
+        "description": "Supports investment analysis and recommendations using market data."
+      },
+      "medicalRecord": {
+        "name": "Medical Record Parsing",
+        "description": "Extracts structured information from electronic medical records."
+      },
+      "qualityInspection": {
+        "name": "Production Quality Analysis",
+        "description": "Analyzes quality-inspection data from manufacturing processes."
+      },
+      "financialReport": {
+        "name": "Financial Report Analysis",
+        "description": "Extracts structured information from annual and quarterly financial reports."
+      },
+      "llmTechnicalReport": {
+        "name": "LLM Technical Report Analysis",
+        "description": "Extracts structured information from large-language-model technical reports."
+      }
+    }
+  },
+  "templateDomains": {
+    "pageTitle": "Template Domains",
+    "pageSubtitle": "Organize reusable scenarios and ontology definitions by business domain.",
+    "searchPlaceholder": "Search domains...",
+    "createDomain": "Create Domain",
+    "emptyText": "No template domains yet",
+    "createFirst": "Create your first domain",
+    "noDescription": "No description",
+    "scenarioCount": "{{count}} scenario(s)",
+    "createTitle": "Create Domain",
+    "editTitle": "Edit Domain",
+    "nameLabel": "Domain Name",
+    "namePlaceholder": "Enter a domain name, e.g., Finance",
+    "nameWarning": "Please enter a domain name",
+    "descPlaceholder": "Enter a domain description",
+    "confirmDeleteContent": "Delete this template domain? This action cannot be undone.",
+    "domainUpdated": "Domain updated",
+    "domainCreated": "Domain created",
+    "domainDeleted": "Domain deleted",
+    "loadFailed": "Failed to load template domains. Please try again.",
+    "builtIn": {
+      "aiTechReport": {
+        "name": "LLM Technical Reports",
+        "description": "Templates for structured extraction and analysis of LLM technical reports"
+      },
+      "hardwareInternet": {
+        "name": "Hardware & Internet",
+        "description": "Templates for financial-report analysis and business intelligence for hardware and internet companies"
+      },
+      "manufacturing": {
+        "name": "Manufacturing",
+        "description": "Templates for production, quality inspection, and equipment maintenance"
+      },
+      "healthcare": {
+        "name": "Healthcare",
+        "description": "Templates for medical data analysis and healthcare management"
+      },
+      "financialServices": {
+        "name": "Financial Services",
+        "description": "Templates for risk management, investment advisory, and customer operations"
+      },
+      "internetTechnology": {
+        "name": "Internet Technology",
+        "description": "Templates for intelligence on technology companies, products, and technologies"
+      }
+    }
+  },
+  "templateObjects": {
+    "pageTitle": "Template Objects",
+    "pageSubtitle": "Manage reusable object definitions and their attributes.",
+    "searchPlaceholder": "Search objects...",
+    "domainFilterPlaceholder": "Filter by domain",
+    "columnName": "Object Name",
+    "columnDomain": "Domain",
+    "columnFieldCount": "Fields",
+    "columnStatus": "Status",
+    "fieldDefSection": "Field Definitions",
+    "fieldName": "Field Name",
+    "fieldType": "Type",
+    "fieldRequired": "Required",
+    "required": "Required",
+    "optional": "Optional",
+    "demo": {
+      "domains": {
+        "healthcare": "Healthcare",
+        "fintech": "Financial Technology"
+      },
+      "objects": {
+        "disease": "Disease",
+        "drug": "Drug",
+        "company": "Company"
+      },
+      "fields": {
+        "diseaseName": "Disease Name",
+        "icdCode": "ICD Code",
+        "symptomDescription": "Symptom Description",
+        "drugName": "Drug Name",
+        "approvalNumber": "Approval Number",
+        "manufacturer": "Manufacturer",
+        "companyName": "Company Name",
+        "creditCode": "Unified Social Credit Code",
+        "industry": "Industry"
+      }
+    }
+  },
+  "templateRelations": {
+    "pageTitle": "Template Relations",
+    "pageSubtitle": "Manage reusable relationship definitions between objects.",
+    "searchPlaceholder": "Search relationships or objects...",
+    "typeFilterPlaceholder": "Filter by relationship type",
+    "columnName": "Relationship Name",
+    "columnSource": "Source Object",
+    "columnTarget": "Target Object",
+    "columnType": "Relationship Type",
+    "columnConstraints": "Constraints",
+    "demo": {
+      "objects": {
+        "drug": "Drug",
+        "disease": "Disease",
+        "compound": "Compound",
+        "company": "Company"
+      },
+      "relations": {
+        "treats": {
+          "name": "Treats",
+          "constraints": "A drug may treat multiple diseases"
+        },
+        "contains": {
+          "name": "Contains Ingredient",
+          "constraints": "A drug may contain multiple compounds"
+        },
+        "controls": {
+          "name": "Controls",
+          "constraints": "Parent-subsidiary relationship"
+        }
+      }
+    }
+  },
+  "skills": {
+    "pageTitle": "AI Skills Catalog",
+    "pageSubtitle": "Browse built-in AI capabilities and enable the ones your tenant needs.",
+    "searchPlaceholder": "Search skills or tools...",
+    "allCategories": "All Categories",
+    "countText": "{{count}} skills",
+    "emptyText": "No matching skills",
+    "detailBtn": "Details",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "enabledSkill": "Skill enabled",
+    "disabledSkill": "Skill disabled",
+    "loadFailed": "Failed to load skills list",
+    "categoryLabel": "Category",
+    "toolName": "Tool Name",
+    "instruction": "Instruction",
+    "inputSchema": "Input Schema",
+    "outputSchema": "Output Schema",
+    "capability": "Description",
+    "categoryImage": "Image Processing",
+    "categoryVoice": "Voice Processing",
+    "categoryDocument": "Document Processing",
+    "categoryVideo": "Video Processing",
+    "categoryFusion": "Fusion Retrieval",
+    "categoryCustom": "Other",
+    "builtIn": {
+      "imageRecognition": {
+        "name": "Image Recognition & Analysis",
+        "description": "Identifies objects, text, and scenes in images, including OCR text extraction.",
+        "instruction": "Use this tool to identify objects, text, or scenes in an image. Provide an accessible image URL to receive recognition results and confidence scores."
+      },
+      "speechToText": {
+        "name": "Speech to Text",
+        "description": "Transcribes audio into structured text with multilingual support and speaker diarization.",
+        "instruction": "Use this tool to transcribe audio or recordings into text, with multilingual recognition and speaker diarization."
+      },
+      "documentLayout": {
+        "name": "Document Layout Analysis",
+        "description": "Analyzes PDF and image layouts to identify paragraphs, tables, charts, headers, and footers.",
+        "instruction": "Use this tool to analyze the layout of PDF or image documents and identify structural elements."
+      },
+      "videoUnderstanding": {
+        "name": "Video Understanding",
+        "description": "Samples video frames to identify scenes, actions, people, and event timelines.",
+        "instruction": "Use this tool to understand video content through frame sampling, scene recognition, action detection, and timeline extraction."
+      },
+      "multimodalSearch": {
+        "name": "Multimodal Search",
+        "description": "Provides semantic search and similarity matching across text, images, and audio.",
+        "instruction": "Use this tool for semantic search across text, image, and audio content."
+      },
+      "dataExtraction": {
+        "name": "Intelligent Data Extraction",
+        "description": "Extracts key fields and structured data from documents, tables, forms, and invoices.",
+        "instruction": "Use this tool to extract structured data from unstructured documents using a target field schema."
+      }
+    },
+    "tags": {
+      "image": "Image", "ocr": "OCR", "recognition": "Recognition",
+      "speech": "Speech", "transcription": "Transcription", "asr": "ASR",
+      "document": "Document", "layout": "Layout", "structured": "Structured Data",
+      "video": "Video", "frameSampling": "Frame Sampling", "analysis": "Analysis",
+      "search": "Search", "fusion": "Fusion", "semantic": "Semantic",
+      "extraction": "Extraction"
+    },
+    "schemaDescriptions": {
+      "fileUrl": "Accessible file URL",
+      "tasks": "Recognition tasks",
+      "language": "Audio language, such as en-US",
+      "speakerDiarization": "Enable speaker diarization",
+      "outputFormat": "Output format",
+      "sampleRate": "Frame-sampling interval in seconds",
+      "modalities": "Modalities to search",
+      "topK": "Number of results to return",
+      "schema": "Fields to extract",
+      "documentType": "Document type"
+    }
+  },
+  "ecosystem": {
+    "adapterTypeDingtalk": "DingTalk",
+    "adapterTypeWechatWork": "WeCom",
+    "adapterTypeFeishu": "Feishu",
+    "adapterStatusConnected": "Connected",
+    "adapterStatusDisconnected": "Disconnected",
+    "adapterStatusError": "Error",
+    "adapterStatusPending": "Pending",
+    "adapterList": "Integration Adapters",
+    "adapterDesc": "Configure connections to external services.",
+    "businessDomainMarketplace": "Business Domain Marketplace",
+    "ecosystemManagementDesc": "Manage integration adapters and the domain marketplace",
+    "marketplaceDesc": "Explore domain templates, knowledge packages, and pretrained models.",
+    "marketplaceDomainTemplates": "Domain Templates",
+    "marketplaceDomainTemplatesDesc": "Reusable knowledge-management templates for specific industries.",
+    "marketplaceKnowledgePackages": "Knowledge Packages",
+    "marketplaceKnowledgePackagesDesc": "Prebuilt knowledge packages for common industry use cases.",
+    "marketplacePretrainedModels": "Pre-trained Models",
+    "marketplacePretrainedModelsDesc": "Pretrained AI models for specific domains.",
+    "marketplaceIndustrySolutions": "Industry Solutions",
+    "marketplaceIndustrySolutionsDesc": "End-to-end knowledge-management solutions for specific industries.",
+    "marketplaceComingSoonDesc": "More domain templates, knowledge packages, pretrained models, and industry solutions are coming soon.",
+    "comingSoon": "Coming Soon",
+    "futureTag": " (Coming Soon)",
+    "builtInAdapters": {
+      "adp": { "name": "ADP Adapter", "description": "ADP human resources data integration" },
+      "hiAgent": { "name": "HiAgent Adapter", "description": "HiAgent platform integration" },
+      "quickSight": { "name": "AWS QuickSight", "description": "AWS analytics platform integration" },
+      "gemini": { "name": "Gemini Adapter", "description": "Google Gemini model integration" },
+      "workBuddy": { "name": "WorkBuddy", "description": "WorkBuddy workflow integration" },
+      "claw": { "name": "Claw Adapter", "description": "Claw data-crawling platform integration" }
+    }
   }
 }

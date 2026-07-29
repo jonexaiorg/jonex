@@ -345,3 +345,98 @@ v1 `jonex_core/.../lightrag_adapter.py::LightRAGServerClient.query()`，生产�
 
 升级重放：(A) 保留 `_query_via_http` 的 chunk_ids 透传；(B) 保留 `get_chunk_by_id` 全链路 + action 注册；
 (C) get_document_chunks 若重构，按 TODO 用 `doc=` 锚点枚举 text_chunks 返回契约结构。
+
+
+---
+
+## 四、reparse_strict 补偿 cleanup 卡死修复（bugfix，TODO：rag-reparse-strict-cleanup-busy-plan）
+
+> 背景与根因见 `docs/rag-reparse-strict-cleanup-busy-plan.md`。现象：reparse_strict 推送时几个
+> chunk 失败 → 严格模式整体失败 → 补偿删除本次全部新 doc（如 258 个）；逐个删撞 LightRAG
+> 单 workspace busy 锁 + 每删触发 O(N) KG rebuild，删不完 → 任务卡 `current_step=cleanup`
+> → KB 对账 P0-J 守卫无限期 keep ingesting → 文档永久卡死。本次做 1-A/2-A/3-A 三项。
+
+### (1) 1-A：push 阶段终态 failed chunk 纳入有界重推
+
+| 文件 | 位置 | 说明 |
+|------|------|------|
+| `raganything/pipeline/stages.py` | `PushChunksStage.__init__` | 新增 `self._retry_terminal_failed`（env `RAG_PUSH_RETRY_TERMINAL_FAILED`，默认 true） |
+| `raganything/pipeline/stages.py` | `PushChunksStage.execute` per-chunk 重试循环 | track 终态 `failed` 的 chunk 不再立即判永久硬失败，复用 per-chunk 重试预算（`RAG_TRACK_PER_CHUNK_MAX_RETRIES`）与超时 chunk 一起重推，预算耗尽后才落 `terminal_hard_failed` |
+
+要点：降低「几个 chunk 抖动即整体失败 → 全量回滚」的放大；不重复累加计数、尊重 cancel_event、
+关闭开关即回退旧行为。
+
+### (2) 2-A：cleanup 整批删除 + 轮询窗口随量缩放
+
+| 文件 | 位置 | 说明 |
+|------|------|------|
+| `raganything/service/http_lightrag_client.py` | 新增 `delete_docs(doc_ids: list)` | 一次 DELETE 传全部 doc_ids，LightRAG 单 busy 会话内连删；含 busy 退避重试（`RAG_DELETE_BUSY_RETRIES`/`RAG_DELETE_BUSY_DELAY`） |
+| `raganything/service/task_manager.py` | `_run_cleanup` | 改为对每个 pending field 调一次 `delete_docs` 整批删除；整批受理即清空 pending，整批失败保留待兜底；日志打全（count/status/失败保留数） |
+| `raganything/service/task_manager.py` | `_poll_old_ids_gone` | 轮询窗口随 `len(old_ids)` 缩放（`RAG_CLEANUP_POLL_PER_DOC_SEC`，默认 2），避免大批量后台删除必然 poll 超时把 `current_step` 卡在 cleanup；补残留数日志 |
+
+### (3) 3-A 前置：暴露 cleanup 进度
+
+| 文件 | 位置 | 说明 |
+|------|------|------|
+| `raganything/service/models.py` | `TaskInfo.cleanup_total` | 新增字段：进入 cleanup 时的初始待删总量 |
+| `raganything/service/task_manager.py` | `_reparse_converge_old` / `_reparse_compensate` | 进入 cleanup 时设置 `task.cleanup_total` |
+| `atomic-rag-server-v2.py` | `handle_get_task_status` 返回体 | 新增 `cleanup_total` / `cleanup_pending_count`，供 KB 对账按删除量算动态超时 |
+
+> KB 侧配套改动（不在本文件）：`capabilities/knowledge_base/services/reconciliation_service.py`
+> `_handle_failed` 的 cleanup 守卫改为按量动态超时判死
+> （`RECONCILE_CLEANUP_BASE_SEC`/`RECONCILE_CLEANUP_PER_DOC_SEC`/`RECONCILE_CLEANUP_CEIL_SEC`）。
+
+### 新增环境变量（保守默认，行为向后兼容）
+
+| 变量 | 默认 | 作用 |
+|------|------|------|
+| `RAG_PUSH_RETRY_TERMINAL_FAILED` | true | 1-A：终态 failed chunk 是否重推 |
+| `RAG_CLEANUP_POLL_PER_DOC_SEC` | 2 | 2-A：cleanup 轮询窗口随删除量缩放系数 |
+
+### (4) review-fix：cleanup poll 超时残留不再乐观置 done/COMPLETED
+
+> Review 指出：`_run_cleanup` 整批受理即乐观清空 pending，若随后 `_poll_old_ids_gone` 超时仍有
+> 旧 doc 残留，原逻辑仍会把 `current_step` 切 `done` 并（调用方）置 COMPLETED → 旧数据残留却暴露
+> READY（违反 P0-3 读一致性）。
+
+| 文件 | 位置 | 说明 |
+|------|------|------|
+| `raganything/service/task_manager.py` | `_poll_old_ids_gone` | 改为**返回残留集合**（空=已收敛；查询失败/超时残留返回非空） |
+| `raganything/service/task_manager.py` | `_reparse_converge_old` | 返回 bool；poll 残留时恢复 `delete_pending_ids=残留`、保持 `current_step="cleanup"`、返回 False |
+| `raganything/service/task_manager.py` | `_execute_pipeline_http` reparse_strict 分支 | converge 未收敛（False）→ `_fail_task`（保持 cleanup）并 `return`，不进入本体抽取/不置 COMPLETED |
+| `raganything/service/task_manager.py` | `_resume_cleanup` converge 分支 | 重启续删后 poll 残留 → 同样 `_fail_task`（保持 cleanup），不置 COMPLETED |
+
+效果：旧 doc 未确认删净时任务落 FAILED 且 `current_step=cleanup` 保留 → KB 对账 3-A 动态超时兜底
+（据 `cleanup_total` 计时）→ 文档最终 FAILED、前端可见可重传；残留 orphan 交离线/清库处理。
+
+---
+
+## 十五、P0-1 dup-failed 三态判定（2026-07-29）
+
+> 根因：LightRAG 内容去重产生的 `dup-*` 文档被 track_status 标为 `failed`，
+> 但 atomic-rag stages 不区分「真失败」与「dup-failed」，全部计入 hard_failed →
+> strict_push 整体失败 → reparse 补偿删全量（如 2/1878 误判触发回滚 809）。
+> 修法三件套：1) client 透出 metadata + 新增 doc status 查询能力；
+> 2) stages 轮询层识别 dup 并按原件状态三态判定；
+> 3) dup_wait 保留轮询而非立即放过。
+
+### 15.1 TrackStatus 透出 metadata + 新增 get_document_status
+
+| 文件 | 位置 | 说明 |
+|------|------|------|
+| `raganything/service/http_lightrag_client.py` | `TrackStatus` dataclass | **新增** `doc_metadata: dict \| None = None` 字段，承载 LightRAG track_status 响应中文档的 `metadata`（含 `is_duplicate`、`original_doc_id`） |
+| 同上 | `_parse_track_status()` | 提取 `documents[].metadata`；failed 时填入第一个 failed doc 的 metadata |
+| 同上 | 新增 `get_document_status(doc_id, *, tenant_id, kb_id)` | GET `/documents/{doc_id}` → doc info dict（含 `status`）或 None；**依赖 LightRAG vendored 同路径端点**（`Reference/LightRAG/JONEX_CHANGES.md` §10.3）。None 返回附带 WARNING 日志防静默 no-op |
+| 同上 | `doc_exists()` | 同样改用 GET `/documents/{doc_id}`（原 HEAD 同一不存在的路径） |
+
+### 15.2 stages 轮询层 dup-failed 三态判定
+
+| 文件 | 位置 | 说明 |
+|------|------|------|
+| `raganything/pipeline/stages.py` | 新增 `_extract_dup_original_id(status)` | 从 `TrackStatus.doc_metadata.is_duplicate`(优先) 或 `error` 文本匹配 "Content already exists" 提取 `original_doc_id` |
+| 同上 | 新增 `_query_doc_status(http_client, doc_id, ...)` | 异步查 LightRAG 原件当前状态 → `"processed"` / `"pending"` / `"processing"` / `"failed"` / None |
+| 同上 | `PushChunksStage.run()` terminal 收集处 | 三态判定：原件 processed → 良性成功（不计 hard_failed）；原件 pending/processing → **保留在 polling 集合继续轮询**（等待原件完成，靠 per_chunk_timeout 收口）；原件 failed → 落入 hard_failed；原件查不到（None）→ 保守落入 hard_failed 并打 WARNING |
+
+### 15.3 依赖关系
+
+依赖 LightRAG vendored `GET /documents/{doc_id}` 端点。未部署该端点时，`get_document_status` 恒返回 None，dup 三态判定静默退化为 hard_failed（旧行为）。日志中会有 WARNING 提示。

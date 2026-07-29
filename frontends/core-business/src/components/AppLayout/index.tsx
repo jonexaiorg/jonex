@@ -1,9 +1,36 @@
-import { Outlet } from 'react-router-dom'
-import useDocumentTitle from '@/hooks/useDocumentTitle'
+import { useEffect } from 'react';
+import { Outlet } from 'react-router-dom';
+import useDocumentTitle from '@/hooks/useDocumentTitle';
+import { useStore } from '@/store';
+import { onSpaceChanged, onSpacesInvalidated } from '@jonex/shell-sdk';
+import RouteSync from '@/components/RouteSync';
 
 const AppLayout = () => {
-  useDocumentTitle()
-  return <Outlet />
-}
+  const { global } = useStore();
+  useDocumentTitle();
 
-export default AppLayout
+  useEffect(() => {
+    global.loadSpaces();
+
+    const unsubChanged = onSpaceChanged((spaceId) => {
+      global.setCurrentSpaceId(spaceId, { persist: false, broadcast: false });
+    });
+    const unsubInvalidated = onSpacesInvalidated(() => {
+      global.refreshSpaces();
+    });
+
+    return () => {
+      unsubChanged();
+      unsubInvalidated();
+    };
+  }, []);
+
+  return (
+    <>
+      <RouteSync />
+      <Outlet />
+    </>
+  );
+};
+
+export default AppLayout;

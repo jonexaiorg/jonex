@@ -1,5 +1,5 @@
 """
-[yuexi] WorkspaceRAGManager — per-workspace lazy-loaded LightRAG instance registry.
+[jonex] WorkspaceRAGManager — per-workspace lazy-loaded LightRAG instance registry.
 
 Extracted from lightrag_server.py to enable workspace-aware multi-tenancy
 in query/document/graph/Ollama endpoints. When RAG_WORKSPACE_ISOLATION is
@@ -7,7 +7,7 @@ enabled, each LIGHTRAG-WORKSPACE header value maps to a separate LightRAG
 instance (with isolated KV/vector/graph/doc_status storage). When disabled,
 all requests share the default instance (current behaviour).
 
-All changes tagged with # [yuexi] for easy identification when merging
+All changes tagged with # [jonex] for easy identification when merging
 upstream LightRAG updates.
 """
 
@@ -23,7 +23,7 @@ from lightrag.utils import logger
 
 def get_workspace_from_request(request: Request) -> Optional[str]:
     """
-    [yuexi] Extract workspace from HTTP request header.
+    [jonex] Extract workspace from HTTP request header.
 
     Checks the custom 'LIGHTRAG-WORKSPACE' header first. If absent and the
     WEBUI_WORKSPACE_SWITCHER debug flag is enabled, falls back to the
@@ -43,7 +43,7 @@ def get_workspace_from_request(request: Request) -> Optional[str]:
     """
     workspace = request.headers.get("LIGHTRAG-WORKSPACE", "").strip()
 
-    # [yuexi] Debug-only cookie fallback for the WebUI workspace switcher.
+    # [jonex] Debug-only cookie fallback for the WebUI workspace switcher.
     if not workspace and os.getenv(
         "WEBUI_WORKSPACE_SWITCHER", "false"
     ).strip().lower() == "true":
@@ -65,7 +65,7 @@ def get_workspace_from_request(request: Request) -> Optional[str]:
 
 class WorkspaceRAGManager:
     """
-    [yuexi] Lazy-loading registry of LightRAG instances keyed by workspace.
+    [jonex] Lazy-loading registry of LightRAG instances keyed by workspace.
 
     Responsibilities:
     - Maintains workspace(str) -> LightRAG cache (OrderedDict)
@@ -98,7 +98,7 @@ class WorkspaceRAGManager:
         self._max = max(1, max_size)
         self._isolation_enabled = isolation_enabled
         self._default = None
-        # [yuexi] Guards cache structure mutations (move_to_end / __setitem__ /
+        # [jonex] Guards cache structure mutations (move_to_end / __setitem__ /
         # pop) to prevent _evict_if_needed from finalizing an instance that a
         # concurrent get() just promoted to MRU. Residual narrow race: a
         # long-running query on workspace X may still hold a reference after X
@@ -111,18 +111,18 @@ class WorkspaceRAGManager:
         return self._isolation_enabled
 
     async def init_default(self):
-        """[yuexi] Create and initialize the default (pinned) LightRAG instance."""
+        """[jonex] Create and initialize the default (pinned) LightRAG instance."""
         self._default = self._build(self._default_ws)
         await self._default.initialize_storages()
         await self._default.check_and_migrate_data()
 
     def get_default(self):
-        """[yuexi] Return the default LightRAG instance (call init_default first)."""
+        """[jonex] Return the default LightRAG instance (call init_default first)."""
         return self._default
 
     async def get(self, workspace: Optional[str]):
         """
-        [yuexi] Get or create a LightRAG instance for the given workspace.
+        [jonex] Get or create a LightRAG instance for the given workspace.
 
         When isolation is disabled, always returns the default instance.
         When workspace is None/empty or equals the default workspace,
@@ -147,14 +147,14 @@ class WorkspaceRAGManager:
             async with self._eviction_lock:
                 self._cache[ws] = inst
 
-        # [yuexi] Evict OUTSIDE the per-ws lock to avoid lock nesting deadlock.
+        # [jonex] Evict OUTSIDE the per-ws lock to avoid lock nesting deadlock.
         # Eviction needs to acquire _locks[oldest_ws] to finalize storages safely,
         # and holding self._locks[ws] while acquiring another lock is a deadlock risk.
         await self._evict_if_needed(keep=ws)
         return inst
 
     async def _evict_if_needed(self, keep: str):
-        """[yuexi] Evict LRU instances if cache exceeds max size.
+        """[jonex] Evict LRU instances if cache exceeds max size.
 
         Cache structure reads and mutations are guarded by _eviction_lock to
         prevent racing with concurrent get() move_to_end / __setitem__.
@@ -184,12 +184,12 @@ class WorkspaceRAGManager:
                     logger.error(
                         f"Error finalizing evicted workspace '{oldest_ws}': {e}"
                     )
-            # [yuexi] Clean up the lock for this workspace so _locks doesn't
+            # [jonex] Clean up the lock for this workspace so _locks doesn't
             # grow without bound over the server lifetime.
             self._locks.pop(oldest_ws, None)
 
     async def finalize_all(self):
-        """[yuexi] Finalize all cached and default instances (shutdown)."""
+        """[jonex] Finalize all cached and default instances (shutdown)."""
         for ws, inst in list(self._cache.items()):
             try:
                 await inst.finalize_storages()

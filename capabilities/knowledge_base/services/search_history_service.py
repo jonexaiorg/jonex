@@ -1,9 +1,10 @@
-
+"""Search history service for Knowledge Base."""
 
 from typing import Any
 
 from jonex_core.common.database import get_db_session
 from jonex_core.common.exceptions import ResourceNotFoundError
+from jonex_core.common.i18n import translate
 from jonex_core.common.tenant import require_tenant
 
 from ..repository import KnowledgeSearchHistoryRepository
@@ -34,11 +35,13 @@ class SearchHistoryService:
                 knowledge_base_id=req.knowledge_base_id,
                 offset=offset,
                 limit=req.page_size,
+                domain_space_id=req.domain_space_id,
             )
             total = await repo.count_by_user(
                 tenant_id,
                 user_id,
                 knowledge_base_id=req.knowledge_base_id,
+                domain_space_id=req.domain_space_id,
             )
         return {
             "items": [item.to_dict() for item in items],
@@ -59,10 +62,13 @@ class SearchHistoryService:
         metadata = dict(data.pop("metadata", {}) or {})
         domain = data.pop("domain", None)
         domain_id = data.pop("domain_id", None)
+        domain_space_id = data.pop("domain_space_id", None)
         if domain:
             metadata["domain"] = domain
         if domain_id:
             metadata["domain_id"] = domain_id
+        if domain_space_id:
+            data["domain_space_id"] = domain_space_id
         data["extra_metadata"] = metadata
         async with get_db_session() as session:
             repo = KnowledgeSearchHistoryRepository(session)
@@ -85,26 +91,35 @@ class SearchHistoryService:
                 user_id,
                 req.knowledge_base_id,
                 history_id,
+                domain_space_id=req.domain_space_id,
             )
             if not deleted:
-                raise ResourceNotFoundError(message="搜索历史不存在")
+                raise ResourceNotFoundError(message=translate("err.search_history.not_found", fallback="搜索历史不存在")  )  # 原消息)
         return {"id": history_id, "deleted": True}
 
-    async def clear_history(self, tenant_id: str, user_id: str, request: SearchOverviewRequest | dict) -> dict:
+    async def clear_history(
+        self, tenant_id: str, user_id: str, request: SearchOverviewRequest | dict,
+    ) -> dict:
         tenant_id = require_tenant(tenant_id)
         req = SearchOverviewRequest(**_payload(request))
         async with get_db_session() as session:
             repo = KnowledgeSearchHistoryRepository(session)
-            deleted_count = await repo.clear_for_user(tenant_id, user_id, req.knowledge_base_id)
+            deleted_count = await repo.clear_for_user(
+                tenant_id, user_id, req.knowledge_base_id,
+                domain_space_id=req.domain_space_id,
+            )
         return {"deleted_count": deleted_count}
 
-    async def get_overview(self, tenant_id: str, user_id: str, request: SearchOverviewRequest | dict) -> dict:
+    async def get_overview(
+        self, tenant_id: str, user_id: str, request: SearchOverviewRequest | dict,
+    ) -> dict:
         req = SearchOverviewRequest(**_payload(request))
         history = await self.list_history(
             tenant_id,
             user_id,
             SearchHistoryListRequest(
                 knowledge_base_id=req.knowledge_base_id or "",
+                domain_space_id=req.domain_space_id,
                 page=1,
                 page_size=10,
             ),

@@ -1,6 +1,10 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""文件存储直连适配器（外部 S3 / MinIO，一期）。
 
-
+连接的是客户外部桶（与平台 object_storage 无关）。用 boto3（S3 兼容，
+MinIO 通过 endpoint_url 指向 MinIO 服务）。
+"""
 from __future__ import annotations
 
 import asyncio
@@ -9,6 +13,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from jonex_core.common.crypto import decrypt_secret
+from jonex_core.common.i18n import translate
 
 from .base import RemoteFile
 
@@ -20,19 +25,19 @@ class StorageIngestionAdapter:
         import boto3
         from botocore.config import Config
 
-        cred = decrypt_secret(cfg.get("credential_ref", ""))
+        cred = decrypt_secret(cfg.get("credential_ref", ""))  # "ak:sk"
         ak, _, sk = cred.partition(":")
         backend = (cfg.get("backend") or "").strip().lower()
         bucket = (cfg.get("bucket") or "").strip()
         endpoint = cfg.get("endpoint") or None
 
-
+        # 寻址风格：MinIO 必须 path-style；COS / AWS S3 必须 virtual-hosted。
         style = "path" if backend == "minio" else "virtual"
 
-
-
-
-
+        # COS/AWS（virtual 寻址）下，若用户把 endpoint 填成了「bucket 子域」式
+        # （https://<bucket>.cos.<region>.myqcloud.com），boto3 还会再拼一次 bucket，
+        # 造成 <bucket>.<bucket>... 重复。这里归一化：剥掉 bucket 子域得到区域端点，
+        # 让用户填「区域端点」或「bucket 子域端点」两种都可用。
         if style == "virtual" and endpoint and bucket:
             from urllib.parse import urlsplit, urlunsplit
 
@@ -44,7 +49,7 @@ class StorageIngestionAdapter:
 
         return boto3.client(
             "s3",
-            endpoint_url=endpoint,
+            endpoint_url=endpoint,  # MinIO: http(s)://host:9000；COS: https://cos.<region>.myqcloud.com 或 https://<bucket>.cos.<region>.myqcloud.com
             aws_access_key_id=ak or None,
             aws_secret_access_key=sk or None,
             region_name=cfg.get("region") or None,
@@ -54,8 +59,8 @@ class StorageIngestionAdapter:
     async def test_connection(self, cfg: dict[str, Any]) -> dict:
         try:
             files = await self.list_remote_files(cfg)
-            return {"ok": True, "message": "连接成功", "sample_count": len(files)}
-        except Exception as e:
+            return {"ok": True, "message": translate("success.connection", fallback="连接成功"), "sample_count": len(files)}
+        except Exception as e:  # noqa: BLE001
             return {"ok": False, "message": str(e)}
 
     async def list_remote_files(

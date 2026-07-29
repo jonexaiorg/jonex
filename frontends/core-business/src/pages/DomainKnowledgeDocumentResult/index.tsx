@@ -1,16 +1,7 @@
-import React, { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams } from 'react-router-dom'
-import {
-  Button,
-  Card,
-  Space,
-  Tag,
-  Tabs,
-  Spin,
-  Typography,
-  message,
-} from 'antd'
+import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Button, Card, Space, Tag, Tabs, Spin, Typography, message } from 'antd';
 import {
   ArrowLeftOutlined,
   FileTextOutlined,
@@ -19,89 +10,106 @@ import {
   FilePdfOutlined,
   BranchesOutlined,
   FileOutlined,
-} from '@ant-design/icons'
-import { getManualDocumentDetail, getOntologyEntityTypes, getOntologyRelationTypes, reparseDocument, retryDocumentOntology } from '@/api/domainKnowledge'
-import type { ManualDocItem, OntologyInstanceSummary, RelationInstanceSummary } from '@/types/domainKnowledge'
-import StageDetailCard from './StageDetailCard'
-import CompileResultPanel from './CompileResultPanel'
-import type { ProcessingStage } from './StageDetailCard'
+} from '@ant-design/icons';
+import {
+  getManualDocumentDetail,
+  getOntologyEntityTypes,
+  getOntologyRelationTypes,
+  reparseDocument,
+  retryDocumentOntology,
+  getDocumentViewTicket,
+} from '@/api/domainKnowledge';
+import type { ManualDocItem, OntologyInstanceSummary, RelationInstanceSummary } from '@/types/domainKnowledge';
+import StageDetailCard from './StageDetailCard';
+import CompileResultPanel from './CompileResultPanel';
+import type { ProcessingStage } from './StageDetailCard';
+import VideoPlayerModal from './VideoPlayerModal';
 
-const { Title } = Typography
+const { Title } = Typography;
 
 function getDocStatusText(t: (key: string) => string): Record<string, string> {
   return {
     compiled: t('domainKnowledge.docStatus.compiled'),
     parsing: t('domainKnowledge.docStatus.parsing'),
     pending: t('domainKnowledge.docStatus.pending'),
-  }
+  };
 }
 
 const DOC_STATUS_COLOR: Record<string, string> = {
   compiled: '#22c55e',
   parsing: '#3b82f6',
   pending: '#94a3b8',
-}
-
+};
 
 export default function DomainKnowledgeDocumentResult() {
-  const { t } = useTranslation()
-  const navigate = useNavigate()
-  const { id = '', docId = '' } = useParams<{ id: string; docId: string }>()
-  const [doc, setDoc] = useState<ManualDocItem | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState('parse')
-  const [activeSubNav, setActiveSubNav] = useState('ontology')
-  const [reparseLoading, setReparseLoading] = useState(false)
-  const [recompileLoading, setRecompileLoading] = useState(false)
-  const [entityTypes, setEntityTypes] = useState<OntologyInstanceSummary[] | null>(null)
-  const [relationTypes, setRelationTypes] = useState<RelationInstanceSummary[] | null>(null)
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { id = '', docId = '' } = useParams<{ id: string; docId: string }>();
+  const [doc, setDoc] = useState<ManualDocItem | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('parse');
+  const [activeSubNav, setActiveSubNav] = useState('ontology');
+  const [reparseLoading, setReparseLoading] = useState(false);
+  const [recompileLoading, setRecompileLoading] = useState(false);
+  const [entityTypes, setEntityTypes] = useState<OntologyInstanceSummary[] | null>(null);
+  const [relationTypes, setRelationTypes] = useState<RelationInstanceSummary[] | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string>('');
+  const [videoOpen, setVideoOpen] = useState(false);
 
   useEffect(() => {
-    if (!id || !docId) return
-    setLoading(true)
+    if (!id || !docId) return;
+    setLoading(true);
     getManualDocumentDetail(id, docId, t)
       .then(setDoc)
       .catch(() => message.error(t('domainKnowledge.documentDetailLoadFailed')))
-      .finally(() => setLoading(false))
+      .finally(() => setLoading(false));
 
     getOntologyEntityTypes(id)
       .then((res) => setEntityTypes(res.items))
-      .catch(() => {})
+      .catch(() => {});
 
     getOntologyRelationTypes(id)
       .then((res) => setRelationTypes(res.items))
-      .catch(() => {})
-  }, [id, docId, t])
+      .catch(() => {});
+  }, [id, docId, t]);
+
+  // 视频文档：页面加载时自动获取播放 URL
+  useEffect(() => {
+    if (!docId || doc?.mediaType !== 'video') return;
+    getDocumentViewTicket(docId)
+      .then(({ url }) => setVideoUrl(url))
+      .catch(() => {});
+  }, [docId, doc?.mediaType]);
 
   const handleReparse = async () => {
-    setReparseLoading(true)
+    setReparseLoading(true);
     try {
-      await reparseDocument(docId)
-      message.success(t('domainKnowledge.reparseTriggered'))
+      await reparseDocument(docId);
+      message.success(t('domainKnowledge.reparseTriggered'));
     } catch (err: any) {
-      message.error(err?.message || t('domainKnowledge.reparseFailed'))
+      message.error(err?.message || t('domainKnowledge.reparseFailed'));
     } finally {
-      setReparseLoading(false)
+      setReparseLoading(false);
     }
-  }
+  };
 
   const handleRecompile = async () => {
-    setRecompileLoading(true)
+    setRecompileLoading(true);
     try {
-      await retryDocumentOntology(id, docId)
-      message.success(t('domainKnowledge.recompileTriggered'))
+      await retryDocumentOntology(id, docId);
+      message.success(t('domainKnowledge.recompileTriggered'));
     } catch (err: any) {
-      message.error(err?.message || t('domainKnowledge.retryOntologyFailed'))
+      message.error(err?.message || t('domainKnowledge.retryOntologyFailed'));
     } finally {
-      setRecompileLoading(false)
+      setRecompileLoading(false);
     }
-  }
+  };
 
   const fileIcon = (type?: string) => {
-    const t = (type || '').toLowerCase()
-    if (t === 'pdf') return <FilePdfOutlined style={{ color: '#ef4444', fontSize: 32 }} />
-    return <FileTextOutlined style={{ color: '#3b82f6', fontSize: 32 }} />
-  }
+    const t = (type || '').toLowerCase();
+    if (t === 'pdf') return <FilePdfOutlined style={{ color: '#ef4444', fontSize: 32 }} />;
+    return <FileTextOutlined style={{ color: '#3b82f6', fontSize: 32 }} />;
+  };
 
   const stages: ProcessingStage[] = [
     {
@@ -114,9 +122,9 @@ export default function DomainKnowledgeDocumentResult() {
       label: t('domainKnowledge.stage.compileResult'),
       icon: <BranchesOutlined />,
     },
-  ]
+  ];
 
-  const activeStage = stages.find((s) => s.key === activeTab) || stages[0]
+  const activeStage = stages.find((s) => s.key === activeTab) || stages[0];
 
   const tabItems = stages.map((stage) => ({
     key: stage.key,
@@ -126,12 +134,31 @@ export default function DomainKnowledgeDocumentResult() {
         <span>{stage.label}</span>
       </Space>
     ),
-    children: stage.key === 'compile' ? (
-      <CompileResultPanel kbId={id} docId={docId} activeSubNav={activeSubNav} onSubNavChange={setActiveSubNav} entityTypes={entityTypes} relationTypes={relationTypes} />
-    ) : (
-      <StageDetailCard stage={stage} docId={docId} />
-    ),
-  }))
+    children:
+      stage.key === 'compile' ? (
+        <CompileResultPanel
+          kbId={id}
+          docId={docId}
+          activeSubNav={activeSubNav}
+          onSubNavChange={setActiveSubNav}
+          entityTypes={entityTypes}
+          relationTypes={relationTypes}
+        />
+      ) : (
+        <StageDetailCard
+          stage={stage}
+          docId={docId}
+          mediaType={doc?.mediaType}
+          onPlayVideo={() => {
+            if (!videoUrl) {
+              message.error(t('domainKnowledge.videoLoadFailed'));
+              return;
+            }
+            setVideoOpen(true);
+          }}
+        />
+      ),
+  }));
 
   return (
     <div style={{ padding: '0 0 24px' }}>
@@ -232,6 +259,8 @@ export default function DomainKnowledgeDocumentResult() {
           }}
         />
       </Spin>
+
+      <VideoPlayerModal open={videoOpen} videoUrl={videoUrl} onClose={() => setVideoOpen(false)} />
     </div>
-  )
+  );
 }

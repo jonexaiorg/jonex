@@ -1,12 +1,12 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 """
-TCADP platform dedicated API routes
+TCADP 平台专用 API 路由
 
-TCADP API plugin mode:
-- TCADP imports plugin definitions via OpenAPI YAML
-- TCADP directly invokes registered business routes
-- This file provides: authentication dependency + capability list + Webhook callback
+TCADP API 插件模式：
+- TCADP 通过 OpenAPI YAML 导入插件定义
+- TCADP 直接调用业务路由
+- 本文件提供：认证依赖 + 能力列表 + Webhook 回调
 """
 
 from typing import Optional, Dict, Any
@@ -19,23 +19,23 @@ from jonex_core.integrations.tcadp.auth import get_tcadp_auth
 
 logger = get_logger("api_tcadp")
 
-router = APIRouter(prefix="/tcadp", tags=["TCADP Integration"])
+router = APIRouter(prefix="/tcadp", tags=["TCADP 集成"])
 
 
-# ==================== Request model ====================
+# ==================== 请求模型 ====================
 class WebhookCallbackRequest(BaseModel):
-    """TCADP Webhook callback request"""
+    """TCADP Webhook 回调请求"""
     event_type: str
     data: Dict[str, Any]
     timestamp: int
 
 
-# ==================== Authentication dependency ====================
+# ==================== 认证依赖 ====================
 async def verify_tcadp_signature(request: Request) -> bool:
     """
-    FastAPI dependency: Verify TCADP request signature
+    FastAPI 依赖：验证 TCADP 请求签名
 
-    Usage:
+    用法：
     @router.post("/your-endpoint", dependencies=[Depends(verify_tcadp_signature)])
     """
     adapter = get_tcadp_adapter()
@@ -43,50 +43,58 @@ async def verify_tcadp_signature(request: Request) -> bool:
     method = request.method
     path = request.url.path
 
-    # Get request headers
+    # 获取请求头
     headers = {k.lower(): v for k, v in request.headers.items()}
 
-    # Get request body
+    # 获取请求体
     body = await request.body()
     body_str = body.decode("utf-8")
 
     if not adapter.verify_request_signature(method, path, headers, body_str):
-        logger.warning(f"TCADP Signature verification failed: {method} {path}")
-        raise HTTPException(status_code=401, detail="TCADP Signature verification failed")
+        logger.warning(f"TCADP 签名验证失败: {method} {path}")
+        raise HTTPException(status_code=401, detail="TCADP 签名验证失败")
 
     return True
 
 
-# ==================== API Interface ====================
-@router.get("/v1/capabilities", summary="List available TCADP capabilities")
+# ==================== API 接口 ====================
+@router.get("/v1/capabilities", summary="获取 TCADP 可用能力列表")
 async def list_tcadp_capabilities():
-    """Get all business capabilities currently exposed to TCADP."""
+    """
+    获取 TCADP 平台可用的所有能力列表
+
+    Returns:
+        能力列表及插件文件位置
+    """
     return {
         "code": 0,
         "message": "success",
-        "data": {"capabilities": [], "total": 0},
+        "data": {
+            "capabilities": [],
+            "total": 0,
+        },
     }
 
 
-@router.post("/v1/webhook/callback", summary="Receive TCADP Webhook callback")
+@router.post("/v1/webhook/callback", summary="接收 TCADP Webhook 回调")
 async def tcadp_webhook_callback(
     request: Request,
     callback_data: WebhookCallbackRequest,
 ):
     """
-    Receive TCADP platform Webhook callback notification
+    接收 TCADP 平台的 Webhook 回调通知
 
     Args:
-        request: FastAPI Request object
-        callback_data: Callback data
+        request: FastAPI 请求对象
+        callback_data: 回调数据
 
     Returns:
-        Response
+        响应
     """
-    logger.info(f"Received TCADP Webhook callback: event_type={callback_data.event_type}")
+    logger.info(f"收到 TCADP Webhook 回调: event_type={callback_data.event_type}")
 
     try:
-        # Verify Webhook signature
+        # 验证 Webhook 签名
         auth = get_tcadp_auth()
         headers = {k.lower(): v for k, v in request.headers.items()}
 
@@ -94,12 +102,13 @@ async def tcadp_webhook_callback(
         body_str = body.decode("utf-8")
 
         if not auth.verify_webhook_signature(headers, body_str):
-            logger.warning("Webhook Signature verification failed")
-            raise HTTPException(status_code=401, detail="Signature verification failed")
+            logger.warning("Webhook 签名验证失败")
+            raise HTTPException(status_code=401, detail="签名验证失败")
 
-        # TODO: Execute different business logic based on different event_type
+        # TODO: 根据不同的 event_type 执行不同的业务逻辑
+        # 例如: interview_completed, interview_failed, etc.
 
-        logger.info(f"Webhook callback processed successfully: {callback_data.event_type}")
+        logger.info(f"Webhook 回调处理成功: {callback_data.event_type}")
 
         return {
             "code": 0,
@@ -113,9 +122,9 @@ async def tcadp_webhook_callback(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Webhook callback processing exception: {e}")
+        logger.exception(f"Webhook 回调处理异常: {e}")
         return {
             "code": 500,
-            "message": f"Processing failed: {str(e)}",
+            "message": f"处理失败: {str(e)}",
             "data": None,
         }

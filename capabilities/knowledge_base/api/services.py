@@ -1,4 +1,6 @@
-
+"""
+知识库能力 — 领域服务 API 路由
+"""
 from fastapi import APIRouter, Query, Request
 
 from jonex_core.common.response import success_response, error_response
@@ -32,7 +34,7 @@ async def create_service(request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.create(tenant_id, body)
-        return success_response(data=result, message="Domain service created successfully")
+        return success_response(data=result, message="领域服务已创建")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -53,7 +55,7 @@ async def update_service(service_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.update(service_id, tenant_id, body)
-        return success_response(data=result, message="Domain service updated successfully")
+        return success_response(data=result, message="领域服务已更新")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -63,7 +65,7 @@ async def delete_service(service_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         await _service.delete(service_id, tenant_id)
-        return success_response(message="Domain service deleted successfully")
+        return success_response(message="领域服务已删除")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -73,7 +75,7 @@ async def rotate_service_api_key(service_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.rotate_api_key(service_id, tenant_id)
-        return success_response(data=result, message="API Key rotated successfully")
+        return success_response(data=result, message="API Key 已轮换")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -94,7 +96,7 @@ async def update_service_configs(service_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         await _service.update_configs(service_id, tenant_id, body.get("configs", {}))
-        return success_response(message="Service configuration updated successfully")
+        return success_response(message="服务配置已更新")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -115,7 +117,7 @@ async def create_service_api_key(service_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.create_api_key(service_id, tenant_id, body)
-        return success_response(data=result, message="API Key created successfully")
+        return success_response(data=result, message="API Key 已创建")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -125,7 +127,7 @@ async def delete_service_api_key(service_id: str, key_id: str, request: Request)
     tenant_id = extract_tenant_id(request)
     try:
         await _service.delete_api_key(key_id, service_id, tenant_id)
-        return success_response(message="API Key deleted successfully")
+        return success_response(message="API Key 已删除")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -146,7 +148,7 @@ async def set_service_permissions(service_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         await _service.set_permissions(service_id, tenant_id, body.get("permissions", []))
-        return success_response(message="Permissions updated successfully")
+        return success_response(message="权限已更新")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -157,7 +159,7 @@ async def search_service(
     service_id: str,
     query: str = Query(..., description="搜索关键词"),
 ):
-
+    """在指定领域服务中搜索"""
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.search(service_id, tenant_id, query)

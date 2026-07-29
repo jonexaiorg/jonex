@@ -1,9 +1,12 @@
-
+"""
+菜单管理服务。
+"""
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jonex_core.common.exceptions import ResourceNotFoundError
+from jonex_core.common.i18n import translate
 from capabilities.platform.models.menu import Menu
 from capabilities.platform.repository.menu_repository import MenuRepository
 from capabilities.platform.dtos.platform import (
@@ -17,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class MenuService:
-
+    """菜单管理服务"""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -50,13 +53,15 @@ class MenuService:
         )
         self.session.add(menu)
         await self.session.flush()
-        logger.info(f"Created menu: {menu.name} (id={menu.id})")
+        logger.info(f"创建菜单: {menu.name} (id={menu.id})")
         return MenuResponse.from_orm(menu)
 
     async def update(self, menu_id: int, req: MenuUpdateRequest) -> MenuResponse:
         menu = await self.repo.get_by_id_shared(menu_id)
         if not menu or menu.is_deleted:
-            raise ResourceNotFoundError(message=f"Menu not found: {menu_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.menu.not_found", params={"menu_id": str(menu_id)}, fallback=f"菜单不存在: {menu_id}")
+        )  # 原消息: 菜单不存在: {menu_id}
 
         update_data = req.dict(exclude_unset=True)
         for key, val in update_data.items():
@@ -67,6 +72,8 @@ class MenuService:
     async def delete(self, menu_id: int) -> None:
         menu = await self.repo.get_by_id_shared(menu_id)
         if not menu or menu.is_deleted:
-            raise ResourceNotFoundError(message=f"Menu not found: {menu_id}")
+            raise ResourceNotFoundError(
+            message=translate("err.menu.not_found", params={"menu_id": str(menu_id)}, fallback=f"菜单不存在: {menu_id}")
+        )  # 原消息: 菜单不存在: {menu_id}
         await self.repo.delete_soft_shared(menu)
-        logger.info(f"Deleted menu: {menu.name} (id={menu.id})")
+        logger.info(f"删除菜单: {menu.name} (id={menu.id})")

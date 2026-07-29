@@ -629,6 +629,8 @@ class MongoDocStatusStorage(DocStatusStorage):
         page_size: int = 50,
         sort_field: str = "updated_at",
         sort_direction: str = "desc",
+        doc_id: str | None = None,
+        file_path: str | None = None,
     ) -> tuple[list[tuple[str, DocProcessingStatus]], int]:
         """Get documents with pagination support
 
@@ -638,6 +640,9 @@ class MongoDocStatusStorage(DocStatusStorage):
             page_size: Number of documents per page (10-200)
             sort_field: Field to sort by ('created_at', 'updated_at', '_id')
             sort_direction: Sort direction ('asc' or 'desc')
+            doc_id: [jonex] Filter by client-side document id via the ``doc=<id>|``
+                anchor in file_path (file_source). None = no filter.
+            file_path: [jonex] Filter by exact file_path. None = no filter.
 
         Returns:
             Tuple of (list of (doc_id, DocProcessingStatus) tuples, total_count)
@@ -660,6 +665,16 @@ class MongoDocStatusStorage(DocStatusStorage):
         query_filter = {}
         if status_filter is not None:
             query_filter["status"] = status_filter.value
+
+        # [jonex] Document-scope filter. Exact file_path is the stronger condition and
+        # takes precedence; otherwise match the file_source anchor `doc=<id>|` via regex
+        # (re.escape guards the regex-special `|`). Single file_path key => no clash.
+        if file_path:
+            query_filter["file_path"] = file_path
+        elif doc_id:
+            import re
+
+            query_filter["file_path"] = {"$regex": re.escape(f"doc={doc_id}|")}
 
         # Get total count
         total_count = await self._data.count_documents(query_filter)

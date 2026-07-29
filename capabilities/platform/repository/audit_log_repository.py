@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import List, Optional, Sequence
 
-from sqlalchemy import select, func, desc, or_, delete
+from sqlalchemy import select, func, desc, distinct, or_, delete
 
 from jonex_core.common.tenant import require_tenant
 
@@ -103,7 +103,7 @@ class AuditLogRepository(BaseRepository[AuditLog]):
         return result.scalar() or 0
 
     async def add_all(self, entries: List[AuditLog]):
-
+        """批量写入"""
         self.session.add_all(entries)
 
     async def list_system_events(
@@ -155,17 +155,38 @@ class AuditLogRepository(BaseRepository[AuditLog]):
         return result.scalar() or 0
 
     async def get_by_id_with_detail(self, log_id: int) -> Optional[AuditLog]:
-
+        """获取单条完整详情（含 response_body / error_stack）"""
         result = await self.session.execute(
             select(AuditLog).where(AuditLog.id == log_id)
         )
         return result.scalar_one_or_none()
 
     async def delete_expired(self, retention_days: int) -> int:
-
+        """删除超过保留天数的过期记录，返回删除条数"""
         cutoff = datetime.utcnow() - timedelta(days=retention_days)
         result = await self.session.execute(
             delete(AuditLog).where(AuditLog.created_at < cutoff)
         )
         await self.session.commit()
         return result.rowcount
+
+    async def list_distinct_actions(self, tenant_id: str) -> list[str]:
+        """查询当前租户所有已使用的操作类型（去重后按字母排序）。"""
+        tenant_id = require_tenant(tenant_id)
+        result = await self.session.execute(
+            select(distinct(AuditLog.action))
+            .where(AuditLog.tenant_id == tenant_id)
+            .order_by(AuditLog.action)
+        )
+        return list(result.scalars().all())
+
+    async def list_distinct_resources(self, tenant_id: str) -> list[str]:
+        """查询当前租户所有已使用的资源类型（去重后按字母排序）。"""
+        tenant_id = require_tenant(tenant_id)
+        result = await self.session.execute(
+            select(distinct(AuditLog.resource))
+            .where(AuditLog.tenant_id == tenant_id)
+            .where(AuditLog.resource.isnot(None))
+            .order_by(AuditLog.resource)
+        )
+        return list(result.scalars().all())

@@ -1,4 +1,6 @@
-
+"""
+业务领域 — 引擎管理模型（数据接入/解析器/模型供应商）
+"""
 import uuid
 
 from sqlalchemy import Column, Integer, String
@@ -68,7 +70,7 @@ class ModelProvider(TenantMixin, TimestampMixin, SoftDeleteMixin, Base):
     token_limit = Column(Integer)
     latency_ms = Column(Integer)
     call_count = Column(Integer, default=0)
-    success_rate = Column(Integer, default=0)
+    success_rate = Column(Integer, default=0)  # 0-100
     status = Column(String(32), default="active")
     config_json = Column(JSONB, default=dict)
 

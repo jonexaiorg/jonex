@@ -1,38 +1,146 @@
-import React from 'react'
-import { Input, Button, Table, Tag, Select } from 'antd'
-import { SearchOutlined, PlusOutlined, EditOutlined, UserOutlined } from '@ant-design/icons'
-
-const tenants = [
-  { name: '金融科技有限公司', contact: '李明', email: 'liming@fintech.com', spaces: 3, users: 25, status: '启用' },
-  { name: '医疗健康集团', contact: '王芳', email: 'wangfang@med.com', spaces: 2, users: 18, status: '启用' },
-  { name: '智造科技有限公司', contact: '赵强', email: 'zhaoq@smartmfg.com', spaces: 1, users: 12, status: '启用' },
-  { name: '教育投资集团', contact: '孙丽', email: 'sunli@edu.com', spaces: 1, users: 8, status: '已欠费' },
-  { name: '法律咨询服务所', contact: '周磊', email: 'zhoulei@law.com', spaces: 2, users: 15, status: '启用' },
-  { name: '供应链管理集团', contact: '吴涛', email: 'wutao@scm.com', spaces: 1, users: 6, status: '启用' },
-  { name: '人力资源服务中心', contact: '郑红', email: 'zhengh@hr.com', spaces: 1, users: 10, status: '已欠费' },
-]
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Input, Button, Table, Tag, Spin, Result } from 'antd';
+import { SearchOutlined, PlusOutlined, EditOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import { listTenants, type TenantItem } from '../../api/tenants';
+import { tenantDisplay } from '../../utils/tenantDisplay';
+import TenantFormModal, { type TenantFormModalRef } from './TenantFormModal';
 
 export default function TenantManagement() {
+  const { t } = useTranslation();
+  const [tenants, setTenants] = useState<TenantItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const modalRef = useRef<TenantFormModalRef>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await listTenants();
+      setTenants(r.items);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : t('common.loadFailed'));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filtered = tenants.filter((tenant) => {
+    const display = tenantDisplay(tenant, t);
+    return (
+      !search ||
+      `${display.name} ${display.description} ${tenant.name} ${tenant.id}`.toLowerCase().includes(search.toLowerCase())
+    );
+  });
+
+  const openCreate = () => modalRef.current?.openCreate();
+  const openEdit = (item: TenantItem) => modalRef.current?.openEdit(item);
+
+  const planLabel = (v: string) => {
+    if (v === 'free') return t('tenantManagement.planFree');
+    if (v === 'pro') return t('tenantManagement.planPro');
+    if (v === 'enterprise') return t('tenantManagement.planEnterprise');
+    return v;
+  };
+
   const columns = [
-    { title: '租户名称', dataIndex: 'name', key: 'name', render: (v: string) => <a className="yx-table-action">{v}</a> },
-    { title: '联系人', dataIndex: 'contact', key: 'contact' },
-    { title: '邮箱', dataIndex: 'email', key: 'email' },
-    { title: '空间数', dataIndex: 'spaces', key: 'spaces', width: 80 },
-    { title: '用户数', dataIndex: 'users', key: 'users', width: 80 },
-    { title: '状态', dataIndex: 'status', key: 'status', width: 90, render: (v: string) => <Tag color={v === '启用' ? 'success' : 'warning'}>{v}</Tag> },
-    { title: '操作', key: 'actions', width: 120, render: () => <span><a className="yx-table-action">编辑</a><a className="yx-table-action" style={{ marginLeft: 8 }}>管理</a></span> },
-  ]
+    { title: t('tenantManagement.tenantId'), dataIndex: 'id', key: 'id', width: 180 },
+    {
+      title: t('tenantManagement.name'),
+      dataIndex: 'name',
+      key: 'name',
+      render: (_: string, tenant: TenantItem) => <a className="yx-table-action">{tenantDisplay(tenant, t).name}</a>,
+    },
+    {
+      title: t('tenantManagement.description'),
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+      render: (_: string | null, tenant: TenantItem) => tenantDisplay(tenant, t).description,
+    },
+    {
+      title: t('tenantManagement.plan'),
+      dataIndex: 'plan_type',
+      key: 'plan_type',
+      width: 80,
+      render: (v: string) => planLabel(v),
+    },
+    {
+      title: t('common.status'),
+      dataIndex: 'status',
+      key: 'status',
+      width: 80,
+      render: (v: number) => (
+        <Tag color={v === 1 ? 'success' : 'warning'}>{v === 1 ? t('status.enabled') : t('status.disabled')}</Tag>
+      ),
+    },
+    {
+      title: t('common.actions'),
+      key: 'actions',
+      width: 100,
+      render: (_: unknown, r: TenantItem) => (
+        <a className="yx-table-action" onClick={() => openEdit(r)}>
+          <EditOutlined /> {t('common.edit')}
+        </a>
+      ),
+    },
+  ];
+
+  if (loading)
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', minHeight: 300, alignItems: 'center' }}>
+        <Spin size="large" />
+      </div>
+    );
+  if (error)
+    return (
+      <Result
+        status="error"
+        title={t('common.loadFailed')}
+        subTitle={error}
+        extra={
+          <Button type="primary" onClick={load}>
+            {t('common.retry')}
+          </Button>
+        }
+      />
+    );
 
   return (
     <div>
-      <div className="yx-page-title"><h1>租户管理</h1></div>
+      <div className="yx-page-title">
+        <h1>{t('tenantManagement.title')}</h1>
+      </div>
       <div className="yx-card">
         <div className="yx-toolbar">
-          <Input prefix={<SearchOutlined />} placeholder="搜索租户..." style={{ width: 240 }} />
-          <Button type="primary" icon={<PlusOutlined />}>新建租户</Button>
+          <Input
+            prefix={<SearchOutlined />}
+            placeholder={t('tenantManagement.searchTenants')}
+            style={{ width: 240 }}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            allowClear
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            {t('tenantManagement.createTenant')}
+          </Button>
         </div>
-        <Table columns={columns} dataSource={tenants} rowKey="name" pagination={{ total: 7, pageSize: 10 }} size="middle" />
+        <Table
+          columns={columns}
+          dataSource={filtered}
+          rowKey="id"
+          pagination={{ total: filtered.length, pageSize: 10 }}
+          size="middle"
+        />
       </div>
+
+      <TenantFormModal ref={modalRef} onSaved={load} />
     </div>
-  )
+  );
 }

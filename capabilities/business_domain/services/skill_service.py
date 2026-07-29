@@ -1,4 +1,6 @@
-
+"""
+业务领域 — AI Skill MCP 化 服务
+"""
 import uuid
 
 from jonex_core.common import get_db_session
@@ -11,7 +13,7 @@ from capabilities.business_domain.repository.skill_repository import (
 
 
 class SkillService:
-
+    """AI Skill MCP 化 服务 — 租户只做启用/停用"""
 
     async def list(
         self,
@@ -60,7 +62,7 @@ class SkillService:
         return await self._set_status(tenant_id, skill_id, "disabled")
 
     async def list_enabled_mcp_tools(self, tenant_id: str) -> dict:
-
+        """内部 AI 编排接口：返回租户已启用 Skill 的 MCP 工具定义"""
         tenant_id = require_tenant(tenant_id)
         async with get_db_session() as session:
             catalog_repo = SkillCatalogRepository(session)

@@ -1,38 +1,38 @@
-import React from 'react'
-import { Input, Button, Table, Tag, message, Card } from 'antd'
-import { SearchOutlined, ThunderboltOutlined, ReloadOutlined } from '@ant-design/icons'
-import { colors, radius } from '@jonex/platform-theme/tokens'
-import type { CompileTask } from '../../types/management'
-
-const initialTasks: CompileTask[] = []
-
-const statusConfig: Record<string, { color: string; label: string }> = {
-  running: { color: 'processing', label: '运行中' },
-  completed: { color: 'success', label: '已完成' },
-  failed: { color: 'error', label: '失败' },
-  pending: { color: 'default', label: '等待中' },
-}
+import React from 'react';
+import { Input, Button, Table, Tag, message, Card } from 'antd';
+import { SearchOutlined, ThunderboltOutlined, ReloadOutlined } from '@ant-design/icons';
+import { colors, radius } from '@jonex/platform-theme/tokens';
+import { MOCK_COMPILE_TASKS, type CompileTask } from '../../data/mock';
+import { useTranslation } from 'react-i18next';
 
 export default function KnowledgeCompileCompile() {
-  const [tasks, setTasks] = React.useState<CompileTask[]>(initialTasks)
-  const [search, setSearch] = React.useState('')
+  const { t } = useTranslation();
+  const [tasks, setTasks] = React.useState<CompileTask[]>(MOCK_COMPILE_TASKS);
+  const [search, setSearch] = React.useState('');
 
-  const filtered = tasks.filter(
-    (t) => t.name.includes(search) || t.type.includes(search),
-  )
+  const statusConfig: Record<string, { color: string; label: string }> = {
+    running: { color: 'processing', label: t('status.running') },
+    completed: { color: 'success', label: t('status.completed') },
+    failed: { color: 'error', label: t('status.failed') },
+    pending: { color: 'default', label: t('status.pending') },
+  };
+
+  const filtered = tasks.filter((t) => t.name.includes(search) || t.type.includes(search));
 
   const handleTrigger = (id: string) => {
     setTasks((prev) =>
       prev.map((t) =>
-        t.id === id ? { ...t, status: 'running' as const, updatedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') } : t,
+        t.id === id
+          ? { ...t, status: 'running' as const, updatedAt: new Date().toISOString().slice(0, 16).replace('T', ' ') }
+          : t,
       ),
-    )
-    message.success('编译任务已触发')
-  }
+    );
+    message.success(t('knowledgeCompile.compileTriggered'));
+  };
 
   const columns = [
     {
-      title: '任务名称',
+      title: t('knowledgeCompile.taskName'),
       dataIndex: 'name',
       key: 'name',
       render: (v: string, record: CompileTask) => (
@@ -43,40 +43,44 @@ export default function KnowledgeCompileCompile() {
       ),
     },
     {
-      title: '状态',
+      title: t('common.status'),
       dataIndex: 'status',
       key: 'status',
       width: 90,
       render: (v: string) => {
-        const cfg = statusConfig[v] || { color: 'default', label: v }
-        return <span className="yx-status-badge"><Tag color={cfg.color}>{cfg.label}</Tag></span>
+        const cfg = statusConfig[v] || { color: 'default', label: v };
+        return (
+          <span className="yx-status-badge">
+            <Tag color={cfg.color}>{cfg.label}</Tag>
+          </span>
+        );
       },
     },
     {
-      title: '实体数',
+      title: t('knowledgeCompile.entityCount'),
       dataIndex: 'entityCount',
       key: 'entityCount',
       render: (v: number) => v.toLocaleString(),
     },
     {
-      title: '关系数',
+      title: t('knowledgeCompile.relationCount'),
       dataIndex: 'relationCount',
       key: 'relationCount',
       render: (v: number) => v.toLocaleString(),
     },
     {
-      title: 'Chunk 数',
+      title: t('knowledgeCompile.chunkCount'),
       dataIndex: 'chunkCount',
       key: 'chunkCount',
       render: (v: number) => v.toLocaleString(),
     },
     {
-      title: '更新时间',
+      title: t('knowledgeCompile.updatedAt'),
       dataIndex: 'updatedAt',
       key: 'updatedAt',
     },
     {
-      title: '操作',
+      title: t('common.actions'),
       key: 'actions',
       width: 180,
       render: (_: unknown, record: CompileTask) => (
@@ -88,27 +92,27 @@ export default function KnowledgeCompileCompile() {
             onClick={() => handleTrigger(record.id)}
             disabled={record.status === 'running'}
           >
-            触发编译
+            {t('knowledgeCompile.triggerCompile')}
           </Button>
           <Button
             size="small"
             icon={<ReloadOutlined />}
-            onClick={() => message.info(`重试「${record.name}」`)}
+            onClick={() => message.info(t('knowledgeCompile.compileRetry', { name: record.name }))}
             disabled={record.status !== 'failed'}
           >
-            重试
+            {t('common.retry')}
           </Button>
         </div>
       ),
     },
-  ]
+  ];
 
   return (
     <div>
       <div className="yx-page-title">
-        <h1>编译管理</h1>
+        <h1>{t('knowledgeCompile.compileTitle')}</h1>
         <p style={{ color: colors.textSecondary, margin: '4px 0 0', fontSize: 14 }}>
-          管理知识库编译任务，触发全量或增量编译
+          {t('knowledgeCompile.compileDesc')}
         </p>
       </div>
 
@@ -116,13 +120,13 @@ export default function KnowledgeCompileCompile() {
         <div className="yx-toolbar" style={{ flexWrap: 'wrap' }}>
           <Input
             prefix={<SearchOutlined />}
-            placeholder="搜索编译任务..."
+            placeholder={t('knowledgeCompile.searchTasks')}
             style={{ width: 240 }}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <Button type="primary" icon={<ThunderboltOutlined />}>
-            新建编译任务
+            {t('knowledgeCompile.newCompileTask')}
           </Button>
         </div>
         <Table
@@ -134,5 +138,5 @@ export default function KnowledgeCompileCompile() {
         />
       </div>
     </div>
-  )
+  );
 }

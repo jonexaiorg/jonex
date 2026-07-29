@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-"""Qwen LLM adapter
+"""通义千问 LLM 适配器
 
-Integrates with Alibaba Cloud Qwen API, provides text generation and vector search capability.
+对接阿里云通义千问 API，提供文本生成和向量检索能力。
 """
 
 from typing import Any, Dict, List, Optional
@@ -11,47 +11,48 @@ from jonex_core.capability.atomic.llm.base_llm import BaseLLMCapability
 from jonex_core.capability.models import CapabilityRequest, CapabilityResponse, CapabilityMetadata, CapabilityType
 from jonex_core.common import get_config, get_logger
 from jonex_core.common.exceptions import CapabilityInvokeError, InvalidParameterError
+from jonex_core.common.i18n import translate
 
 logger = get_logger("atomic.llm.qwen")
 
 
 class QwenLLMCapability(BaseLLMCapability):
-    """Qwen LLM capability adapter"""
+    """通义千问 LLM 能力适配器"""
 
     def _build_metadata(self) -> CapabilityMetadata:
-        """Build capabilityMetadata"""
+        """构建能力元数据"""
         return CapabilityMetadata(
             capability_id="llm.qwen",
-            capability_name="Qwen LLM",
+            capability_name="通义千问 LLM",
             capability_type=CapabilityType.ATOMIC,
             version="v1",
-            description="Alibaba Cloud Qwen large language model, supports text generation and vector search",
+            description="阿里云通义千问大模型，支持文本生成和向量检索",
             tags=["llm", "qwen", "embedding"],
         )
 
     async def validate_input(self, request: CapabilityRequest) -> bool:
-        """Validate input parameters"""
+        """验证输入参数"""
         if not request.payload:
-            raise InvalidParameterError(message="LLM Request payload cannot be empty")
+            raise InvalidParameterError(message=translate("err.llm.payload_required", fallback="LLM 请求 payload 不能为空"))
 
         action = request.payload.get("action", "chat")
 
         if action == "chat":
             if "messages" not in request.payload:
-                raise InvalidParameterError(message="chat mode must provide messages parameter")
+                raise InvalidParameterError(message=translate("err.capability.missing_action_param", params={"action": "chat", "param": "messages"}, fallback="chat 模式必须提供 messages 参数"))
         elif action == "embedding":
             if "text" not in request.payload:
-                raise InvalidParameterError(message="embedding mode must provide text parameter")
+                raise InvalidParameterError(message=translate("err.capability.missing_action_param", params={"action": "embedding", "param": "text"}, fallback="embedding 模式必须提供 text 参数"))
         elif action == "summarize":
             if "content" not in request.payload:
-                raise InvalidParameterError(message="summarize mode must provide content parameter")
+                raise InvalidParameterError(message=translate("err.capability.missing_action_param", params={"action": "summarize", "param": "content"}, fallback="summarize 模式必须提供 content 参数"))
         else:
-            raise InvalidParameterError(message=f"Unsupported action: {action}")
+            raise InvalidParameterError(message=translate("err.capability.unsupported_action", params={"action": action}, fallback=f"不支持的 action: {action}"))
 
         return True
 
     async def execute(self, request: CapabilityRequest) -> CapabilityResponse:
-        """Execute LLM capability invocation"""
+        """执行 LLM 能力调用"""
         await self.validate_input(request)
 
         action = request.payload.get("action", "chat")
@@ -65,7 +66,7 @@ class QwenLLMCapability(BaseLLMCapability):
                 return CapabilityResponse.ok(
                     request_id=request.request_id,
                     data={"result": result},
-                    message="LLM chat invocation success",
+                    message="LLM 对话调用成功",
                 )
             elif action == "embedding":
                 text = request.payload["text"]
@@ -73,7 +74,7 @@ class QwenLLMCapability(BaseLLMCapability):
                 return CapabilityResponse.ok(
                     request_id=request.request_id,
                     data={"vector": vector},
-                    message="Text vectorization success",
+                    message="文本向量化成功",
                 )
             elif action == "summarize":
                 content = request.payload["content"]
@@ -81,12 +82,12 @@ class QwenLLMCapability(BaseLLMCapability):
                 return CapabilityResponse.ok(
                     request_id=request.request_id,
                     data={"summary": summary},
-                    message="Text summary generation success",
+                    message="文本摘要生成成功",
                 )
         except Exception as e:
-            logger.error(f"Qwen invocation failed: {e}")
+            logger.error(f"通义千问调用失败: {e}")
             raise CapabilityInvokeError(
-                message=f"Qwen invocation failed: {str(e)}",
+                message=translate("err.llm.invoke_failed", fallback="LLM 调用失败"),
                 details={"action": action},
                 cause=e,
             )
@@ -98,19 +99,19 @@ class QwenLLMCapability(BaseLLMCapability):
         max_tokens: Optional[int] = None,
     ) -> str:
         """
-        Chat completion interface
+        聊天补全接口
 
-        Note: Currently a mock implementation. In actual deployment, connect to the real Qwen API.
+        注意：当前为 mock 实现，实际部署时需要接入真实的通义千问 API。
         """
         config = get_config()
 
-        # Mock implementation: return simulated response
+        # Mock 实现：返回模拟响应
         if config.ENV == "dev":
-            logger.warning("Using mock mode to invoke Qwen, please configure real API Key in production environment")
+            logger.warning("使用 Mock 模式调用通义千问，请在生产环境配置真实 API Key")
             last_message = messages[-1]["content"] if messages else ""
-            return f"[Mock Qwen Response] Received message: {last_message[:50]}... (simulated response)"
+            return f"[Mock Qwen 响应] 收到消息：{last_message[:50]}...（模拟响应）"
 
-        # TODO: Connect to real Qwen API
+        # TODO: 接入真实的通义千问 API
         # import dashscope
         # response = dashscope.Generation.call(
         #     model=dashscope.Generation.Models.qwen_turbo,
@@ -119,28 +120,28 @@ class QwenLLMCapability(BaseLLMCapability):
         # )
         # return response["output"]["text"]
 
-        raise CapabilityInvokeError(message="Qwen API not configured")
+        raise CapabilityInvokeError(message=translate("err.capability.service_not_configured", params={"service_name": "通义千问 API"}, fallback="通义千问 API 未配置"))
 
     async def embedding(self, text: str) -> List[float]:
         """
-        Text vectorization interface
+        文本向量化接口
 
-        Note: Currently a mock implementation. In actual deployment, connect to the real API.
+        注意：当前为 mock 实现，实际部署时需要接入真实 API。
         """
         config = get_config()
 
         if config.ENV == "dev":
-            # Mock implementation: return random vector
+            # Mock 实现：返回随机向量
             import random
             return [random.uniform(-1, 1) for _ in range(1536)]
 
-        # TODO: Connect to real Qwen Embedding API
-        raise CapabilityInvokeError(message="Qwen Embedding API Not configured")
+        # TODO: 接入真实的通义千问 Embedding API
+        raise CapabilityInvokeError(message=translate("err.capability.service_not_configured", params={"service_name": "通义千问 Embedding API"}, fallback="通义千问 Embedding API 未配置"))
 
     async def _summarize(self, content: str) -> str:
-        """Text summary generation"""
+        """文本摘要生成"""
         messages = [
-            {"role": "system", "content": "Please generate a concise summary for the following content, within 200 characters."},
+            {"role": "system", "content": "请为以下内容生成简洁的摘要，控制在200字以内。"},
             {"role": "user", "content": content},
         ]
         return await self.chat_completion(messages, temperature=0.3)

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-"""Abstract base class for vector retrieval capabilities."""
+"""向量检索抽象基类"""
 
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional
@@ -10,19 +10,19 @@ from jonex_core.capability.models import CapabilityRequest, CapabilityResponse
 
 
 class BaseVectorCapability(AtomicCapability):
-    """Abstract base class for vector retrieval capabilities.
+    """向量检索抽象基类
 
-    All vector database adapters must inherit from this class.
+    所有向量数据库适配器必须继承此类。
     """
 
     @abstractmethod
     async def validate_input(self, request: CapabilityRequest) -> bool:
-        """Validate vector retrieval input parameters."""
+        """验证向量检索输入参数"""
         pass
 
     @abstractmethod
     async def execute(self, request: CapabilityRequest) -> CapabilityResponse:
-        """Execute a vector retrieval capability request."""
+        """执行向量检索调用"""
         pass
 
     @abstractmethod
@@ -33,15 +33,15 @@ class BaseVectorCapability(AtomicCapability):
         metadatas: Optional[List[Dict[str, Any]]] = None,
     ) -> bool:
         """
-        Insert vector data
+        插入向量数据
 
         Args:
-            collection_name: Collection name
-            vectors: Vector array
-            metadatas: Metadata array (one-to-one with vectors)
+            collection_name: 集合名称
+            vectors: 向量数组
+            metadatas: 元数据数组（与 vectors 一一对应）
 
         Returns:
-            bool: Whether insertedSuccess
+            bool: 是否插入成功
         """
         pass
 
@@ -53,28 +53,28 @@ class BaseVectorCapability(AtomicCapability):
         top_k: int = 10,
     ) -> List[Dict[str, Any]]:
         """
-        Search for similar vectors.
+        向量相似度检索
 
         Args:
-            collection_name: Collection name
-            query_vector: Query vector
-            top_k: Result count
+            collection_name: 集合名称
+            query_vector: 查询向量
+            top_k: 返回结果数量
 
         Returns:
-            List[Dict]: Search results containing id, score, metadata, and other fields
+            List[Dict]: 检索结果列表，包含 id、score、metadata 等
         """
         pass
 
     @abstractmethod
     async def delete(self, collection_name: str, ids: List[str]) -> bool:
         """
-        Delete vector data.
+        删除向量数据
 
         Args:
-            collection_name: Collection name
-            ids: IDs to delete
+            collection_name: 集合名称
+            ids: 待删除的 ID 列表
 
         Returns:
-            bool: Whether deletion succeeded
+            bool: 是否删除成功
         """
         pass

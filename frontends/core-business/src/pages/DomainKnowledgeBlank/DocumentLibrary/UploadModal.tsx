@@ -1,68 +1,55 @@
-import React, { useState, useEffect } from 'react'
-import { Modal, Upload, Select, Space, message } from 'antd'
-import type { UploadProps } from 'antd/es/upload'
-import {
-  PlusOutlined,
-  CloudUploadOutlined,
-  ExclamationCircleOutlined,
-} from '@ant-design/icons'
-import { useTranslation } from 'react-i18next'
-import { uploadManualDocument, getFolderList } from '@/api/domainKnowledge'
-import { ACCEPT_EXTENSIONS } from '@/constants/upload'
-import type { FolderItem } from '@/types/domainKnowledge'
+import React, { useState, useEffect } from 'react';
+import { Modal, Upload, Select, Space, message } from 'antd';
+import type { UploadProps } from 'antd/es/upload';
+import { PlusOutlined, CloudUploadOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import { uploadManualDocument, getFolderList } from '@/api/domainKnowledge';
+import { ACCEPT_EXTENSIONS } from '@/constants/upload';
+import type { FolderItem } from '@/types/domainKnowledge';
 
 export interface UploadModalProps {
-  kbId: string
-  open: boolean
-  onClose: () => void
-  onSuccess?: () => void
+  kbId: string;
+  open: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
 }
 
-const UploadModal: React.FC<UploadModalProps> = ({
-  kbId,
-  open,
-  onClose,
-  onSuccess,
-}) => {
-  const { t } = useTranslation()
-  const [uploading, setUploading] = useState(false)
-  const [selectedFolderId, setSelectedFolderId] = useState<string>('')
-  const [folders, setFolders] = useState<FolderItem[]>([])
+const UploadModal: React.FC<UploadModalProps> = ({ kbId, open, onClose, onSuccess }) => {
+  const { t } = useTranslation();
+  const [uploading, setUploading] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string>('');
+  const [folders, setFolders] = useState<FolderItem[]>([]);
 
   useEffect(() => {
     if (open) {
       getFolderList(kbId)
         .then((res) => setFolders(res.items ?? []))
-        .catch(() => setFolders([]))
+        .catch(() => setFolders([]));
     }
-  }, [open, kbId])
+  }, [open, kbId]);
 
-  const handleUpload: UploadProps['customRequest'] = async ({
-    file,
-    onSuccess: onUploadSuccess,
-    onError,
-  }) => {
-    setUploading(true)
+  const handleUpload: UploadProps['customRequest'] = async ({ file, onSuccess: onUploadSuccess, onError }) => {
+    setUploading(true);
     try {
-      const f = file as File
+      const f = file as File;
       if (f.size === 0) {
-        message.error(t('common.fileEmpty'))
-        onError?.(new Error('empty file'))
-        setUploading(false)
-        return
+        message.error(t('common.fileEmpty'));
+        onError?.(new Error('empty file'));
+        setUploading(false);
+        return;
       }
-      await uploadManualDocument(kbId, f, selectedFolderId || undefined, t)
-      message.success(t('common.uploadSuccess', { name: (file as File).name }))
-      onUploadSuccess?.(void 0)
-      onSuccess?.()
-      onClose()
+      await uploadManualDocument(kbId, f, selectedFolderId || undefined, t);
+      message.success(t('common.uploadSuccess', { name: (file as File).name }));
+      onUploadSuccess?.(void 0);
+      onSuccess?.();
+      onClose();
     } catch (err: any) {
-      message.error(err?.message || t('common.uploadFailed'))
-      onError?.(err)
+      message.error(err?.message || t('common.uploadFailed'));
+      onError?.(err);
     } finally {
-      setUploading(false)
+      setUploading(false);
     }
-  }
+  };
 
   return (
     <Modal
@@ -109,9 +96,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
       >
         <div style={{ padding: '20px 0' }}>
           <p className="ant-upload-drag-icon">
-            <CloudUploadOutlined
-              style={{ fontSize: 48, color: '#3b82f6' }}
-            />
+            <CloudUploadOutlined style={{ fontSize: 48, color: '#3b82f6' }} />
           </p>
           <p
             style={{
@@ -152,7 +137,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
         </p>
       )}
     </Modal>
-  )
-}
+  );
+};
 
-export default UploadModal
+export default UploadModal;

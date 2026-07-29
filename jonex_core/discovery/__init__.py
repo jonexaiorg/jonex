@@ -1,11 +1,11 @@
 """
-Service registration and discovery module
+服务注册与发现模块
 
-Based on Redis for service registration and discovery, supports:
-- Service instance registration and deregistration
-- Service heartbeat renewal
-- Service discovery
-- Service list query
+基于 Redis 实现服务注册与发现，支持：
+- 服务实例注册与注销
+- 服务心跳续期
+- 服务发现
+- 服务列表查询
 """
 
 from jonex_core.discovery.registry import (

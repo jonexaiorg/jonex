@@ -1,4 +1,6 @@
-
+"""
+业务领域 — 生态适配器模型
+"""
 import uuid
 
 from sqlalchemy import Column, String

@@ -1,139 +1,161 @@
-import React, { useState } from 'react'
-import { Form, Input, Button, Card, message } from 'antd'
-import { UserOutlined, LockOutlined } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
-import { login, setTokens, setUser, apiClient } from '../../api/auth'
-import type { ShellUser } from '@jonex/shell-sdk'
-import { isAllowedRedirect } from '@jonex/shell-sdk'
-import { colors, radius } from '@jonex/platform-theme/tokens'
+import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+function logoSrc(lng: string) {
+  return lng === 'en' ? '/logo-en.svg' : '/logo.svg';
+}
+import { Form, Input, Button, Card, Select, message } from 'antd';
+import { UserOutlined, LockOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
+import { login, setTokens, setUser, createLoginTicket } from '../../api/auth';
+import type { TenantOption } from '../../api/auth';
+import { isAllowedRedirect } from '@jonex/shell-sdk';
+import { colors, radius } from '@jonex/platform-theme/tokens';
+import { tenantDisplayName, userDisplayName } from '../../utils/userDisplay';
 
 function getRedirectParam(): string | null {
-  const params = new URLSearchParams(window.location.search)
-  const raw = params.get('redirect')
-  if (!raw) return null
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('redirect');
+  if (!raw) return null;
   try {
-    return decodeURIComponent(raw)
+    return decodeURIComponent(raw);
   } catch {
-    return null
+    return null;
   }
 }
 
 function getAppIdParam(): string | null {
-  const params = new URLSearchParams(window.location.search)
-  return params.get('appId')
+  const params = new URLSearchParams(window.location.search);
+  return params.get('appId');
 }
 
 function createState(): string {
-  const arr = new Uint8Array(16)
-  crypto.getRandomValues(arr)
-  return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('')
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 function getDevAllowedOrigins(): string[] {
   try {
-    const raw = (import.meta as any).env?.VITE_ALLOWED_REDIRECT_ORIGINS || ''
-    return raw ? raw.split(',').map((s: string) => s.trim()).filter(Boolean) : []
+    const raw = (import.meta as any).env?.VITE_ALLOWED_REDIRECT_ORIGINS || '';
+    return raw
+      ? raw
+          .split(',')
+          .map((s: string) => s.trim())
+          .filter(Boolean)
+      : [];
   } catch {
-    return []
+    return [];
   }
 }
 
-async function createLoginTicket(appId: string, redirectUri: string, state: string): Promise<string | null> {
+async function requestLoginTicket(appId: string, redirectUri: string, state: string): Promise<string | null> {
   try {
-    const resp = await apiClient.post<{ ticket: string }>('/api/v1/auth/login-ticket', {
-      appId,
-      redirectUri,
-      state,
-    })
-    return resp.data?.ticket || null
+    const resp = await createLoginTicket(appId, redirectUri, state);
+    return resp.ticket || null;
   } catch {
-    console.warn('[Login] 创建 login ticket 失败，后端接口可能尚未就绪')
-    return null
+    console.warn('[Login] Failed to create login ticket, backend may not be ready');
+    return null;
   }
 }
 
 interface LoginValues {
-  username: string
-  password: string
-}
-
-interface LoginResult {
-  access_token: string
-  refresh_token: string
-  user: ShellUser
+  username: string;
+  password: string;
+  tenantId?: string;
 }
 
 function LoginPage() {
-  const [loading, setLoading] = useState(false)
-  const navigate = useNavigate()
+  const { t, i18n } = useTranslation();
+  const [form] = Form.useForm<LoginValues>();
+  const [loading, setLoading] = useState(false);
+  const [tenantOptions, setTenantOptions] = useState<TenantOption[]>([]);
+  const navigate = useNavigate();
 
   const onFinish = async (values: LoginValues) => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const result: LoginResult = await login(values.username, values.password)
-      setTokens(result.access_token, result.refresh_token)
-      setUser(result.user as unknown as Record<string, unknown>)
-      message.success(`欢迎，${result.user.displayName || result.user.username}`)
-      const redirectTo = getRedirectParam()
+      const result = await login(values.username, values.password, values.tenantId);
+      if (result.status === 'tenant_selection_required') {
+        setTenantOptions(result.tenant_options);
+        form.setFieldValue('tenantId', undefined);
+        message.info(t('shell.selectTenantToContinue'));
+        return;
+      }
+
+      setTokens(result.access_token, result.refresh_token);
+      setUser(result.user as unknown as Record<string, unknown>);
+      message.success(t('shell.welcome', { name: userDisplayName(result.user, t) }));
+      const redirectTo = getRedirectParam();
       if (redirectTo) {
-        await handleRedirect(redirectTo)
+        await handleRedirect(redirectTo);
       } else {
-        navigate('/')
+        navigate('/');
       }
     } catch (err: unknown) {
       const messageText =
         (err as { response?: { data?: { message?: string } } }).response?.data?.message ||
         (err as Error).message ||
-        '未知错误'
-      message.error('登录失败：' + messageText)
+        t('error.unknownError');
+      message.error(`${t('auth.loginFailed')}: ${messageText}`);
     } finally {
-      setLoading(false)
+      setLoading(false);
+    }
+  };
+
+  function handleValuesChange(changedValues: Partial<LoginValues>) {
+    if ('username' in changedValues || 'password' in changedValues) {
+      setTenantOptions([]);
+      form.setFieldValue('tenantId', undefined);
     }
   }
 
   async function handleRedirect(redirectTo: string) {
-    const redirectUrl = new URL(redirectTo)
+    const redirectUrl = new URL(redirectTo);
 
     // 真正同源：共享 localStorage，直接跳转
     if (redirectUrl.origin === window.location.origin) {
-      window.location.href = redirectTo
-      return
+      window.location.href = redirectTo;
+      return;
     }
 
-    const isAllowed = isAllowedRedirect(redirectUrl, getDevAllowedOrigins())
+    const isAllowed = isAllowedRedirect(redirectUrl, getDevAllowedOrigins());
     if (!isAllowed) {
-      message.error('登录成功，但回跳地址不在允许范围内')
-      return
+      message.error(t('shell.redirectNotAllowed'));
+      return;
     }
 
-    const appId = getAppIdParam()
+    const appId = getAppIdParam();
     if (!appId) {
-      message.error('登录成功，但缺少回跳应用标识')
-      return
+      message.error(t('shell.missingRedirectAppId'));
+      return;
     }
 
-    const state = createState()
-    const ticket = await createLoginTicket(appId, redirectUrl.origin + redirectUrl.pathname, state)
+    const state = createState();
+    const ticket = await requestLoginTicket(appId, redirectUrl.origin + redirectUrl.pathname, state);
 
     if (!ticket) {
-      message.error('登录成功，但登录态同步失败，请稍后重试')
-      return
+      message.error(t('shell.loginSyncFailed'));
+      return;
     }
 
-    redirectUrl.searchParams.set('ticket', ticket)
-    redirectUrl.searchParams.set('state', state)
-    window.location.href = redirectUrl.toString()
+    redirectUrl.searchParams.set('ticket', ticket);
+    redirectUrl.searchParams.set('state', state);
+    window.location.href = redirectUrl.toString();
   }
 
   return (
-    <div style={{
-      height: '100vh',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      background: colors.bg,
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif',
-    }}>
+    <div
+      style={{
+        height: '100vh',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        background: colors.bg,
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif',
+      }}
+    >
       <Card
         style={{
           width: 400,
@@ -146,55 +168,47 @@ function LoginPage() {
         styles={{ body: { padding: '32px 40px' } }}
       >
         {/* Brand Logo */}
-        <div style={{ marginBottom: 24 }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 14,
-            background: `linear-gradient(135deg, ${colors.accentSoft}, ${colors.accent})`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 28, fontWeight: 700, color: '#fff',
-            boxShadow: '0 4px 12px rgba(59,130,246,0.3)',
-            margin: '0 auto 16px',
-          }}>
-            悦
-          </div>
-          <h2 style={{
-            fontSize: 22, fontWeight: 700, color: colors.brandDark,
-            marginBottom: 4, letterSpacing: 2,
-          }}>
-            悦<span style={{ color: colors.accent }}>溪</span>平台
-          </h2>
-          <p style={{ fontSize: 13, color: colors.textMuted, margin: 0 }}>
-            知识数据平台 · 登录
-          </p>
+        <div style={{ marginBottom: 24, textAlign: 'center' }}>
+          <img src={logoSrc(i18n.language)} alt={t('site.title')} style={{ height: 40, marginBottom: 16 }} />
+          <p style={{ fontSize: 13, color: colors.textMuted, margin: 0 }}>{t('shell.loginSubtitle')}</p>
         </div>
 
         <Form
           name="login"
+          form={form}
           onFinish={onFinish}
+          onValuesChange={handleValuesChange}
           autoComplete="off"
           size="large"
         >
-          <Form.Item
-            name="username"
-            rules={[{ required: true, message: '请输入用户名' }]}
-          >
+          <Form.Item name="username" rules={[{ required: true, message: t('shell.enterUsername') }]}>
             <Input
               prefix={<UserOutlined style={{ color: colors.textMuted }} />}
-              placeholder="用户名"
+              placeholder={t('auth.username')}
               style={{ borderRadius: radius.btn, height: 44 }}
             />
           </Form.Item>
 
-          <Form.Item
-            name="password"
-            rules={[{ required: true, message: '请输入密码' }]}
-          >
+          <Form.Item name="password" rules={[{ required: true, message: t('shell.enterPassword') }]}>
             <Input.Password
               prefix={<LockOutlined style={{ color: colors.textMuted }} />}
-              placeholder="密码"
+              placeholder={t('auth.password')}
               style={{ borderRadius: radius.btn, height: 44 }}
             />
           </Form.Item>
+
+          {tenantOptions.length > 0 && (
+            <Form.Item name="tenantId" rules={[{ required: true, message: t('shell.selectTenant') }]}>
+              <Select
+                placeholder={t('shell.selectTenantPlaceholder')}
+                style={{ textAlign: 'left' }}
+                options={tenantOptions.map((tenant) => ({
+                  value: tenant.tenant_id,
+                  label: tenantDisplayName(tenant, t),
+                }))}
+              />
+            </Form.Item>
+          )}
 
           <Form.Item style={{ marginBottom: 12 }}>
             <Button
@@ -211,23 +225,25 @@ function LoginPage() {
                 borderColor: colors.accent,
               }}
             >
-              登录
+              {tenantOptions.length > 0 ? t('shell.continueLogin') : t('auth.login')}
             </Button>
           </Form.Item>
         </Form>
 
-        <div style={{
-          padding: '10px 14px',
-          background: colors.rowHover,
-          borderRadius: 8,
-          fontSize: 12,
-          color: colors.textSecondary,
-        }}>
-          测试账号：admin / admin123
+        <div
+          style={{
+            padding: '10px 14px',
+            background: colors.rowHover,
+            borderRadius: 8,
+            fontSize: 12,
+            color: colors.textSecondary,
+          }}
+        >
+          {t('shell.testAccount')}
         </div>
       </Card>
     </div>
-  )
+  );
 }
 
-export default LoginPage
+export default LoginPage;

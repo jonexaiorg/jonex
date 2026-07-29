@@ -1,59 +1,78 @@
-import React, { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
-import { ConfigProvider, Spin } from 'antd'
-import zhCN from 'antd/locale/zh_CN'
-import { antdTheme } from '@jonex/platform-theme'
-import Login from './pages/Login'
-import AppShellLayout from './components/AppShellLayout'
-import Dashboard from './pages/Dashboard'
-import AppHost from './pages/AppHost'
-import { getAccessToken, clearTokens, fetchCurrentUser, getLocale, setLocale } from './api/auth'
-import type { ReactNode } from 'react'
+import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { ConfigProvider, Spin } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
+import enUS from 'antd/locale/en_US';
+import { LANGUAGE_STORAGE_KEY } from '@jonex/i18n-resources';
+import { antdTheme } from '@jonex/platform-theme';
+import Login from './pages/Login';
+import AppShellLayout from './components/AppShellLayout';
+import Dashboard from './pages/Dashboard';
+import AppHost from './pages/AppHost';
+import { getAccessToken } from './api/auth';
+import type { ReactNode } from 'react';
 
 function RequireAuth({ children }: { children: ReactNode }) {
-  const [authChecked, setAuthChecked] = useState(false)
-  const [isAuth, setIsAuth] = useState(false)
+  const { t } = useTranslation();
+  const [authChecked, setAuthChecked] = useState(false);
+
+  const goLogin = useCallback(() => {
+    import('antd').then(({ message }) => {
+      message.error(t('auth.sessionExpired'));
+      setTimeout(() => {
+        window.location.href = `/login?redirect=${encodeURIComponent(window.location.href)}`;
+      }, 60);
+    });
+  }, [t]);
 
   useEffect(() => {
-    const token = getAccessToken()
-    if (!token) {
-      setIsAuth(false)
-      setAuthChecked(true)
-      return
+    if (getAccessToken()) {
+      setAuthChecked(true);
+    } else {
+      goLogin();
     }
-    fetchCurrentUser()
-      .then(() => { setIsAuth(true); setAuthChecked(true) })
-      .catch((err: unknown) => {
-        const status = (err as { response?: { status?: number } })?.response?.status
-        if (status === 401 || status === 403) {
-          clearTokens()
-          setIsAuth(false)
-        } else {
-          // 网络错误或远端不可达，信任本地 token
-          setIsAuth(true)
-        }
-        setAuthChecked(true)
-      })
-  }, [])
+  }, [goLogin]);
+
+  // 监听子应用发来的 token 过期事件
+  useEffect(() => {
+    const handler = () => goLogin();
+    window.addEventListener('jonex:token-expired', handler);
+    return () => window.removeEventListener('jonex:token-expired', handler);
+  }, [goLogin]);
+
+  // 切换目录时同步检查 token 是否还在
+  const location = useLocation();
+  useEffect(() => {
+    if (authChecked && !getAccessToken()) {
+      goLogin();
+    }
+  }, [location.pathname, authChecked, goLogin]);
+
+  // 轮询兜底：检测到 token 被清除则跳转
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!getAccessToken()) goLogin();
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [goLogin]);
 
   if (!authChecked) {
     return (
-      <div style={{
-        height: '100vh',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        background: '#f0f4f8',
-      }}>
+      <div
+        style={{
+          height: '100vh',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          background: '#f0f4f8',
+        }}
+      >
         <Spin size="large" />
       </div>
-    )
+    );
   }
-  if (!isAuth) {
-    const redirectParam = encodeURIComponent(window.location.href)
-    return <Navigate to={`/login?redirect=${redirectParam}`} replace />
-  }
-  return <>{children}</>
+  return <>{children}</>;
 }
 
 function AuthenticatedLayout() {
@@ -63,14 +82,34 @@ function AuthenticatedLayout() {
         <Outlet />
       </AppShellLayout>
     </RequireAuth>
-  )
+  );
 }
 
 function App() {
-  if (!getLocale()) setLocale('zh')
+  const { i18n } = useTranslation();
+
+  // 初始化存储的 locale（首次访问无值时 normalizeLocale 回退到 en）
+  const stored = typeof window !== 'undefined' ? window.localStorage.getItem(LANGUAGE_STORAGE_KEY) : null;
+  if (stored === null) {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, i18n.language);
+  }
+
+  const antdLocale = i18n.language === 'zh' ? zhCN : enUS;
+
+  // 浏览器标签标题随语言切换（直接监听 languageChanged 事件，不依赖 React 重渲染）
+  useEffect(() => {
+    const update = () => {
+      document.title = i18n.t('site.title');
+    };
+    update();
+    i18n.on('languageChanged', update);
+    return () => {
+      i18n.off('languageChanged', update);
+    };
+  }, [i18n]);
 
   return (
-    <ConfigProvider locale={zhCN} theme={antdTheme}>
+    <ConfigProvider locale={antdLocale} theme={{ ...antdTheme, cssVar: false }}>
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -82,7 +121,7 @@ function App() {
         </Routes>
       </BrowserRouter>
     </ConfigProvider>
-  )
+  );
 }
 
-export default App
+export default App;

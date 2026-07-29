@@ -16,13 +16,18 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from bisect import bisect_left
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple
 
 from raganything.modalprocessors import BaseModalProcessor
+
+# ── Resolve ffmpeg / ffprobe paths once (avoid bare names on Windows) ──
+_FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
+_FFPROBE = shutil.which("ffprobe") or "ffprobe"
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +54,11 @@ class VideoModalProcessor(BaseModalProcessor):
         tokenizer=None,
         context_extractor=None,
         image_transport=None,
+        video_analysis_backends=None,
+        default_backend="local",
+        # Phase 3: BoundModel support (optional — coexists with legacy callables)
+        llm_bound=None,   # BoundModel for LLM
+        vlm_bound=None,   # BoundModel for VLM
     ):
         super().__init__(lightrag, modal_caption_func, context_extractor)
         self.vlm_model_func = vlm_model_func
@@ -57,6 +67,76 @@ class VideoModalProcessor(BaseModalProcessor):
         self.image_transport = image_transport
         if tokenizer:
             self.tokenizer = tokenizer
+        self._video_backends = video_analysis_backends or {}
+        self._default_backend = default_backend
+
+        # Phase 3: BoundModel references (None → fallback to legacy callables)
+        self._llm_bound = llm_bound
+        self._vlm_bound = vlm_bound
+
+    # ── backend selection ─────────────────────────
+
+    def _select_backend(self, modal_content: dict) -> str | None:
+        """Select the video analysis backend for *modal_content*.
+
+        Returns the backend binding name (e.g. ``"local"``, ``"mps"``)
+        or ``None`` to fall back to the built-in local pipeline.
+
+        **Extension point**: Override in subclasses or modify this method
+        to implement per-video routing based on:
+        - ``modal_content`` metadata (e.g. source, file extension)
+        - Tenant-level configuration
+        - Video duration or other heuristics
+        """
+        # If the requested default backend exists, use it.
+        if self._default_backend in self._video_backends:
+            return self._default_backend
+        # Fall back to local if available.
+        if "local" in self._video_backends:
+            return "local"
+        # No backends — caller will use the built-in local pipeline.
+        return None
+
+    # ── Phase 3: unified LLM / VLM invocation ─────────────────
+
+    async def _call_llm(self, prompt: str, system_prompt: str = "", **kwargs) -> str:
+        """Call LLM — BoundModel path or legacy fallback."""
+        if self._llm_bound is not None:
+            messages: list[dict] = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+            response = await self._llm_bound.complete(messages, **kwargs)
+            return response.text
+        # Legacy fallback
+        return await self.modal_caption_func(
+            prompt, system_prompt=system_prompt, **kwargs,
+        )
+
+    async def _call_vlm(self, image_source: str, prompt: str) -> str:
+        """Call VLM for a single frame — BoundModel path or legacy fallback."""
+        if self._vlm_bound is not None:
+            messages = [{"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": image_source}},
+            ]}]
+            response = await self._vlm_bound.complete(messages)
+            return response.text
+        # Legacy fallback
+        return await self.vlm_model_func(image_source, prompt)
+
+    def _should_skip_vlm(self, image_source: str) -> bool:
+        """Check whether VLM call should be skipped for this image source."""
+        if self._vlm_bound is not None:
+            return False  # BoundModel handles all image sources
+        # Legacy: check vlm_support capability
+        vlm_support = getattr(self.vlm_model_func, 'vlm_support', None)
+        if vlm_support is None or vlm_support.supports_base64:
+            return False
+        # VLM requires URL but image is not a URL → skip
+        if vlm_support.supports_url:
+            return not (image_source.startswith("http://") or image_source.startswith("https://"))
+        return True
 
     # ── entry points ─────────────────────────────────
 
@@ -71,10 +151,123 @@ class VideoModalProcessor(BaseModalProcessor):
         )
         return enhanced_caption, entity_info, []
 
+    async def _analyze_via_mps(
+        self, modal_content: dict, video_path: str,
+        backend, prompt_overrides=None, entity_name=None,
+    ) -> Tuple[str, Dict[str, Any]]:
+        """MPS 独享路径：COS URL → 腾讯云 MPS → scenes → 合成 segments。
+
+        不经过本地 ffprobe/ffmpeg 管线，标识符用 quick_hash 避免依赖外部工具。
+        """
+        _ov_prompt = None
+        if prompt_overrides is not None:
+            try:
+                if prompt_overrides.has_override("video_global_prompt"):
+                    _ov_prompt = prompt_overrides.get_effective_prompt(
+                        "video_global_prompt", None
+                    )
+            except Exception:
+                _ov_prompt = None
+
+        # MPS 需要 COS URL；本地路径无法被 MPS 识别
+        mps_url = modal_content.get("mps_video_url") or ""
+        mps_input = mps_url if mps_url else video_path
+
+        result = await backend.analyze_video(
+            video_path=mps_input,
+            prompt=_ov_prompt,
+        )
+        file_name = Path(video_path).name
+
+        # 标识符：MPS 路径不调 _semantic_video_fingerprint（需要 ffprobe），
+        # 用 quick_hash（纯文件 I/O）作为 video_source_id
+        _quick = self._quick_video_hash(video_path)
+        modal_content["_video_quick_hash"] = _quick
+        modal_content["_video_source_id"] = _quick
+
+        # 将 MPS scenes 合成 faux segments，复用下游 chunk 管线
+        scenes = result.scenes or []
+        if scenes:
+            synthetic_segments = []
+            for i, scene in enumerate(scenes):
+                desc = scene.get("description", "")
+                synthetic_segments.append({
+                    "text": desc or json.dumps(scene, ensure_ascii=False),
+                    "start_time": scene.get("start_time", 0.0),
+                    "end_time": scene.get("end_time", 0.0),
+                    "segment_index": i,
+                    "relative_position": i / max(len(scenes), 1),
+                    "source_segment_indices": [i],
+                    "speaker_labels": [],
+                    "group_summary": desc or result.summary,
+                    "frames": [],
+                })
+        else:
+            synthetic_segments = [{
+                "text": result.summary or result.raw_json,
+                "start_time": 0.0,
+                "end_time": 0.0,
+                "segment_index": 0,
+                "relative_position": 0.0,
+                "source_segment_indices": [],
+                "speaker_labels": [],
+                "group_summary": result.summary,
+                "frames": [],
+            }]
+
+        modal_content["_audio_segments"] = synthetic_segments
+        modal_content["_asr_result"] = {
+            "segments": synthetic_segments,
+            "transcript": result.summary,
+            "language": "unknown",
+            "duration": 0,
+            "audio_sha256": _quick,
+        }
+        modal_content["_video_keyframes"] = []
+        modal_content["_audio_missing"] = True
+
+        entity_info = {
+            "entity_name": entity_name or f"{file_name} (video)",
+            "entity_type": "video",
+            "summary": result.summary,
+            "scenes": result.scenes,
+            "tags": result.tags,
+            "analysis_method": result.analysis_method,
+            "video_source_id": _quick,
+            "chunk_count": len(synthetic_segments),
+        }
+        return result.summary, entity_info
+
     async def generate_description_only(
         self, modal_content, content_type, item_info=None, entity_name=None,
+        prompt_overrides=None,
     ) -> Tuple[str, Dict[str, Any]]:
-        """Main entry: extract audio → ASR → keyframes → VLM → time alignment → MapReduce."""
+        """Main entry: select backend → MPS 独享路径 or local pipeline."""
+        video_path = modal_content.get("video_path")
+        if not video_path:
+            raise ValueError(f"No video_path in modal_content: {modal_content}")
+
+        backend_name = self._select_backend(modal_content)
+        if backend_name and backend_name != "local":
+            backend = self._video_backends.get(backend_name)
+            if backend is not None:
+                return await self._analyze_via_mps(
+                    modal_content, video_path, backend,
+                    prompt_overrides=prompt_overrides,
+                    entity_name=entity_name,
+                )
+
+        # Fall back to built-in local pipeline
+        return await self._analyze_via_local(
+            modal_content, content_type, item_info, entity_name,
+            prompt_overrides=prompt_overrides,
+        )
+
+    async def _analyze_via_local(
+        self, modal_content, content_type, item_info=None, entity_name=None,
+        prompt_overrides=None,
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Built-in local pipeline: ASR → keyframes → VLM → alignment → MapReduce."""
         video_path = modal_content.get("video_path")
         if not video_path:
             raise ValueError(f"No video_path in modal_content: {modal_content}")
@@ -114,13 +307,22 @@ class VideoModalProcessor(BaseModalProcessor):
                 keyframes = prep.frames
 
             # 3. VLM per-frame description (with capability-aware fallback)
-            vlm_support = getattr(self.vlm_model_func, 'vlm_support', None)
-            if keyframes and self.vlm_model_func:
+            vlm_available = (
+                self._vlm_bound is not None or self.vlm_model_func is not None
+            )
+            vlm_support = (
+                self._vlm_bound.capability if self._vlm_bound is not None
+                else getattr(self.vlm_model_func, 'vlm_support', None)
+            )
+            if keyframes and vlm_available:
                 if prep is None:
                     # No transport → use local mode
-                    if vlm_support and vlm_support.supports_base64:
+                    if vlm_support and (
+                        (hasattr(vlm_support, 'supports_base64') and vlm_support.supports_base64)
+                        or self._vlm_bound is not None
+                    ):
                         keyframes = await self._describe_frames(keyframes)
-                    elif vlm_support and vlm_support.supports_url:
+                    elif vlm_support and hasattr(vlm_support, 'supports_url') and vlm_support.supports_url:
                         logger.warning(
                             "ImageTransport not configured but VLM requires URL. "
                             "Visual analysis SKIPPED. Set COS_BUCKET/COS_APPID to enable.")
@@ -129,7 +331,10 @@ class VideoModalProcessor(BaseModalProcessor):
                 elif prep.transport_available:
                     keyframes = await self._describe_frames(keyframes)
                 elif prep.fatal_error:
-                    if vlm_support and vlm_support.supports_base64:
+                    if vlm_support and (
+                        (hasattr(vlm_support, 'supports_base64') and vlm_support.supports_base64)
+                        or self._vlm_bound is not None
+                    ):
                         logger.warning(
                             f"ImageTransport fatal error ({prep.fatal_error}), "
                             f"falling back to base64.")
@@ -139,7 +344,10 @@ class VideoModalProcessor(BaseModalProcessor):
                             f"ImageTransport fatal error ({prep.fatal_error}). "
                             f"Visual analysis SKIPPED.")
                 else:
-                    if vlm_support and vlm_support.supports_base64:
+                    if vlm_support and (
+                        (hasattr(vlm_support, 'supports_base64') and vlm_support.supports_base64)
+                        or self._vlm_bound is not None
+                    ):
                         logger.warning(
                             "All frame uploads failed, falling back to base64.")
                         keyframes = await self._describe_frames(keyframes)
@@ -147,10 +355,11 @@ class VideoModalProcessor(BaseModalProcessor):
                         logger.warning(
                             "All frame uploads failed and VLM requires URL. "
                             "Visual analysis SKIPPED.")
-            elif keyframes and not self.vlm_model_func:
+            elif keyframes and not vlm_available:
                 logger.warning(
-                    "vlm_model_func not provided; frame descriptions will be empty. "
-                    "Set vlm_model_func in RAGAnything() to enable visual analysis."
+                    "vlm_model_func or vlm_bound not provided; frame descriptions "
+                    "will be empty. Set vlm_model_func in RAGAnything() to enable "
+                    "visual analysis."
                 )
 
             # 4. Time alignment + visual condensation
@@ -191,6 +400,7 @@ class VideoModalProcessor(BaseModalProcessor):
             # 5. MapReduce (transcript-only, frames only in leaf chunks)
             summary, entity_info = await self._recursive_mapreduce(
                 segments, entity_name, item_info, video_path, asr_result,
+                prompt_overrides=prompt_overrides,
             )
 
             # 5b. Entity uniqueness
@@ -228,7 +438,7 @@ class VideoModalProcessor(BaseModalProcessor):
         """Dynamic ffmpeg timeout based on video duration."""
         try:
             result = subprocess.run(
-                ["ffprobe", "-v", "error", "-show_entries",
+                [_FFPROBE, "-v", "error", "-show_entries",
                  "format=duration", "-of",
                  "default=noprint_wrappers=1:nokey=1", video_path],
                 capture_output=True, text=True, timeout=30)
@@ -263,7 +473,7 @@ class VideoModalProcessor(BaseModalProcessor):
             import imagehash
             from PIL import Image
             probe = subprocess.run([
-                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                _FFPROBE, "-v", "error", "-show_entries", "format=duration",
                 "-of", "json", video_path,
             ], capture_output=True, text=True, timeout=30)
             duration = float(json.loads(probe.stdout)
@@ -276,7 +486,7 @@ class VideoModalProcessor(BaseModalProcessor):
                     tmp_path = tmp.name
                 try:
                     subprocess.run([
-                        "ffmpeg", "-accurate_seek", "-ss", str(ts),
+                        _FFMPEG, "-accurate_seek", "-ss", str(ts),
                         "-i", video_path,
                         "-frames:v", "1", "-q:v", "2", "-y", tmp_path,
                     ], check=True, capture_output=True, timeout=30)
@@ -294,7 +504,7 @@ class VideoModalProcessor(BaseModalProcessor):
         audio_path = Path(output_dir) / "audio.wav"
         try:
             subprocess.run([
-                "ffmpeg", "-i", video_path,
+                _FFMPEG, "-i", video_path,
                 "-vn", "-acodec", "pcm_s16le",
                 "-ar", "16000", "-ac", "1",
                 "-y", str(audio_path),
@@ -400,7 +610,7 @@ class VideoModalProcessor(BaseModalProcessor):
         """
         try:
             result = subprocess.run(
-                ["ffprobe", "-v", "error",
+                [_FFPROBE, "-v", "error",
                  "-select_streams", "v",
                  "-show_entries", "frame=pts_time,pict_type",
                  "-of", "default=noprint_wrappers=1",
@@ -518,7 +728,7 @@ class VideoModalProcessor(BaseModalProcessor):
 
             try:
                 subprocess.run([
-                    "ffmpeg", "-accurate_seek", "-ss", str(ts),
+                    _FFMPEG, "-accurate_seek", "-ss", str(ts),
                     "-i", video_path,
                     "-frames:v", "1", "-q:v", "2",
                     "-y", str(frame_path),
@@ -543,7 +753,7 @@ class VideoModalProcessor(BaseModalProcessor):
         """Get video duration in seconds via ffprobe."""
         try:
             result = subprocess.run(
-                ["ffprobe", "-v", "error", "-show_entries",
+                [_FFPROBE, "-v", "error", "-show_entries",
                  "format=duration", "-of",
                  "default=noprint_wrappers=1:nokey=1", video_path],
                 capture_output=True, text=True, timeout=30)
@@ -561,7 +771,7 @@ class VideoModalProcessor(BaseModalProcessor):
         """
         try:
             result = subprocess.run(
-                ["ffprobe", "-f", "lavfi",
+                [_FFPROBE, "-f", "lavfi",
                  "-i", f"movie={video_path},select='gt(scene,{scene_threshold})'",
                  "-show_entries", "frame=pkt_pts_time",
                  "-of", "compact=p=0", "-v", "quiet"],
@@ -621,13 +831,16 @@ class VideoModalProcessor(BaseModalProcessor):
                     try:
                         prompt = self._build_frame_prompt(frame)
                         timeout = getattr(self._config, "vlm_timeout", 60)
-                        vlm_support = getattr(self.vlm_model_func, 'vlm_support', None)
+                        vlm_support_legacy = getattr(self.vlm_model_func, 'vlm_support', None)
                         upload_info = frame.get('upload')
                         frame_path = frame.get('frame_path', '')
 
                         if upload_info and upload_info.get('url'):
                             image_source = upload_info['url']
-                        elif (vlm_support is None or vlm_support.supports_base64):
+                        elif self._vlm_bound is not None:
+                            # BoundModel: use file:// URI → normalize_images handles encoding
+                            image_source = f"file://{frame_path}"
+                        elif (vlm_support_legacy is None or vlm_support_legacy.supports_base64):
                             image_source = frame_path
                         else:
                             logger.debug(
@@ -638,7 +851,7 @@ class VideoModalProcessor(BaseModalProcessor):
                             return frame
 
                         description = await asyncio.wait_for(
-                            self.vlm_model_func(image_source, prompt),
+                            self._call_vlm(image_source, prompt),
                             timeout=timeout,
                         )
                         frame["description"] = description
@@ -788,13 +1001,13 @@ class VideoModalProcessor(BaseModalProcessor):
 
             ocr = frame.get("ocr_text", "").strip()
             if ocr and len(ocr) > 5:
-                ocr_lines = [l.strip() for l in ocr.split("\n")
-                             if l.strip()]
+                ocr_lines = [line.strip() for line in ocr.split("\n")
+                             if line.strip()]
                 salient_lines = [
-                    l for l in ocr_lines
-                    if not re.match(r'^[\d{}\-:/\s]{3,}$', l)
-                    and not (len(l) < 3 and l.isupper())
-                    and not l.startswith(
+                    line for line in ocr_lines
+                    if not re.match(r'^[\d{}\-:/\s]{3,}$', line)
+                    and not (len(line) < 3 and line.isupper())
+                    and not line.startswith(
                         ("Menu", "File", "Edit", "View"))
                 ]
                 condensed = "; ".join(salient_lines)[:MAX_OCR_CHARS]
@@ -929,10 +1142,12 @@ class VideoModalProcessor(BaseModalProcessor):
 
     async def _recursive_mapreduce(
         self, segments, entity_name, item_info, source_path, asr_result,
+        prompt_overrides=None,
     ) -> Tuple[str, Dict[str, Any]]:
         """Recursive MapReduce: batch summarize → reduce → global synthesis.
         Transcript-only for group summaries. Frames only in leaf chunks."""
         from raganything.prompt import PROMPTS
+        from raganything.modalprocessors import _pick_prompt, _safe_format
 
         batch_size = getattr(
             self._config, "video_summarize_batch_size", 8)
@@ -964,7 +1179,7 @@ class VideoModalProcessor(BaseModalProcessor):
                 text=text,
             )
             try:
-                result = await self.modal_caption_func(
+                result = await self._call_llm(
                     prompt, system_prompt="", max_tokens=128)
                 summaries.append(result.strip())
             except Exception as e:
@@ -983,7 +1198,7 @@ class VideoModalProcessor(BaseModalProcessor):
                     summaries="\n".join(batch),
                 )
                 try:
-                    result = await self.modal_caption_func(
+                    result = await self._call_llm(
                         prompt, system_prompt="", max_tokens=128)
                     new_summaries.append(result.strip())
                 except Exception as e:
@@ -993,8 +1208,13 @@ class VideoModalProcessor(BaseModalProcessor):
 
         reduced_summary = summaries[0] if summaries else ""
 
-        # Global synthesis
-        prompt = PROMPTS["video_global_prompt"].format(
+        # Global synthesis（KB 主解析提示词覆盖 video_global_prompt；无 _with_context 变体）
+        _tmpl = _pick_prompt(
+            prompt_overrides, "video_global_prompt", False,
+            PROMPTS["video_global_prompt"], PROMPTS["video_global_prompt"],
+        )
+        prompt = _safe_format(
+            _tmpl,
             entity_name=entity_name or file_name,
             type_enum=", ".join(sorted(VIDEO_ENTITY_TYPE_ENUM)),
             file_name=file_name,
@@ -1006,7 +1226,7 @@ class VideoModalProcessor(BaseModalProcessor):
         )
 
         try:
-            result = await self.modal_caption_func(
+            result = await self._call_llm(
                 prompt, system_prompt="", max_tokens=256)
             parsed = json.loads(result.strip())
         except Exception:

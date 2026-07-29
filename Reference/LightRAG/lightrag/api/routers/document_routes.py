@@ -3,6 +3,7 @@ This module contains all document-related routes for the LightRAG API.
 """
 
 import asyncio
+import re  # [jonex]
 import time
 from uuid import uuid4
 from functools import lru_cache
@@ -19,6 +20,8 @@ from fastapi import (
     Depends,
     File,
     HTTPException,
+    Query,  # [jonex]
+    Request,  # [jonex]
     UploadFile,
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -31,6 +34,7 @@ from lightrag.utils import (
     sanitize_text_for_encoding,
 )
 from lightrag.api.utils_api import get_combined_auth_dependency
+from lightrag.api.workspace_manager import get_workspace_from_request  # [jonex]
 from ..config import global_args
 
 
@@ -335,6 +339,28 @@ class InsertResponse(BaseModel):
     )
 
 
+# ── [jonex] Custom chunks 批量入库 ──
+
+class ChunkItem(BaseModel):
+    """Single chunk with optional positional metadata."""
+    content: str = Field(min_length=1, description="Chunk text content")
+    page_idx: Optional[int] = Field(default=None, description="Page index (0-based)")
+    line_start: Optional[int] = Field(default=None, description="Start line in full text (1-based)")
+    line_end: Optional[int] = Field(default=None, description="End line in full text (1-based)")
+
+
+class InsertCustomChunksRequest(BaseModel):
+    """Batch insert pre-chunked text with metadata.
+
+    Bypasses LightRAG's internal token-based splitting. Each chunk
+    is stored as-is with its positional metadata preserved.
+    """
+    full_text: str = Field(min_length=1, description="Complete original text (stored in full_docs)")
+    file_path: str = Field(default="", description="Original file name for reference")
+    chunks: list[ChunkItem] = Field(min_length=1, description="Pre-chunked text with metadata")
+    doc_id: Optional[str] = Field(default=None, description="Document ID (auto-generated from full_text hash if omitted)")
+
+
 class ClearDocumentsResponse(BaseModel):
     """Response model for document clearing operation
 
@@ -633,6 +659,13 @@ class DocumentsRequest(BaseModel):
     )
     sort_direction: Literal["asc", "desc"] = Field(
         default="desc", description="Sort direction"
+    )
+    doc_id: Optional[str] = Field(
+        default=None,
+        description="[jonex] Filter to a single document by its file_source doc= anchor",
+    )
+    file_path: Optional[str] = Field(
+        default=None, description="[jonex] Filter by exact file_path"
     )
 
     model_config = ConfigDict(
@@ -2087,13 +2120,19 @@ async def background_delete_documents(
 
 
 def create_document_routes(
-    rag: LightRAG, doc_manager: DocumentManager, api_key: Optional[str] = None
+    manager, doc_manager: DocumentManager, api_key: Optional[str] = None
 ):
+    # [jonex] manager is a WorkspaceRAGManager (not a single LightRAG instance).
+    # Each handler resolves the correct rag via LIGHTRAG-WORKSPACE header.
     # Fresh router per call — see the note above the temp_prefix constant.
     router = APIRouter(
         prefix="/documents",
         tags=["documents"],
     )
+
+    async def _resolve_rag(request: Request):
+        """[jonex] Resolve LightRAG instance for the current request's workspace."""
+        return await manager.get(get_workspace_from_request(request))
 
     # Create combined auth dependency for document routes
     combined_auth = get_combined_auth_dependency(api_key)
@@ -2101,7 +2140,9 @@ def create_document_routes(
     @router.post(
         "/scan", response_model=ScanResponse, dependencies=[Depends(combined_auth)]
     )
-    async def scan_for_new_documents(background_tasks: BackgroundTasks):
+    async def scan_for_new_documents(
+        http_request: Request, background_tasks: BackgroundTasks  # [jonex] +Request
+    ):
         """
         Trigger the scanning process for new documents.
 
@@ -2115,6 +2156,9 @@ def create_document_routes(
         # Generate track_id with "scan" prefix for scanning operation
         track_id = generate_track_id("scan")
 
+        # [jonex] Resolve workspace-specific LightRAG instance
+        rag = await _resolve_rag(http_request)
+
         # Start the scanning process in the background with track_id
         background_tasks.add_task(run_scanning_process, rag, doc_manager, track_id)
         return ScanResponse(
@@ -2127,7 +2171,9 @@ def create_document_routes(
         "/upload", response_model=InsertResponse, dependencies=[Depends(combined_auth)]
     )
     async def upload_to_input_dir(
-        background_tasks: BackgroundTasks, file: UploadFile = File(...)
+        http_request: Request,  # [jonex] +Request
+        background_tasks: BackgroundTasks,
+        file: UploadFile = File(...),
     ):
         """
         Upload a file to the input directory and index it.
@@ -2181,6 +2227,9 @@ def create_document_routes(
             HTTPException: If the file type is not supported (400), file too large (413), or other errors occur (500).
         """
         try:
+            # [jonex] Resolve workspace-specific LightRAG instance
+            rag = await _resolve_rag(http_request)
+
             # Sanitize filename to prevent Path Traversal attacks
             safe_filename = sanitize_filename(file.filename, doc_manager.input_dir)
 
@@ -2206,7 +2255,7 @@ def create_document_routes(
                             detail=f"File too large. Maximum size: {global_args.max_upload_size / 1024 / 1024:.1f}MB, uploaded: {file_size / 1024 / 1024:.1f}MB",
                         )
                 else:
-                    # If size not available, we'll check during streaming
+                    # If size not known, we'll check during streaming
                     logger.debug(
                         f"File size not available in UploadFile for {safe_filename}, will check during streaming"
                     )
@@ -2295,7 +2344,9 @@ def create_document_routes(
         "/text", response_model=InsertResponse, dependencies=[Depends(combined_auth)]
     )
     async def insert_text(
-        request: InsertTextRequest, background_tasks: BackgroundTasks
+        request: InsertTextRequest,
+        background_tasks: BackgroundTasks,
+        http_request: Request,  # [jonex] +Request
     ):
         """
         Insert text into the RAG system.
@@ -2314,6 +2365,8 @@ def create_document_routes(
             HTTPException: If an error occurs during text processing (500).
         """
         try:
+            rag = await _resolve_rag(http_request)  # [jonex]
+
             # Check if file_source already exists in doc_status storage
             if (
                 request.file_source
@@ -2369,13 +2422,71 @@ def create_document_routes(
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=str(e))
 
+    # ── [jonex] POST /documents/custom-chunks ──────────────────────
+
+    @router.post(
+        "/custom-chunks",
+        response_model=InsertResponse,
+        dependencies=[Depends(combined_auth)],
+    )
+    async def insert_custom_chunks(
+        request: InsertCustomChunksRequest,
+        background_tasks: BackgroundTasks,
+        http_request: Request,  # [jonex]
+    ):
+        """Insert pre-chunked text with positional metadata.
+
+        Each chunk is stored directly without further splitting.
+        Optional ``page_idx``, ``line_start``, ``line_end`` on each
+        chunk are preserved in storage and surfaced via
+        ``GET /documents/{doc_id}/chunks`` and ``/export``.
+        """
+        try:
+            rag = await _resolve_rag(http_request)  # [jonex]
+
+            # Build list[dict] for ainsert_custom_chunks
+            chunk_dicts: list[dict] = []
+            for c in request.chunks:
+                d = {"content": c.content}
+                if c.page_idx is not None:
+                    d["page_idx"] = c.page_idx
+                if c.line_start is not None:
+                    d["line_start"] = c.line_start
+                if c.line_end is not None:
+                    d["line_end"] = c.line_end
+                chunk_dicts.append(d)
+
+            track_id = generate_track_id("insert")
+
+            background_tasks.add_task(
+                rag.ainsert_custom_chunks,
+                request.full_text,
+                chunk_dicts,
+                doc_id=request.doc_id,
+                file_path=request.file_path,
+            )
+
+            return InsertResponse(
+                status="success",
+                message=(
+                    f"{len(chunk_dicts)} chunks inserted. "
+                    "Processing will continue in background."
+                ),
+                track_id=track_id,
+            )
+        except Exception as e:
+            logger.error(f"Error /documents/custom-chunks: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
     @router.post(
         "/texts",
         response_model=InsertResponse,
         dependencies=[Depends(combined_auth)],
     )
     async def insert_texts(
-        request: InsertTextsRequest, background_tasks: BackgroundTasks
+        request: InsertTextsRequest,
+        background_tasks: BackgroundTasks,
+        http_request: Request,  # [jonex] +Request
     ):
         """
         Insert multiple texts into the RAG system.
@@ -2394,6 +2505,8 @@ def create_document_routes(
             HTTPException: If an error occurs during text processing (500).
         """
         try:
+            rag = await _resolve_rag(http_request)  # [jonex]
+
             # Check if any file_sources already exist in doc_status storage
             if request.file_sources:
                 for file_source in request.file_sources:
@@ -2455,7 +2568,7 @@ def create_document_routes(
     @router.delete(
         "", response_model=ClearDocumentsResponse, dependencies=[Depends(combined_auth)]
     )
-    async def clear_documents():
+    async def clear_documents(http_request: Request):  # [jonex] +Request
         """
         Clear all documents from the RAG system.
 
@@ -2480,6 +2593,9 @@ def create_document_routes(
             get_namespace_data,
             get_namespace_lock,
         )
+
+        # [jonex] Resolve workspace-specific LightRAG instance
+        rag = await _resolve_rag(http_request)
 
         # Get pipeline status and lock
         pipeline_status = await get_namespace_data(
@@ -2651,7 +2767,7 @@ def create_document_routes(
         dependencies=[Depends(combined_auth)],
         response_model=PipelineStatusResponse,
     )
-    async def get_pipeline_status() -> PipelineStatusResponse:
+    async def get_pipeline_status(http_request: Request) -> PipelineStatusResponse:  # [jonex] +Request
         """
         Get the current status of the document indexing pipeline.
 
@@ -2681,6 +2797,8 @@ def create_document_routes(
                 get_namespace_lock,
                 get_all_update_flags_status,
             )
+
+            rag = await _resolve_rag(http_request)  # [jonex]
 
             pipeline_status = await get_namespace_data(
                 "pipeline_status", workspace=rag.workspace
@@ -2750,7 +2868,7 @@ def create_document_routes(
     @router.get(
         "", response_model=DocsStatusesResponse, dependencies=[Depends(combined_auth)]
     )
-    async def documents() -> DocsStatusesResponse:
+    async def documents(http_request: Request) -> DocsStatusesResponse:  # [jonex] +Request
         """
         Get the status of all documents in the system. This endpoint is deprecated; use /documents/paginated instead.
         To prevent excessive resource consumption, a maximum of 1,000 records is returned.
@@ -2769,6 +2887,8 @@ def create_document_routes(
             HTTPException: If an error occurs while retrieving document statuses (500).
         """
         try:
+            rag = await _resolve_rag(http_request)  # [jonex]
+
             statuses = (
                 DocStatus.PENDING,
                 DocStatus.PROCESSING,
@@ -2866,6 +2986,7 @@ def create_document_routes(
     async def delete_document(
         delete_request: DeleteDocRequest,
         background_tasks: BackgroundTasks,
+        http_request: Request,  # [jonex] +Request
     ) -> DeleteDocByIdResponse:
         """
         Delete documents and all their associated data by their IDs using background processing.
@@ -2897,6 +3018,8 @@ def create_document_routes(
                 get_namespace_data,
                 get_namespace_lock,
             )
+
+            rag = await _resolve_rag(http_request)  # [jonex]
 
             pipeline_status = await get_namespace_data(
                 "pipeline_status", workspace=rag.workspace
@@ -2941,7 +3064,7 @@ def create_document_routes(
         response_model=ClearCacheResponse,
         dependencies=[Depends(combined_auth)],
     )
-    async def clear_cache(request: ClearCacheRequest):
+    async def clear_cache(request: ClearCacheRequest, http_request: Request):  # [jonex] +Request
         """
         Clear all cache data from the LLM response cache storage.
 
@@ -2958,6 +3081,7 @@ def create_document_routes(
             HTTPException: If an error occurs during cache clearing (500).
         """
         try:
+            rag = await _resolve_rag(http_request)  # [jonex]
             # Call the aclear_cache method (no modes parameter)
             await rag.aclear_cache()
 
@@ -2975,7 +3099,7 @@ def create_document_routes(
         response_model=DeletionResult,
         dependencies=[Depends(combined_auth)],
     )
-    async def delete_entity(request: DeleteEntityRequest):
+    async def delete_entity(request: DeleteEntityRequest, http_request: Request):  # [jonex] +Request
         """
         Delete an entity and all its relationships from the knowledge graph.
 
@@ -2989,6 +3113,7 @@ def create_document_routes(
             HTTPException: If the entity is not found (404) or an error occurs (500).
         """
         try:
+            rag = await _resolve_rag(http_request)  # [jonex]
             result = await rag.adelete_by_entity(entity_name=request.entity_name)
             if result.status == "not_found":
                 raise HTTPException(status_code=404, detail=result.message)
@@ -3010,7 +3135,7 @@ def create_document_routes(
         response_model=DeletionResult,
         dependencies=[Depends(combined_auth)],
     )
-    async def delete_relation(request: DeleteRelationRequest):
+    async def delete_relation(request: DeleteRelationRequest, http_request: Request):  # [jonex] +Request
         """
         Delete a relationship between two entities from the knowledge graph.
 
@@ -3024,6 +3149,7 @@ def create_document_routes(
             HTTPException: If the relation is not found (404) or an error occurs (500).
         """
         try:
+            rag = await _resolve_rag(http_request)  # [jonex]
             result = await rag.adelete_by_relation(
                 source_entity=request.source_entity,
                 target_entity=request.target_entity,
@@ -3048,7 +3174,7 @@ def create_document_routes(
         response_model=TrackStatusResponse,
         dependencies=[Depends(combined_auth)],
     )
-    async def get_track_status(track_id: str) -> TrackStatusResponse:
+    async def get_track_status(track_id: str, http_request: Request) -> TrackStatusResponse:  # [jonex] +Request
         """
         Get the processing status of documents by tracking ID.
 
@@ -3068,6 +3194,8 @@ def create_document_routes(
             HTTPException: If track_id is invalid (400) or an error occurs (500).
         """
         try:
+            rag = await _resolve_rag(http_request)  # [jonex]
+
             # Validate track_id
             if not track_id or not track_id.strip():
                 raise HTTPException(status_code=400, detail="Track ID cannot be empty")
@@ -3124,6 +3252,7 @@ def create_document_routes(
     )
     async def get_documents_paginated(
         request: DocumentsRequest,
+        http_request: Request,  # [jonex] +Request
     ) -> PaginatedDocsResponse:
         """
         Get documents with pagination support.
@@ -3144,6 +3273,8 @@ def create_document_routes(
         Raises:
             HTTPException: If an error occurs while retrieving documents (500).
         """
+        rag = await _resolve_rag(http_request)  # [jonex]
+
         trace_id = uuid4().hex[:8]
         request_start = time.perf_counter()
         status_filter_value = (
@@ -3201,6 +3332,8 @@ def create_document_routes(
                         page_size=request.page_size,
                         sort_field=request.sort_field,
                         sort_direction=request.sort_direction,
+                        doc_id=request.doc_id,
+                        file_path=request.file_path,
                     ),
                 )
             )
@@ -3301,7 +3434,7 @@ def create_document_routes(
         response_model=StatusCountsResponse,
         dependencies=[Depends(combined_auth)],
     )
-    async def get_document_status_counts() -> StatusCountsResponse:
+    async def get_document_status_counts(http_request: Request) -> StatusCountsResponse:  # [jonex] +Request
         """
         Get counts of documents by status.
 
@@ -3315,6 +3448,7 @@ def create_document_routes(
             HTTPException: If an error occurs while retrieving status counts (500).
         """
         try:
+            rag = await _resolve_rag(http_request)  # [jonex]
             status_counts = await rag.doc_status.get_all_status_counts()
             return StatusCountsResponse(status_counts=status_counts)
 
@@ -3328,7 +3462,7 @@ def create_document_routes(
         response_model=ReprocessResponse,
         dependencies=[Depends(combined_auth)],
     )
-    async def reprocess_failed_documents(background_tasks: BackgroundTasks):
+    async def reprocess_failed_documents(background_tasks: BackgroundTasks, http_request: Request):  # [jonex] +Request
         """
         Reprocess failed and pending documents.
 
@@ -3354,6 +3488,8 @@ def create_document_routes(
             HTTPException: If an error occurs while initiating reprocessing (500).
         """
         try:
+            rag = await _resolve_rag(http_request)  # [jonex]
+
             # Start the reprocessing in the background
             # Note: Reprocessed documents retain their original track_id from initial upload
             background_tasks.add_task(rag.apipeline_process_enqueue_documents)
@@ -3374,7 +3510,7 @@ def create_document_routes(
         response_model=CancelPipelineResponse,
         dependencies=[Depends(combined_auth)],
     )
-    async def cancel_pipeline():
+    async def cancel_pipeline(http_request: Request):  # [jonex] +Request
         """
         Request cancellation of the currently running pipeline.
 
@@ -3400,6 +3536,8 @@ def create_document_routes(
                 get_namespace_data,
                 get_namespace_lock,
             )
+
+            rag = await _resolve_rag(http_request)  # [jonex]
 
             pipeline_status = await get_namespace_data(
                 "pipeline_status", workspace=rag.workspace
@@ -3481,7 +3619,7 @@ def create_document_routes(
         dependencies=[Depends(combined_auth)],
         summary="直接插入自定义知识图谱（chunks + entities + relationships）",
     )
-    async def insert_custom_kg(request: CustomKGRequest):
+    async def insert_custom_kg(request: CustomKGRequest, http_request: Request):  # [jonex] +Request
         """
         直接将预先构建的知识图谱插入 RAG 系统。
 
@@ -3496,6 +3634,8 @@ def create_document_routes(
         - 对已有图谱数据的批量修正
         """
         try:
+            rag = await _resolve_rag(http_request)  # [jonex]
+
             custom_kg = {
                 "chunks": [
                     c.model_dump(exclude_none=True) for c in request.chunks
@@ -3520,4 +3660,399 @@ def create_document_routes(
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=str(e))
 
+    # ── [jonex] Chunk update endpoint ──────────────────────────────────
+
+    class UpdateChunkRequest(BaseModel):
+        old_chunk_id: str = Field("", description="要修改的 chunk ID (chunk-xxx)")
+        new_content: str = Field(..., description="新文本内容")
+        file_source: str = Field("", description="file_source 字符串（保留不变）")
+        expected_content_hash: str | None = Field(
+            None, description="乐观锁校验值（旧内容 MD5 hexdigest）"
+        )
+        doc_status_id: str = Field(
+            "", description="doc-xxx 格式 ID，作为 old_chunk_id 的回退查找方式"
+        )
+
+    class UpdateChunkResponse(BaseModel):
+        status: str
+        old_chunk_id: str
+        new_chunk_id: str
+        doc_id: str
+        tokens: int
+        content_length: int
+        vector_updated: bool
+        affected_entities: int
+        updated_at: str
+
+    @router.get(
+        "/chunks",
+        dependencies=[Depends(combined_auth)],
+        summary="[jonex] 按 doc_id 锚点列出文档所有 chunks",
+    )
+    async def list_document_chunks(
+        doc_id: str = Query(..., description="KB 文档 id，匹配 file_path 的 doc= 锚点"),
+        http_request: Request = None,  # [jonex] workspace 解析
+    ):  # [jonex]
+        """[jonex] 按 ``file_path`` 中的 ``doc=<doc_id>`` 锚点枚举 text_chunks。
+
+        用于「查看文档 Chunk 列表」接口。每个 chunk 携带完整的 file_source
+        字符串（含 tstart=/tend= 视频/音频时间轴），下游可解析为时间戳定位。
+        """
+        try:
+            rag = await _resolve_rag(http_request)
+            chunks = await rag.text_chunks.get_chunks_by_doc_id(doc_id)
+            # 清理 content 里的 <!--yx:HASH--> 标记
+            clean_chunks = []
+            for c in chunks:
+                clean = dict(c)
+                clean["content"] = re.sub(
+                    r"\s*<!--yx:[0-9a-f]+-->\s*", "", clean.get("content") or "",
+                )
+                clean_chunks.append(clean)
+            return {
+                "doc_id": doc_id,
+                "total": len(clean_chunks),
+                "chunks": clean_chunks,
+            }
+        except Exception as e:
+            logger.error(f"Error GET /documents/chunks?doc_id={doc_id}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.get(
+        "/chunks/{chunk_id}",
+        dependencies=[Depends(combined_auth)],
+        summary="[jonex] 按 chunk_id 直查单个 chunk 内容",
+    )
+    async def get_chunk_by_id(chunk_id: str, http_request: Request):  # [jonex]
+        """[jonex] 按 chunk_id 直接从 text_chunks 读取单个 chunk（workspace 内）。
+
+        用于"查看单个 Chunk 内容"的精确直查，避免拉取整个文档 chunk 列表再过滤。
+        chunk_id 为 LightRAG 内容哈希主键（chunk-<md5>）。
+        """
+        try:
+            rag = await _resolve_rag(http_request)
+            chunk = await rag.text_chunks.get_by_id(chunk_id)
+            if chunk is None:
+                raise HTTPException(status_code=404, detail=f"chunk_id 不存在: {chunk_id}")
+            return {
+                "chunk_id": chunk_id,
+                "content": chunk.get("content", ""),
+                "full_doc_id": chunk.get("full_doc_id", ""),
+                "chunk_order_index": chunk.get("chunk_order_index"),
+                "file_path": chunk.get("file_path", ""),
+                "tokens": chunk.get("tokens"),
+                "page_idx": chunk.get("page_idx"),
+                "line_start": chunk.get("line_start"),
+                "line_end": chunk.get("line_end"),
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error GET /chunks/{chunk_id}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # ⚠ [jonex] 路由次序约束：/{doc_id} 是贪婪单段参数路由，必须注册在
+    # 所有具名静态 GET 路由之后，否则会吞掉 /pipeline_status 等同级具名路径。
+    # 新增 GET 路由（如 /new_endpoint）须注册在本路由之前。
+    @router.get(
+        "/{doc_id}",
+        dependencies=[Depends(combined_auth)],
+        summary="[jonex] 按 LightRAG 内部 doc-hash id 直查单个文档状态",
+    )
+    async def get_document_by_id(doc_id: str, http_request: Request):  # [jonex] P0-1
+        """[jonex] 按 LightRAG 内部 doc-hash id（doc-<md5>）查询单个文档处理状态。
+
+        用于 pipeline 轮询层 dup-failed 三态判定：
+        原件 processed → 良性成功；原件 pending/processing → 继续等待；
+        原件 failed → 硬失败。
+        """
+        try:
+            rag = await _resolve_rag(http_request)
+            doc = await rag.doc_status.get_by_id(doc_id)
+            if doc is None:
+                raise HTTPException(status_code=404, detail=f"doc_id 不存在: {doc_id}")
+            return {
+                "id": doc_id,
+                "status": doc.get("status", ""),
+                "content_summary": doc.get("content_summary", ""),
+                "content_length": doc.get("content_length", 0),
+                "created_at": doc.get("created_at", ""),
+                "updated_at": doc.get("updated_at", ""),
+                "track_id": doc.get("track_id"),
+                "chunks_count": doc.get("chunks_count"),
+                "error_msg": doc.get("error_msg"),
+                "metadata": doc.get("metadata"),
+                "file_path": doc.get("file_path", ""),
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error GET /documents/{doc_id}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.post(
+        "/chunks/update",
+        response_model=UpdateChunkResponse,
+        dependencies=[Depends(combined_auth)],
+    )
+    async def update_chunk(
+        request: UpdateChunkRequest,
+        http_request: Request,  # [jonex] workspace isolation
+    ):
+        """[jonex] 更新单个 chunk 文本内容。
+
+        事务性操作：upsert 新 chunk → delete 旧 chunk → 重写实体/关系引用。
+        变更隔离在 workspace 内（通过 LIGHTRAG-WORKSPACE header）。
+
+        与 raganything/service/chunk_repository.py 等效，但运行在服务端。
+        """
+        from lightrag.constants import GRAPH_FIELD_SEP
+        from lightrag.utils import compute_mdhash_id
+
+        MAX_CHUNK_TOKENS = 8000
+
+        try:
+            rag = await _resolve_rag(http_request)
+            old_chunk_id = request.old_chunk_id
+            new_content = request.new_content
+
+            # ── 0. Fallback: resolve chunk_id from doc_status_id ──
+            if (not old_chunk_id or not old_chunk_id.startswith("chunk-")) and request.doc_status_id:
+                doc_status = await rag.doc_status.get_by_id(request.doc_status_id)
+                if doc_status is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"doc_status_id 不存在: {request.doc_status_id}",
+                    )
+                content = doc_status.get("content_summary", "")
+                if content:
+                    old_chunk_id = compute_mdhash_id(content, prefix="chunk-")
+                else:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="无法从 doc_status 解析 chunk_id（content_summary 为空）",
+                    )
+
+            if not old_chunk_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="old_chunk_id 和 doc_status_id 至少提供一个",
+                )
+
+            # ── 1. Validate new content ──
+            if not new_content or not new_content.strip():
+                raise HTTPException(status_code=400, detail="new_content 不能为空")
+
+            tokens = len(rag.tokenizer.encode(new_content))
+            if tokens > MAX_CHUNK_TOKENS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"new_content 超过 {MAX_CHUNK_TOKENS} token 上限（当前 {tokens}）",
+                )
+
+            # ── 2. Look up old chunk ──
+            old = await rag.text_chunks.get_by_id(old_chunk_id)
+            if old is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"chunk_id 不存在: {old_chunk_id}",
+                )
+
+            # ── 3. Optimistic lock check (optional) ──
+            if request.expected_content_hash:
+                import hashlib
+
+                actual_hash = hashlib.md5(
+                    old.get("content", "").encode("utf-8")
+                ).hexdigest()
+                if actual_hash != request.expected_content_hash:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="乐观锁 hash 不匹配（内容已被他人修改）",
+                    )
+
+            # ── 4. Compute new chunk ID and check for collision ──
+            new_chunk_id = compute_mdhash_id(new_content, prefix="chunk-")
+            if new_chunk_id != old_chunk_id:
+                existing = await rag.text_chunks.get_by_id(new_chunk_id)
+                if existing is not None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="新内容与另一文档的 chunk 完全相同（跨文档碰撞）",
+                    )
+
+            doc_id = old.get("full_doc_id", "")
+            chunk_order_index = old.get("chunk_order_index", 0)
+
+            # ── 5. Build new chunk entry (preserve positional metadata) ──
+            new_chunk = {
+                "content": new_content,
+                "full_doc_id": doc_id,
+                "tokens": tokens,
+                "chunk_order_index": chunk_order_index,
+                "file_path": old.get("file_path", request.file_source),
+            }
+            for k in ("page_idx", "line_start", "line_end"):
+                if k in old:
+                    new_chunk[k] = old[k]
+
+            # ── 6. Vectorize new content ──
+            vector_updated = True
+            new_vector = None
+            try:
+                # Use rag's embedding_func (same as other document endpoints)
+                if rag.embedding_func is not None:
+                    new_vector = await rag.embedding_func([new_content])
+                elif hasattr(rag.chunks_vdb, "embedding_func") and rag.chunks_vdb.embedding_func is not None:
+                    new_vector = await rag.chunks_vdb.embedding_func([new_content])
+                else:
+                    logger.warning(
+                        "update_chunk: no embedding_func available, skipping vector update"
+                    )
+                    vector_updated = False
+            except Exception as e:
+                logger.error(f"update_chunk: vectorize failed for {new_chunk_id}: {e}")
+                vector_updated = False
+
+            # ── 7. Write new → delete old (transactional) ──
+            await rag.text_chunks.upsert({new_chunk_id: new_chunk})
+            await rag.text_chunks.index_done_callback()
+
+            if vector_updated and new_vector is not None and len(new_vector) > 0:
+                vdb_data = {new_chunk_id: {**new_chunk, "vector": new_vector[0]}}
+                try:
+                    await rag.chunks_vdb.upsert(vdb_data)
+                    await rag.chunks_vdb.index_done_callback()
+                except Exception as e:
+                    logger.error(f"update_chunk: vdb upsert failed: {e}")
+                    vector_updated = False
+
+            if vector_updated:
+                # Full success — delete old data
+                await rag.text_chunks.delete([old_chunk_id])
+                await rag.text_chunks.index_done_callback()
+                await rag.chunks_vdb.delete([old_chunk_id])
+                await rag.chunks_vdb.index_done_callback()
+            else:
+                # vdb failed — rollback new text_chunks, keep old data intact
+                await rag.text_chunks.delete([new_chunk_id])
+                await rag.text_chunks.index_done_callback()
+
+            # ── 8. Rewrite entity/relation chunk references ──
+            affected = 0
+            if vector_updated and new_chunk_id != old_chunk_id:
+                affected = await _rewrite_chunk_refs(
+                    rag, old_chunk_id, new_chunk_id, doc_id,
+                )
+
+            return {
+                "status": "success",
+                "old_chunk_id": old_chunk_id,
+                "new_chunk_id": new_chunk_id,
+                "doc_id": doc_id,
+                "tokens": tokens,
+                "content_length": len(new_content),
+                "vector_updated": vector_updated,
+                "affected_entities": affected,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error /documents/chunks/update: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=str(e))
+
     return router
+
+
+async def _rewrite_chunk_refs(
+    rag,
+    old_chunk_id: str,
+    new_chunk_id: str,
+    doc_id: str,
+) -> int:
+    """Rewrite entity_chunks / relation_chunks / doc_status references.
+
+    LightRAG stores source_id as a GRAPH_FIELD_SEP ("<SEP>") delimited
+    string (e.g. "chunk-1<SEP>chunk-2<SEP>chunk-3") because entities
+    are extracted from multiple chunks. We split→replace→join rather
+    than doing a simple == comparison.
+    """
+    from lightrag.constants import GRAPH_FIELD_SEP
+
+    count = 0
+
+    # ── entity_chunks ──
+    # _data is a dict for JSON storage, but a numpy array for Milvus/PG.
+    # numpy array truthiness check causes ValueError — guard against it.
+    _raw = getattr(rag.entity_chunks, "_data", None)
+    try:
+        import numpy as _np
+        if _raw is None or isinstance(_raw, _np.ndarray):
+            _raw = {}
+    except ImportError:
+        if _raw is None:
+            _raw = {}
+    entity_data = _raw
+    updated_entities = {}
+    for ek, ev in entity_data.items():
+        if not isinstance(ev, dict) or not ev.get("source_id"):
+            continue
+        source_ids = ev["source_id"].split(GRAPH_FIELD_SEP)
+        if old_chunk_id in source_ids:
+            new_ids = [
+                new_chunk_id if cid == old_chunk_id else cid
+                for cid in source_ids
+            ]
+            ev["source_id"] = GRAPH_FIELD_SEP.join(new_ids)
+            updated_entities[ek] = ev
+            count += 1
+    if updated_entities:
+        await rag.entity_chunks.upsert(updated_entities)
+        await rag.entity_chunks.index_done_callback()
+
+    # ── relation_chunks ──
+    # Same numpy guard as entity_chunks above
+    _raw_rel = getattr(rag.relation_chunks, "_data", None)
+    try:
+        import numpy as _np
+        if _raw_rel is None or isinstance(_raw_rel, _np.ndarray):
+            _raw_rel = {}
+    except ImportError:
+        if _raw_rel is None:
+            _raw_rel = {}
+    relation_data = _raw_rel
+    updated_relations = {}
+    for rk, rv in relation_data.items():
+        if not isinstance(rv, dict) or not rv.get("source_id"):
+            continue
+        source_ids = rv["source_id"].split(GRAPH_FIELD_SEP)
+        if old_chunk_id in source_ids:
+            new_ids = [
+                new_chunk_id if cid == old_chunk_id else cid
+                for cid in source_ids
+            ]
+            rv["source_id"] = GRAPH_FIELD_SEP.join(new_ids)
+            updated_relations[rk] = rv
+            count += 1
+    if updated_relations:
+        await rag.relation_chunks.upsert(updated_relations)
+        await rag.relation_chunks.index_done_callback()
+
+    # ── doc_status.chunks_list ──
+    doc_status = await rag.doc_status.get_by_id(doc_id)
+    if doc_status and isinstance(doc_status, dict):
+        chunks_list = doc_status.get("chunks_list", [])
+        if old_chunk_id in chunks_list:
+            new_list = [
+                new_chunk_id if cid == old_chunk_id else cid
+                for cid in chunks_list
+            ]
+            doc_status["chunks_list"] = new_list
+            await rag.doc_status.upsert({doc_id: doc_status})
+            await rag.doc_status.index_done_callback()
+            count += 1
+
+    return count

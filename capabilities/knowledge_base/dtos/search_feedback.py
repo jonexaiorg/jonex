@@ -1,4 +1,4 @@
-
+"""Knowledge Base search feedback DTOs."""
 
 from datetime import datetime
 from typing import Optional
@@ -10,7 +10,7 @@ except ImportError:
 
 
 class SubmitSearchFeedbackRequest(BaseModel):
-
+    """提交搜索结果反馈（"有帮助/无帮助"）。"""
 
     session_id: str = Field(..., min_length=1, max_length=128, description="搜索会话 ID")
     query: str = Field(..., min_length=1, max_length=2000, description="搜索问题")
@@ -29,7 +29,7 @@ class SubmitSearchFeedbackRequest(BaseModel):
 
 
 class CancelSearchFeedbackRequest(BaseModel):
-
+    """取消搜索结果反馈。"""
 
     session_id: str = Field(..., min_length=1, max_length=128, description="搜索会话 ID")
     feedback_type: str = Field(..., regex="^(like|dislike)$", description="要取消的反馈类型")
@@ -42,7 +42,7 @@ class CancelSearchFeedbackRequest(BaseModel):
 
 
 class ListSearchFeedbackRequest(BaseModel):
-
+    """查询知识库的反馈列表。"""
 
     knowledge_base_id: str = Field(..., min_length=1, max_length=128, description="知识库 ID")
     feedback_type: Optional[str] = Field(default=None, regex="^(like|dislike)?$", description="按反馈类型过滤")
@@ -54,7 +54,7 @@ class ListSearchFeedbackRequest(BaseModel):
 
 
 class SearchFeedbackToggleAdoptRequest(BaseModel):
-
+    """切换反馈记录的采纳状态。"""
 
     feedback_id: str = Field(..., min_length=1, max_length=128, description="反馈记录 ID")
 
@@ -63,7 +63,7 @@ class SearchFeedbackToggleAdoptRequest(BaseModel):
 
 
 class SearchFeedbackItemResponse(BaseModel):
-
+    """反馈单条记录响应。"""
 
     id: str
     tenant_id: str
@@ -81,7 +81,7 @@ class SearchFeedbackItemResponse(BaseModel):
 
 
 class SearchFeedbackListResponse(BaseModel):
-
+    """反馈列表响应。"""
 
     items: list[SearchFeedbackItemResponse] = Field(default_factory=list)
     total: int = 0
@@ -92,7 +92,7 @@ class SearchFeedbackListResponse(BaseModel):
 
 
 class SearchFeedbackStatsResponse(BaseModel):
-
+    """反馈统计响应。"""
 
     total: int = 0
     like_count: int = 0

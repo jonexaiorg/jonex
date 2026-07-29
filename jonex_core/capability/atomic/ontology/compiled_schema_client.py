@@ -1,4 +1,11 @@
+"""
+CompiledSchemaClient — atomic-rag 侧读取 compiled schema 的 HTTP+Redis 客户端。
 
+职责（只读，不直连业务模板表 / PG）：
+1. Redis 优先读取 compiled schema
+2. Miss 时调用 knowledge-base HTTP API
+3. 失败时 fallback 到 default.yaml
+"""
 import json
 import logging
 import os
@@ -21,14 +28,14 @@ def _compiled_key(tenant_id: str, knowledge_base_id: str) -> str:
 
 
 class CompiledSchemaClient:
-
+    """atomic-rag 侧 compiled schema 客户端（只读）。"""
 
     def __init__(self):
         self._knowledge_base_api_url = os.getenv(
             "KNOWLEDGE_BASE_API_URL",
             "http://knowledge-base:8003",
         )
-        self._api_key = os.getenv("KNOWLEDGE_BASE_API_KEY", "")
+        self._api_key = os.getenv("KNOWLEDGE_BASE_API_KEY", "jonex_test_gateway")
         self._fallback_schema: Optional[dict] = None
 
     async def get_schema(
@@ -36,23 +43,26 @@ class CompiledSchemaClient:
         tenant_id: str,
         knowledge_base_id: str,
     ) -> Optional[dict]:
+        """按 tenant_id + knowledge_base_id 获取 compiled schema。
 
-
+        策略：Redis -> HTTP API -> default.yaml fallback
+        """
+        # 1. Redis
         schema = await self._get_from_redis(tenant_id, knowledge_base_id)
         if schema is not None:
             return schema
 
-
+        # 2. HTTP API
         schema = await self._get_from_api(tenant_id, knowledge_base_id)
         if schema is not None:
             await self._set_redis(tenant_id, knowledge_base_id, schema)
             return schema
 
-
+        # 3. default.yaml fallback
         return await self._get_fallback()
 
     async def _get_from_redis(self, tenant_id: str, knowledge_base_id: str) -> Optional[dict]:
-
+        """Redis 读取。"""
         try:
             key = _compiled_key(tenant_id, knowledge_base_id)
             raw = await CacheUtil.get(key)
@@ -63,7 +73,7 @@ class CompiledSchemaClient:
         return None
 
     async def _set_redis(self, tenant_id: str, knowledge_base_id: str, data: dict) -> None:
-
+        """Redis 写入。"""
         try:
             key = _compiled_key(tenant_id, knowledge_base_id)
             raw = json.dumps(data, ensure_ascii=False, default=str)
@@ -72,7 +82,7 @@ class CompiledSchemaClient:
             logger.warning("Compiled schema Redis write failed: %s", e)
 
     async def _get_from_api(self, tenant_id: str, knowledge_base_id: str) -> Optional[dict]:
-
+        """HTTP 调用 knowledge-base API。"""
         import httpx
 
         url = (
@@ -105,7 +115,7 @@ class CompiledSchemaClient:
         return None
 
     async def _get_fallback(self) -> Optional[dict]:
-
+        """default.yaml fallback。"""
         if self._fallback_schema:
             return self._fallback_schema
 

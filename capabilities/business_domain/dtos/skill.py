@@ -1,4 +1,6 @@
-
+"""
+业务领域 — AI Skill MCP 化 Pydantic Schema
+"""
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field

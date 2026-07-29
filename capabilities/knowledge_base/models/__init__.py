@@ -1,10 +1,16 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""Knowledge Base ORM exports.
 
-
+加载该包时，下列模型会在各自模块的类定义处注册到 SQLAlchemy 元数据。
+任一模型导入或注册失败时，模块级 import 抛出的异常会直接向上传播，
+终止整个 models 包的加载并指示失败的模型，从而不会注册部分模型。
+"""
 
 from .document import DocStatus, KnowledgeDocument, OntologyStatus
 from .data_source import KnowledgeDataSource
 from .folder import Folder
+from .tag import DocumentTag, Tag
 from .domain_service import (
     DomainService,
     ServiceApiKey,
@@ -21,8 +27,10 @@ from .space import Space, SpacePermission
 
 __all__ = [
     "DocStatus",
+    "DocumentTag",
     "DomainService",
     "Folder",
+    "Tag",
     "KnowledgeDataSource",
     "KnowledgeDocument",
     "KnowledgeInfo",

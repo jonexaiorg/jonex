@@ -1,4 +1,8 @@
+"""
+平台管理 CRUD API 路由（platform 容器内部）
 
+由 Sidecar 代理调用，不直接对外暴露。
+"""
 from fastapi import APIRouter, Depends, Query, Request
 
 from jonex_core.common.database import get_db
@@ -37,7 +41,7 @@ from capabilities.platform.dtos.misc import (
 router = APIRouter()
 
 
-
+# ==================== 租户管理 ====================
 
 @router.get("/tenants")
 async def list_tenants(
@@ -53,7 +57,7 @@ async def list_tenants(
 
 @router.get("/tenants/user-counts")
 async def get_tenant_user_counts(db=Depends(get_db)):
-
+    """各租户用户数统计（跨租户）"""
     from capabilities.platform.services.user_service import UserService
     svc = UserService(db)
     counts = await svc.get_user_counts()
@@ -67,7 +71,7 @@ async def create_tenant(
 ):
     svc = TenantService(db)
     result = await svc.create(req)
-    return success_response(data=result, message="Tenant created successfully")
+    return success_response(data=result, message="租户已创建")
 
 
 @router.get("/tenants/{tenant_id}")
@@ -88,7 +92,7 @@ async def update_tenant(
 ):
     svc = TenantService(db)
     result = await svc.update(tenant_id, req)
-    return success_response(data=result, message="Tenant updated successfully")
+    return success_response(data=result, message="租户已更新")
 
 
 @router.delete("/tenants/{tenant_id}")
@@ -98,14 +102,14 @@ async def delete_tenant(
 ):
     svc = TenantService(db)
     await svc.delete(tenant_id)
-    return success_response(message="Tenant deleted successfully")
+    return success_response(message="租户已删除")
 
 
-
+# ==================== 用户管理 ====================
 
 @router.get("/users/all")
 async def list_all_users(db=Depends(get_db)):
-
+    """跨租户查询所有用户（管理员视角）"""
     from capabilities.platform.services.user_service import UserService
     svc = UserService(db)
     result = await svc.list_all_users()
@@ -155,7 +159,7 @@ async def delete_user(request: Request, user_id: int, db=Depends(get_db)):
     tenant_id = extract_tenant_id(request)
     svc = UserService(db)
     await svc.delete(tenant_id, user_id)
-    return success_response(message="User deleted successfully")
+    return success_response(message="用户已删除")
 
 
 @router.get("/users/{user_id}/roles")
@@ -171,10 +175,10 @@ async def set_user_roles(request: Request, user_id: int, req: UserRolesRequest, 
     tenant_id = extract_tenant_id(request)
     svc = UserService(db)
     await svc.set_roles(tenant_id, user_id, req.role_ids)
-    return success_response(message="User roles updated successfully")
+    return success_response(message="用户角色已更新")
 
 
-
+# ==================== 角色管理 ====================
 
 @router.get("/roles")
 async def list_roles(
@@ -219,7 +223,7 @@ async def delete_role(request: Request, role_id: int, db=Depends(get_db)):
     tenant_id = extract_tenant_id(request)
     svc = RoleService(db)
     await svc.delete(tenant_id, role_id)
-    return success_response(message="Role deleted successfully")
+    return success_response(message="角色已删除")
 
 
 @router.get("/roles/{role_id}/permissions")
@@ -248,10 +252,10 @@ async def set_role_permissions(
     tenant_id = extract_tenant_id(request)
     svc = RoleService(db)
     await svc.set_permissions(tenant_id, role_id, req.permission_ids)
-    return success_response(message="Role permissions updated successfully")
+    return success_response(message="角色权限已更新")
 
 
-
+# ==================== 权限管理 ====================
 
 @router.get("/permissions")
 async def list_permissions(
@@ -265,7 +269,7 @@ async def list_permissions(
     return success_response(data=result.dict())
 
 
-
+# ==================== 菜单管理 ====================
 
 @router.get("/menus")
 async def get_menus(db=Depends(get_db)):
@@ -292,10 +296,10 @@ async def update_menu(menu_id: int, req: MenuUpdateRequest, db=Depends(get_db)):
 async def delete_menu(menu_id: int, db=Depends(get_db)):
     svc = MenuService(db)
     await svc.delete(menu_id)
-    return success_response(message="Menu deleted successfully")
+    return success_response(message="菜单已删除")
 
 
-
+# ==================== 应用管理 ====================
 
 @router.get("/frontend/apps")
 async def get_frontend_manifest(db=Depends(get_db)):
@@ -336,10 +340,10 @@ async def update_application(app_id: int, req: ApplicationUpdateRequest, db=Depe
 async def delete_application(app_id: int, db=Depends(get_db)):
     svc = ApplicationService(db)
     await svc.delete(app_id)
-    return success_response(message="Application deleted successfully")
+    return success_response(message="应用已删除")
 
 
-
+# ==================== 系统配置 ====================
 
 @router.get("/system-configs")
 async def list_system_configs(db=Depends(get_db)):
@@ -355,7 +359,7 @@ async def update_system_config(config_key: str, req: SystemConfigUpdateRequest, 
     return success_response(data=result.dict())
 
 
-
+# ==================== 任务调度 ====================
 
 @router.get("/task-schedules")
 async def list_task_schedules(
@@ -405,7 +409,7 @@ async def delete_task_schedule(request: Request, task_id: int, db=Depends(get_db
     tenant_id = extract_tenant_id(request)
     svc = TaskScheduleService(db)
     await svc.delete(tenant_id, task_id)
-    return success_response(message="Task deleted successfully")
+    return success_response(message="任务已删除")
 
 
 @router.post("/task-schedules/{task_id}/trigger")
@@ -415,5 +419,5 @@ async def trigger_task_schedule(request: Request, task_id: int, db=Depends(get_d
     task = await svc.get(tenant_id, task_id)
     return success_response(
         data={"task_id": task.id, "name": task.name, "triggered": True},
-        message=f"Task {task.name} triggered successfully"
+        message=f"任务 {task.name} 已触发"
     )

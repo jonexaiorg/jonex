@@ -1,9 +1,9 @@
 """
-Ontology engine - TBox Definition and registration.
+本体论引擎 — TBox 定义与注册。
 
-Provides OntologyRegistry and related data models (EntityTypeDef, RelationTypeDef).
-Used by atomic-rag's Stage4 OntologyExtractor during document extraction, also available for knowledge-base
-service to search type definitions during query.
+提供 OntologyRegistry（本体注册中心）及相关的数据模型（EntityTypeDef、RelationTypeDef）。
+由 atomic-rag 的 Stage4 OntologyExtractor 在文档抽取时使用，亦可供 knowledge-base
+服务在查询时检索类型定义。
 """
 
 from .models import EntityTypeDef, AttributeDef, RelationTypeDef, OntologySchema

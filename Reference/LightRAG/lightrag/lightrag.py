@@ -725,7 +725,7 @@ class LightRAG:
             namespace=NameSpace.VECTOR_STORE_CHUNKS,
             workspace=self.workspace,
             embedding_func=self.embedding_func,
-            meta_fields={"full_doc_id", "content", "file_path"},
+            meta_fields={"full_doc_id", "content", "file_path", "page_idx", "text_idx", "line_start", "line_end", "start_time", "end_time"},
         )
 
         # Initialize document status storage
@@ -1273,26 +1273,40 @@ class LightRAG:
     def insert_custom_chunks(
         self,
         full_text: str,
-        text_chunks: list[str],
+        text_chunks: list[str | dict],
         doc_id: str | list[str] | None = None,
+        file_path: str = "",
     ) -> None:
         loop = always_get_an_event_loop()
         loop.run_until_complete(
-            self.ainsert_custom_chunks(full_text, text_chunks, doc_id)
+            self.ainsert_custom_chunks(full_text, text_chunks, doc_id, file_path)
         )
 
-    # TODO: deprecated, use ainsert instead
+    # [jonex] ainsert_custom_chunks — 支持 list[dict] 元数据透传
     async def ainsert_custom_chunks(
-        self, full_text: str, text_chunks: list[str], doc_id: str | None = None
+        self,
+        full_text: str,
+        text_chunks: list[str | dict],
+        doc_id: str | None = None,
+        file_path: str = "",
     ) -> None:
         update_storage = False
         try:
-            # Clean input texts
+            # Clean full_text
             full_text = sanitize_text_for_encoding(full_text)
-            text_chunks = [sanitize_text_for_encoding(chunk) for chunk in text_chunks]
-            file_path = ""
 
-            # Process cleaned texts
+            # ── [jonex] Auto-detect metadata path ──
+            if text_chunks and isinstance(text_chunks[0], dict):
+                raw_chunks = text_chunks
+                text_chunks_str = [
+                    sanitize_text_for_encoding(c["content"]) for c in raw_chunks
+                ]
+            else:
+                raw_chunks = None
+                text_chunks_str = [
+                    sanitize_text_for_encoding(c) for c in text_chunks
+                ]
+
             if doc_id is None:
                 doc_key = compute_mdhash_id(full_text, prefix="doc-")
             else:
@@ -1309,16 +1323,23 @@ class LightRAG:
             logger.info(f"Inserting {len(new_docs)} docs")
 
             inserting_chunks: dict[str, Any] = {}
-            for index, chunk_text in enumerate(text_chunks):
+            for index, chunk_text in enumerate(text_chunks_str):
                 chunk_key = compute_mdhash_id(chunk_text, prefix="chunk-")
                 tokens = len(self.tokenizer.encode(chunk_text))
-                inserting_chunks[chunk_key] = {
+                chunk_entry = {
                     "content": chunk_text,
                     "full_doc_id": doc_key,
                     "tokens": tokens,
                     "chunk_order_index": index,
                     "file_path": file_path,
                 }
+                # ── [jonex] Merge positional metadata from dict input ──
+                if raw_chunks:
+                    src = raw_chunks[index]
+                    for k in ("page_idx", "line_start", "line_end"):
+                        if k in src:
+                            chunk_entry[k] = src[k]
+                inserting_chunks[chunk_key] = chunk_entry
 
             doc_ids = set(inserting_chunks.keys())
             add_chunk_keys = await self.text_chunks.filter_keys(doc_ids)
@@ -1434,7 +1455,7 @@ class LightRAG:
         new_docs: dict[str, Any] = {
             id_: {
                 "status": DocStatus.PENDING,
-                "content_summary": get_content_summary(content_data["content"]),
+                "content_summary": get_content_summary(content_data["content"], max_length=4096),
                 "content_length": len(content_data["content"]),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -1913,6 +1934,32 @@ class LightRAG:
                                 )
                                 status_doc.file_path = file_path
 
+                            # ── [jonex] 入库 embedding 维度透传 ───────────────
+                            # 把 file_path（携带 kb=|doc=|tenant=|trace=）写入 contextvar，
+                            # 配合限流器 context 透传（utils.priority_limit_async_func_call
+                            # 入队 copy_context + worker create_task(context=)，见
+                            # docs/lightrag-embed-metering-context-propagation-plan.md），
+                            # 使 embedding upsert（chunks_vdb / entities_vdb /
+                            # relationships_vdb）能读到 tenant/kb/doc，补齐 scene=lightrag_embed
+                            # 行的计量维度。
+                            #
+                            # ⚠️ 不变式（务必维持，否则会串维度）：每篇文档跑在**各自独立的
+                            # asyncio task**（doc_tasks 经 gather 各自成 task），故此处 set 的
+                            # contextvar 随本文档 task 生命周期存续、task 结束自然消亡，无需
+                            # reset、也不会串到其他文档。**切勿改成在同一 task 内顺序复用
+                            # 处理多篇文档**；若将来必须复用，则须保存本次 set 返回的 Token 并在
+                            # 切换下一篇前 try/finally + clear_jonex_context(token)（见方案 §4.6）。
+                            try:
+                                from lightrag.jonex_metering import (
+                                    set_jonex_context_from_file_source,
+                                )
+
+                                set_jonex_context_from_file_source(file_path)
+                            except Exception:
+                                # 计量透传失败绝不影响入库主流程
+                                pass
+                            # ── [jonex] end ───────────────────────────────────
+
                             # Check for cancellation before starting document processing.
                             # file_path is resolved before this check so queued documents
                             # do not lose their source path on early cancellation.
@@ -1945,6 +1992,9 @@ class LightRAG:
                                     # remains appendable and visible across processes.
                                     del pipeline_status["history_messages"][:-5000]
 
+                            # ── [jonex] 阶段耗时埋点：extract 开始 ───
+                            _jonex_t_extract_start = time.perf_counter()
+                            # ── [jonex] end ───
                             # Get document content from full_docs
                             if not content_data:
                                 raise Exception(
@@ -2047,6 +2097,11 @@ class LightRAG:
                             )
                             chunk_results = await entity_relation_task
                             file_extraction_stage_ok = True
+                            # ── [jonex] 阶段耗时埋点：extract 结束 ───
+                            _jonex_extract_ms = int(
+                                (time.perf_counter() - _jonex_t_extract_start) * 1000
+                            )
+                            # ── [jonex] end ───
 
                         except Exception as e:
                             # Check if this is a user cancellation
@@ -2133,6 +2188,7 @@ class LightRAG:
                                         )
 
                                 # Use chunk_results from entity_relation_task
+                                _jonex_t_merge_start = time.perf_counter()  # [jonex] merge 开始
                                 await merge_nodes_and_edges(
                                     chunk_results=chunk_results,  # result collected from entity_relation_task
                                     knowledge_graph_inst=self.chunk_entity_relation_graph,
@@ -2152,6 +2208,11 @@ class LightRAG:
                                     file_path=file_path,
                                 )
 
+                                # ── [jonex] 阶段耗时埋点：merge 结束 ───
+                                _jonex_merge_ms = int(
+                                    (time.perf_counter() - _jonex_t_merge_start) * 1000
+                                )
+                                # ── [jonex] end ───
                                 # Record processing end time
                                 processing_end_time = int(time.time())
 
@@ -2178,7 +2239,25 @@ class LightRAG:
                                 )
 
                                 # Call _insert_done after processing each file
+                                _jonex_t_persist_start = time.perf_counter()  # [jonex] persist 开始
                                 await self._insert_done()
+                                _jonex_persist_ms = int(  # [jonex] persist 结束
+                                    (time.perf_counter() - _jonex_t_persist_start) * 1000
+                                )
+
+                                # ── [jonex] 阶段耗时埋点：单次推 chunk 各阶段耗时汇总 ───
+                                # extract（分块+chunk向量化+LLM实体/关系抽取，通常是大头）
+                                # / merge（写图库+向量库）/ persist（落盘）
+                                logger.info(
+                                    "[jonex] chunk_timing doc=%s file=%s "
+                                    "extract_ms=%s merge_ms=%s persist_ms=%s",
+                                    doc_id,
+                                    file_path,
+                                    _jonex_extract_ms,
+                                    _jonex_merge_ms,
+                                    _jonex_persist_ms,
+                                )
+                                # ── [jonex] end ───
 
                                 async with pipeline_status_lock:
                                     log_message = f"Completed processing file {current_file_number}/{total_files}: {file_path}"

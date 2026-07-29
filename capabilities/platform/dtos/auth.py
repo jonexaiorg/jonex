@@ -1,4 +1,6 @@
-
+"""
+Pydantic v1 DTOs — 请求/响应模型。
+"""
 from datetime import datetime
 from typing import List, Literal, Optional, Union
 
@@ -8,7 +10,7 @@ except ImportError:
     from pydantic import BaseModel, Field
 
 
-
+# ============ 认证 ============
 
 class LoginRequest(BaseModel):
     username: str

@@ -1,6 +1,8 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""
+统一异步 Repository 基类。
+"""
 
 from typing import Any, Generic, Iterable, Optional, Sequence, TypeVar
 
@@ -8,13 +10,14 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jonex_core.common.exceptions import ResourceNotFoundError
+from jonex_core.common.i18n import translate
 from jonex_core.common.tenant import TenantContext, require_tenant
 
 ModelT = TypeVar("ModelT")
 
 
 class BaseRepository(Generic[ModelT]):
-
+    """支持租户资源、共享资源与对象式 platform 服务的通用仓储。"""
 
     model: type[ModelT]
 
@@ -62,7 +65,7 @@ class BaseRepository(Generic[ModelT]):
         obj = await self.get_by_id(id_val, tenant_id)
         if obj is None:
             raise ResourceNotFoundError(
-                message=f"{self.model.__name__} not found: {id_val}",
+                message=translate("err.common.resource_not_found", params={"entity": self.model.__name__, "id": str(id_val)}, fallback=f"{self.model.__name__} 不存在: {id_val}"),
                 details={"id": id_val, "tenant_id": tenant_id},
             )
         return obj
@@ -167,7 +170,7 @@ class BaseRepository(Generic[ModelT]):
         obj = await self.get_by_id_shared(id_val)
         if obj is None:
             raise ResourceNotFoundError(
-                message=f"{self.model.__name__} not found: {id_val}",
+                message=translate("err.common.resource_not_found", params={"entity": self.model.__name__, "id": str(id_val)}, fallback=f"{self.model.__name__} 不存在: {id_val}"),
                 details={"id": id_val},
             )
         return obj

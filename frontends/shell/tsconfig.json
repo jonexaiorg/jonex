@@ -14,6 +14,8 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
     "paths": {
+      "@jonex/i18n-resources": ["../shared/i18n-resources/src/index.ts"],
+      "@jonex/i18n-resources/*": ["../shared/i18n-resources/src/*"],
       "@jonex/shell-sdk": ["../shared/shell-sdk/src/index.ts"],
       "@jonex/shell-sdk/*": ["../shared/shell-sdk/src/*"]
     },

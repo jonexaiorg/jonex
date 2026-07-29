@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any
+from jonex_core.common.i18n import translate
 from .models import (
     CapabilityMetadata,
     CapabilityRequest,
@@ -9,9 +10,9 @@ from .models import (
 
 
 class BaseCapability(ABC):
-    """Base class for capability plugins
+    """能力插件基类
 
-    All capabilities must implement this abstract base class, following the unified invocation contract.
+    所有能力必须实现此抽象基类，遵循统一的调用契约。
     """
 
     def __init__(self):
@@ -19,52 +20,52 @@ class BaseCapability(ABC):
 
     @abstractmethod
     def _build_metadata(self) -> CapabilityMetadata:
-        """Build capability metadata (implemented by subclasses)"""
+        """构建能力元数据（由子类实现）"""
         pass
 
     def get_metadata(self) -> CapabilityMetadata:
-        """Get capability metadata"""
+        """获取能力元数据"""
         return self._metadata
 
     @abstractmethod
     async def validate_input(self, request: CapabilityRequest) -> bool:
-        """Validate input parameters (implemented by subclasses)"""
+        """输入参数验证（由子类实现）"""
         pass
 
     @abstractmethod
     async def execute(self, request: CapabilityRequest) -> CapabilityResponse:
-        """Execute capability logic (implemented by subclasses)"""
+        """执行能力逻辑（由子类实现）"""
         pass
 
     async def __call__(self, request: CapabilityRequest) -> CapabilityResponse:
-        """Convenient invocation method"""
+        """便捷调用方式"""
         if not await self.validate_input(request):
             return CapabilityResponse.error(
                 request_id=request.request_id,
                 code=400,
-                message="Parameter validation failed"
+                message=translate("err.capability.validation_failed", fallback="参数验证失败")
             )
         return await self.execute(request)
 
     def get_health_status(self) -> CapabilityHealth:
-        """Get capability health status"""
+        """获取能力健康状态"""
         return CapabilityHealth(
             capability_id=self.get_metadata().full_id,
             is_healthy=True,
-            message="Running normally"
+            message=translate("err.capability.healthy", fallback="运行正常")
         )
 
     async def initialize(self) -> None:
-        """Capability initialize hook"""
+        """能力初始化钩子"""
         pass
 
     async def shutdown(self) -> None:
-        """Capability shutdown hook"""
+        """能力关闭钩子"""
         pass
 
     def register_routes(self, app) -> None:
-        """Register custom routes (optional override)
+        """注册自定义路由（可选覆盖）
 
-        Invoked when capability service starts, allowing capability to add additional FastAPI routes.
+        能力服务启动时调用，允许能力添加额外的 FastAPI 路由。
         """
         pass

@@ -207,29 +207,9 @@
   gap: 6px;
 }
 
-.template-scenarios-attr-inline {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-.template-scenarios-attr-inline th {
-  padding: 4px 8px;
-  border-bottom: 1px solid #e8edf3;
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 500;
-  text-align: left;
-}
-
-.template-scenarios-attr-inline td {
-  padding: 4px 8px;
-  border-bottom: 1px solid #f1f5f9;
-  color: #475569;
-}
-
-.template-scenarios-attr-inline tbody tr:last-child td {
-  border-bottom: 0;
+/* 仅覆盖 AttrInlineTable 内嵌表格的 margin-inline */
+.attr-inline-table.ant-table-wrapper .ant-table {
+  margin-inline: 0 !important;
 }
 
 .template-scenarios-key-mark {

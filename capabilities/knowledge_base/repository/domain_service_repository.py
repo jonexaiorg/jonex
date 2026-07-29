@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""Repositories for DomainService and related models."""
 
 from jonex_core.common.repository import BaseRepository
 

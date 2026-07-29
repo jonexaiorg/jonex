@@ -15,12 +15,11 @@ atomic-rag FastAPI 服务 — raganything 解析 + LightRAG Server 索引
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import re
 import subprocess
-import tempfile
+import types
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -28,6 +27,12 @@ from typing import Optional
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from atomic_rag.actions import ActionRegistry
+import atomic_rag.actions.insert  # noqa: F401 — register handler
+import atomic_rag.actions.query   # noqa: F401
+import atomic_rag.actions.delete  # noqa: F401
+import atomic_rag.actions.status  # noqa: F401
+from raganything.parsers import get_parser
 
 # ---------------------------------------------------------------------------
 # 日志
@@ -51,6 +56,13 @@ RAG_WORKER_NUM: int = int(os.getenv("RAG_WORKER_NUM", "2"))
 
 # ASR 模型（首次加载会下载，后续缓存）
 WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
+
+# MPS（腾讯云媒体处理）视频智能分析配置（可选）
+MPS_ENABLED: bool = os.getenv("MPS_ENABLED", "false").lower() == "true"
+MPS_SECRET_ID: str = os.getenv("MPS_SECRET_ID", "")
+MPS_SECRET_KEY: str = os.getenv("MPS_SECRET_KEY", "")
+MPS_COS_BUCKET: str = os.getenv("MPS_COS_BUCKET", "")
+MPS_COS_REGION: str = os.getenv("MPS_COS_REGION") or os.getenv("MPS_REGION", "")
 
 VIDEO_EXTENSIONS = {
     ".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".webm", ".m4v", ".mpg", ".mpeg", ".3gp",
@@ -199,6 +211,97 @@ def _transcribe_audio(audio_path: str, model_name: str = "base") -> dict:
 
 
 # ---------------------------------------------------------------------------
+# MPS 视频智能分析（可选）
+# ---------------------------------------------------------------------------
+_mps_backend_cache: dict[str, object] = {}
+
+
+def _get_mps_backend() -> object | None:
+    """懒加载 MPSVideoBackend，返回 None 表示配置不完整。"""
+    if not MPS_ENABLED:
+        return None
+    if not all([MPS_SECRET_ID, MPS_SECRET_KEY, MPS_COS_BUCKET, MPS_COS_REGION]):
+        logger.warning("MPS 配置不完整，跳过视频智能分析")
+        return None
+    cache_key = f"{MPS_SECRET_ID}:{MPS_COS_BUCKET}"
+    if cache_key not in _mps_backend_cache:
+        try:
+            from raganything.video_analysis.backends.mps import MPSVideoBackend
+
+            cfg = types.SimpleNamespace(
+                mps_secret_id=MPS_SECRET_ID,
+                mps_secret_key=MPS_SECRET_KEY,
+                mps_cos_bucket=MPS_COS_BUCKET,
+                mps_cos_region=MPS_COS_REGION,
+            )
+            _mps_backend_cache[cache_key] = MPSVideoBackend(cfg)
+            logger.info("MPS 视频分析后端就绪")
+        except Exception as e:
+            logger.error(f"MPS 后端初始化失败: {e}")
+            _mps_backend_cache[cache_key] = None
+    return _mps_backend_cache.get(cache_key)
+
+
+async def _run_mps_analysis(video_cos_url: str) -> list[dict]:
+    """调用 MPS 分析视频，返回格式化的 text chunk 列表。
+
+    Returns:
+        每个 chunk 是 {"type": "text", "text": str} 格式，
+        可直接追加到 content_list。
+    """
+    backend = _get_mps_backend()
+    if backend is None:
+        return []
+
+    result = await backend.analyze_video(video_path=video_cos_url)
+    chunks: list[dict] = []
+    file_name = Path(video_cos_url).name
+
+    # Chunk 1: 全局摘要
+    if result.summary:
+        chunks.append({
+            "type": "text",
+            "text": (
+                f"[MPS 视频分析] {file_name}\n"
+                f"分析方式: {result.analysis_method}\n\n"
+                f"【视频摘要】\n{result.summary}\n"
+            ),
+        })
+
+    # Chunk 2+: 每个 scene 一个独立 chunk（带时间轴）
+    scenes = result.scenes or []
+    for i, scene in enumerate(scenes):
+        desc = scene.get("description", "")
+        start = scene.get("start_time", 0)
+        end = scene.get("end_time", 0)
+
+        # 时间格式化成 MM:SS
+        def _fmt(sec: float) -> str:
+            m, s = divmod(int(sec), 60)
+            return f"{m:02d}:{s:02d}"
+
+        scene_lines = [f"[MPS 视频场景 {i+1}/{len(scenes)}]"]
+        scene_lines.append(f"时间: {_fmt(start)} - {_fmt(end)}")
+        if scene.get("name"):
+            scene_lines.append(f"名称: {scene['name']}")
+        if scene.get("structure_type"):
+            scene_lines.append(f"类型: {scene['structure_type']}")
+        if desc:
+            scene_lines.append(f"\n描述: {desc}")
+
+        chunks.append({
+            "type": "text",
+            "text": "\n".join(scene_lines),
+        })
+
+    logger.info(
+        f"MPS 分析完成: {len(scenes)} scenes, "
+        f"{len(chunks)} text chunks 已生成"
+    )
+    return chunks
+
+
+# ---------------------------------------------------------------------------
 # 任务管理
 # ---------------------------------------------------------------------------
 class TaskManager:
@@ -219,8 +322,6 @@ class TaskManager:
         self._lightrag = LightRAGClient()
         await self._lightrag.startup()
 
-        from raganything.parser import get_parser
-
         parser_name = RAG_PARSER.lower()
         self._parser = get_parser(parser_name)
         if not self._parser.check_installation():
@@ -234,12 +335,19 @@ class TaskManager:
         if self._lightrag:
             await self._lightrag.shutdown()
 
-    def create_task(self, file_path: str, tenant_id: str, output_dir: str | None = None) -> str:
+    def create_task(
+        self,
+        file_path: str | None = None,
+        tenant_id: str = "default",
+        output_dir: str | None = None,
+        mps_video_url: str | None = None,
+    ) -> str:
         task_id = str(uuid.uuid4())
         task = {
             "task_id": task_id,
             "tenant_id": tenant_id,
             "file_path": file_path,
+            "mps_video_url": mps_video_url,
             "output_dir": output_dir or os.getenv("OUTPUT_DIR", "/app/output"),
             "status": "pending",
             "progress": 0.0,
@@ -248,7 +356,8 @@ class TaskManager:
         }
         self._tasks[task_id] = task
         self._queue.put_nowait(task)
-        logger.info(f"任务入队: task_id={task_id} file={file_path}")
+        source = mps_video_url or file_path or "unknown"
+        logger.info(f"任务入队: task_id={task_id} source={source}")
         return task_id
 
     def get_status(self, task_id: str, tenant_id: str) -> dict:
@@ -274,74 +383,101 @@ class TaskManager:
                 task["status"] = "processing"
                 task["progress"] = 0.05
 
-                ext = os.path.splitext(task["file_path"])[1].lower()
-                is_video = ext in VIDEO_EXTENSIONS
-                is_audio = ext in AUDIO_EXTENSIONS
+                file_path = task.get("file_path")
+                mps_url = task.get("mps_video_url")
 
-                # ── 阶段1: 解析 ──
-                if is_video:
-                    content_list = await asyncio.to_thread(
-                        self._parser.parse_video,
-                        video_path=task["file_path"],
-                        output_dir=task["output_dir"],
-                    )
-                    logger.info(f"task={task_id} 视频元数据: {task['file_path']}")
-                elif is_audio:
-                    content_list = await asyncio.to_thread(
-                        self._parser.parse_audio,
-                        audio_path=task["file_path"],
-                        output_dir=task["output_dir"],
-                    )
-                    logger.info(f"task={task_id} 音频元数据: {task['file_path']}")
-                else:
-                    content_list = await asyncio.to_thread(
-                        self._parser.parse_document,
-                        file_path=task["file_path"],
-                        output_dir=task["output_dir"],
-                    )
-                logger.info(f"task={task_id} 解析完成: {len(content_list)} blocks")
-                task["progress"] = 0.3
+                # ── 阶段1: 本地文件解析（file_path 有值时才执行） ──
+                content_list: list[dict] = []
 
-                # ── 阶段2: 音频转写（视频提取音频 + 纯音频直接转写） ──
-                if is_video:
-                    audio_path = await asyncio.to_thread(
-                        _extract_audio, task["file_path"], task["output_dir"]
-                    )
-                    if audio_path:
+                if file_path:
+                    ext = os.path.splitext(file_path)[1].lower()
+                    is_video = ext in VIDEO_EXTENSIONS
+                    is_audio = ext in AUDIO_EXTENSIONS
+
+                    if is_video:
+                        content_list = await asyncio.to_thread(
+                            self._parser.parse_video,
+                            video_path=file_path,
+                            output_dir=task["output_dir"],
+                        )
+                        logger.info(f"task={task_id} 视频元数据: {file_path}")
+                    elif is_audio:
+                        content_list = await asyncio.to_thread(
+                            self._parser.parse_audio,
+                            audio_path=file_path,
+                            output_dir=task["output_dir"],
+                        )
+                        logger.info(f"task={task_id} 音频元数据: {file_path}")
+                    else:
+                        content_list = await asyncio.to_thread(
+                            self._parser.parse_document,
+                            file_path=file_path,
+                            output_dir=task["output_dir"],
+                        )
+                    logger.info(f"task={task_id} 解析完成: {len(content_list)} blocks")
+                    task["progress"] = 0.3
+
+                # ── 阶段2: 音频转写（仅本地视频/音频文件） ──
+                if file_path:
+                    ext = os.path.splitext(file_path)[1].lower()
+                    is_video = ext in VIDEO_EXTENSIONS
+                    is_audio = ext in AUDIO_EXTENSIONS
+
+                    if is_video:
+                        audio_path = await asyncio.to_thread(
+                            _extract_audio, file_path, task["output_dir"]
+                        )
+                        if audio_path:
+                            task["progress"] = 0.4
+                            asr_result = await asyncio.to_thread(
+                                _transcribe_audio, audio_path, WHISPER_MODEL
+                            )
+                            transcript = asr_result.get("text", "")
+                            if transcript:
+                                content_list.append({
+                                    "type": "text",
+                                    "text": f"[视频转写] 语言: {asr_result.get('language', 'unknown')}\n\n{transcript}",
+                                })
+                                logger.info(
+                                    f"task={task_id} ASR 完成: lang={asr_result.get('language')}, "
+                                    f"{len(transcript)} chars"
+                                )
+                            task["progress"] = 0.5
+                        else:
+                            logger.info(f"task={task_id} 视频无音轨或音频提取失败")
+
+                    elif is_audio:
                         task["progress"] = 0.4
                         asr_result = await asyncio.to_thread(
-                            _transcribe_audio, audio_path, WHISPER_MODEL
+                            _transcribe_audio, file_path, WHISPER_MODEL
                         )
                         transcript = asr_result.get("text", "")
                         if transcript:
                             content_list.append({
                                 "type": "text",
-                                "text": f"[视频转写] 语言: {asr_result.get('language', 'unknown')}\n\n{transcript}",
+                                "text": f"[音频转写] 语言: {asr_result.get('language', 'unknown')}\n\n{transcript}",
                             })
                             logger.info(
                                 f"task={task_id} ASR 完成: lang={asr_result.get('language')}, "
                                 f"{len(transcript)} chars"
                             )
                         task["progress"] = 0.5
-                    else:
-                        logger.info(f"task={task_id} 视频无音轨或音频提取失败")
 
-                elif is_audio:
-                    task["progress"] = 0.4
-                    asr_result = await asyncio.to_thread(
-                        _transcribe_audio, task["file_path"], WHISPER_MODEL
-                    )
-                    transcript = asr_result.get("text", "")
-                    if transcript:
-                        content_list.append({
-                            "type": "text",
-                            "text": f"[音频转写] 语言: {asr_result.get('language', 'unknown')}\n\n{transcript}",
-                        })
+                # ── MPS 视频智能分析（mps_video_url 有值 + MPS_ENABLED 时执行） ──
+                if mps_url and MPS_ENABLED:
+                    try:
+                        task["progress"] = 0.55
+                        mps_chunks = await _run_mps_analysis(mps_url)
+                        content_list.extend(mps_chunks)
                         logger.info(
-                            f"task={task_id} ASR 完成: lang={asr_result.get('language')}, "
-                            f"{len(transcript)} chars"
+                            f"task={task_id} MPS 分析完成: "
+                            f"{len(mps_chunks)} chunks"
                         )
-                    task["progress"] = 0.5
+                    except Exception as e:
+                        logger.warning(
+                            f"task={task_id} MPS 分析失败（非致命）: {e}"
+                        )
+                    task["progress"] = 0.6
 
                 # ── 阶段3: 推文本到 LightRAG ──
                 workspace = f"tenant_{_safe_tenant(task['tenant_id'])}"
@@ -431,9 +567,10 @@ async def _on_shutdown() -> None:
 
 # ---- 请求模型 ----
 class ProcessRequest(BaseModel):
-    file_path: str
+    file_path: str | None = None  # 本地文件路径（与 mps_video_url 至少传一个）
     tenant_id: str = "default"
     output_dir: str | None = None
+    mps_video_url: str | None = None  # MPS 视频分析的 COS URL（可选）
 
 
 class QueryRequest(BaseModel):
@@ -451,12 +588,13 @@ async def health():
 
 @app.post("/process")
 async def process(req: ProcessRequest):
-    if not req.file_path:
-        raise HTTPException(400, "file_path 不能为空")
+    if not req.file_path and not req.mps_video_url:
+        raise HTTPException(400, "file_path 和 mps_video_url 至少传一个")
     task_id = _task_manager.create_task(
         file_path=req.file_path,
         tenant_id=req.tenant_id,
         output_dir=req.output_dir,
+        mps_video_url=req.mps_video_url,
     )
     return {"task_id": task_id, "status": "pending", "file_path": req.file_path}
 
@@ -494,92 +632,30 @@ class InvokeRequest(BaseModel):
 
 @app.post("/invoke")
 async def invoke(req: InvokeRequest):
-    """统一能力调用入口，接受 Sidecar 代理的请求并分派"""
+    """统一能力调用入口 — 通过 ActionRegistry 分派到注册的 handler"""
     action = req.payload.get("action")
     params = req.payload
     tenant_id = req.tenant_id
 
+    handler = ActionRegistry.get(action)
+    if not handler:
+        return {
+            "request_id": req.request_id or "",
+            "success": False,
+            "code": 400,
+            "message": f"不支持的 action: {action}",
+            "data": None,
+        }
+
     try:
-        if action == "insert":
-            file_path = params.get("file_path", "")
-            if not file_path:
-                raise HTTPException(400, "file_path 不能为空")
-            task_id = _task_manager.create_task(
-                file_path=file_path,
-                tenant_id=tenant_id,
-                output_dir=params.get("output_dir"),
-            )
-            return {
-                "request_id": req.request_id or "",
-                "success": True,
-                "code": 0,
-                "message": "success",
-                "data": {
-                    "task_id": task_id,
-                    "status": "pending",
-                    "file_path": file_path,
-                    "tenant_id": tenant_id,
-                },
-            }
-
-        elif action == "query":
-            query_text = params.get("query", "")
-            mode = params.get("mode", "hybrid")
-            top_k = int(params.get("top_k", 5))
-            if not query_text.strip():
-                raise HTTPException(400, "query 不能为空")
-            workspace = f"tenant_{_safe_tenant(tenant_id)}"
-            answer = await _task_manager.lightrag.query(
-                query=query_text,
-                workspace=workspace,
-                mode=mode,
-                top_k=top_k,
-            )
-            return {
-                "request_id": req.request_id or "",
-                "success": True,
-                "code": 0,
-                "message": "success",
-                "data": {"answer": answer},
-            }
-
-        elif action == "delete":
-            doc_id = params.get("doc_id", "")
-            if not doc_id:
-                raise HTTPException(400, "doc_id 不能为空")
-            success = await _task_manager.lightrag.delete_doc(doc_id=doc_id)
-            return {
-                "request_id": req.request_id or "",
-                "success": True,
-                "code": 0,
-                "message": "success",
-                "data": {"success": success},
-            }
-
-        elif action == "get_task_status":
-            task_id = params.get("task_id", "")
-            if not task_id:
-                raise HTTPException(400, "task_id 不能为空")
-            status = _task_manager.get_status(task_id, tenant_id)
-            # 兼容 KnowledgeBaseService 预期的 lightrag_doc_ids 字段名
-            status["lightrag_doc_ids"] = status.pop("doc_ids", [])
-            return {
-                "request_id": req.request_id or "",
-                "success": True,
-                "code": 0,
-                "message": "success",
-                "data": status,
-            }
-
-        else:
-            return {
-                "request_id": req.request_id or "",
-                "success": False,
-                "code": 400,
-                "message": f"不支持的 action: {action}",
-                "data": None,
-            }
-
+        data = await handler(
+            params, tenant_id,
+            task_manager=_task_manager,
+        )
+        return {
+            "request_id": req.request_id or "",
+            **data,
+        }
     except HTTPException:
         raise
     except Exception as e:

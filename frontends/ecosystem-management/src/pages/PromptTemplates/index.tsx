@@ -1,65 +1,82 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { Button, Input, Select, Spin, Result, message, Modal } from 'antd'
-import { PlusOutlined, SearchOutlined, GlobalOutlined, AppstoreOutlined } from '@ant-design/icons'
-import { useTranslation } from 'react-i18next'
-import { colors } from '@jonex/platform-theme/tokens'
+import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Button, Input, Select, Spin, Result, message } from 'antd';
+import { PlusOutlined, SearchOutlined, GlobalOutlined, AppstoreOutlined } from '@ant-design/icons';
+import { colors } from '@jonex/platform-theme/tokens';
 import {
   listPromptTemplates,
   createPromptTemplate,
   updatePromptTemplate,
-  deletePromptTemplate,
   copyPromptTemplate,
   PROMPT_CATEGORIES,
+  PROMPT_CATEGORY_LABEL_KEYS,
   type PromptTemplateItem,
+  type VersionItem,
   type CreatePromptTemplatePayload,
   type UpdatePromptTemplatePayload,
-} from '../../api/promptTemplates'
-import PromptCard from './PromptCard'
-import CreateEditModal from './CreateEditModal'
-import VersionModal from './VersionModal'
-import './index.css'
+} from '../../api/promptTemplates';
+import PromptCard from './PromptCard';
+import CreateEditModal from './CreateEditModal';
+import VersionModal from './VersionModal';
+import { systemPromptTemplateDisplay } from '../../utils/systemPromptTemplateDisplay';
+import { readPersistedSpaceId, onSpaceChanged } from '@jonex/shell-sdk';
+import DeleteConfirmModal from './DeleteConfirmModal';
+import VersionDetailModal from './VersionDetailModal';
+import './index.css';
 
-type ModalMode = 'create' | 'edit' | 'view'
+type ModalMode = 'create' | 'edit' | 'view';
 
 export default function PromptTemplates() {
-  const { t } = useTranslation()
+  const { t } = useTranslation();
+  // Data state
+  const [templates, setTemplates] = useState<PromptTemplateItem[]>([]);
+  const [counts, setCounts] = useState({ system: 0, domain: 0 });
+  const [listTotal, setListTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [templates, setTemplates] = useState<PromptTemplateItem[]>([])
-  const [counts, setCounts] = useState({ system: 0, domain: 0 })
-  const [listTotal, setListTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  // Filter state
+  const [scope, setScope] = useState<'system' | 'domain'>('system');
+  const [keywordInput, setKeywordInput] = useState('');
+  const [keyword, setKeyword] = useState('');
+  const [category, setCategory] = useState<string>('');
+  // 当前领域空间 ID（用于空间隔离）
+  const [domainSpaceId, setDomainSpaceId] = useState<string | null>(() => readPersistedSpaceId());
 
+  // 订阅空间切换
+  useEffect(() => {
+    return onSpaceChanged((spaceId) => {
+      setDomainSpaceId(spaceId);
+    });
+  }, []);
 
-  const [scope, setScope] = useState<'system' | 'domain'>('system')
-  const [keywordInput, setKeywordInput] = useState('')
-  const [keyword, setKeyword] = useState('')
-  const [category, setCategory] = useState<string>('')
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<ModalMode>('create');
+  const [editingTemplate, setEditingTemplate] = useState<PromptTemplateItem | null>(null);
 
+  // Version modal
+  const [versionModalOpen, setVersionModalOpen] = useState(false);
+  const [versionTemplate, setVersionTemplate] = useState<PromptTemplateItem | null>(null);
+  const [detailVersion, setDetailVersion] = useState<VersionItem | null>(null);
 
-  const [modalOpen, setModalOpen] = useState(false)
-  const [modalMode, setModalMode] = useState<ModalMode>('create')
-  const [editingTemplate, setEditingTemplate] = useState<PromptTemplateItem | null>(null)
+  // Delete state
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-
-  const [versionModalOpen, setVersionModalOpen] = useState(false)
-  const [versionTemplate, setVersionTemplate] = useState<PromptTemplateItem | null>(null)
-
-
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-
-
+  // Load data
   const loadData = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
     try {
       const filters = {
         category: category || undefined,
         keyword: keyword.trim() || undefined,
-      }
+      };
+      const spaceFilter = domainSpaceId ? { domain_space_id: domainSpaceId } : {};
       const [result, systemResult, domainResult] = await Promise.all([
         listPromptTemplates({
           ...filters,
+          ...spaceFilter,
           scope,
           offset: 0,
           limit: 100,
@@ -72,160 +89,191 @@ export default function PromptTemplates() {
         }),
         listPromptTemplates({
           ...filters,
+          ...spaceFilter,
           scope: 'domain',
           offset: 0,
           limit: 1,
         }),
-      ])
-      setTemplates(result.items)
-      setListTotal(result.total)
-      setCounts({ system: systemResult.total, domain: domainResult.total })
+      ]);
+      setTemplates(result.items);
+      setListTotal(result.total);
+      setCounts({ system: systemResult.total, domain: domainResult.total });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('common.loadFailed'))
+      setError(err instanceof Error ? err.message : t('promptTemplate.loadError'));
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [scope, category, keyword, t])
+  }, [scope, category, keyword, domainSpaceId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const nextKeyword = keywordInput.trim()
-      setKeyword(prev => (prev === nextKeyword ? prev : nextKeyword))
-    }, 400)
+      const nextKeyword = keywordInput.trim();
+      setKeyword((prev) => (prev === nextKeyword ? prev : nextKeyword));
+    }, 400);
 
-    return () => window.clearTimeout(timer)
-  }, [keywordInput])
+    return () => window.clearTimeout(timer);
+  }, [keywordInput]);
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
-
+  // Handlers
   const handleCreate = () => {
-    setEditingTemplate(null)
-    setModalMode('create')
-    setModalOpen(true)
-  }
+    setEditingTemplate(null);
+    setModalMode('create');
+    setModalOpen(true);
+  };
 
   const handleEdit = (id: string) => {
-    const tpl = templates.find(t => t.id === id) || null
-    setEditingTemplate(tpl)
-    setModalMode('edit')
-    setModalOpen(true)
-  }
+    const tpl = templates.find((t) => t.id === id) || null;
+    setEditingTemplate(tpl);
+    setModalMode('edit');
+    setModalOpen(true);
+  };
 
   const handleView = (id: string) => {
-    const tpl = templates.find(t => t.id === id) || null
-    setEditingTemplate(tpl)
-    setModalMode('view')
-    setModalOpen(true)
-  }
+    const tpl = templates.find((t) => t.id === id) || null;
+    setEditingTemplate(tpl ? systemPromptTemplateDisplay(tpl, t) : null);
+    setModalMode('view');
+    setModalOpen(true);
+  };
 
   const handleVersion = (id: string) => {
-    const tpl = templates.find(t => t.id === id) || null
-    setVersionTemplate(tpl)
-    setVersionModalOpen(true)
-  }
+    const tpl = templates.find((t) => t.id === id) || null;
+    setVersionTemplate(tpl);
+    setVersionModalOpen(true);
+  };
 
   const handleCopy = async (id: string) => {
     try {
-      await copyPromptTemplate(id)
-      message.success(t('promptTemplate.copyToTenantSuccess'))
-      await loadData()
+      await copyPromptTemplate(id, domainSpaceId ?? undefined);
+      message.success(t('promptTemplate.copyTemplateSuccess'));
+      await loadData();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('common.operationFailed'))
+      message.error(err instanceof Error ? err.message : t('promptTemplate.copyFailed'));
     }
-  }
+  };
 
   const handleDeleteClick = (id: string) => {
-    setDeletingId(id)
-  }
-
-  const handleDeleteConfirm = async () => {
-    if (!deletingId) return
-    try {
-      await deletePromptTemplate(deletingId)
-      message.success(t('promptTemplate.deleteSuccess'))
-      setDeletingId(null)
-      await loadData()
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('common.deleteFailed'))
-    }
-  }
+    setDeletingId(id);
+  };
 
   const handleSubmit = async (data: CreatePromptTemplatePayload | UpdatePromptTemplatePayload) => {
     if (modalMode === 'create') {
-      await createPromptTemplate(data as CreatePromptTemplatePayload)
-      message.success(t('promptTemplate.createSuccess'))
+      await createPromptTemplate(data as CreatePromptTemplatePayload, domainSpaceId ?? undefined);
+      message.success(t('promptTemplate.createSuccess'));
     } else if (editingTemplate) {
-      await updatePromptTemplate(editingTemplate.id, data as UpdatePromptTemplatePayload)
-      message.success(t('promptTemplate.updateSuccess'))
+      await updatePromptTemplate(editingTemplate.id, data as UpdatePromptTemplatePayload, domainSpaceId ?? undefined);
+      message.success(t('promptTemplate.updateSuccess'));
     }
-    await loadData()
-  }
+    await loadData();
+  };
 
+  // Counts
+  const systemCount = counts.system;
+  const domainCount = counts.domain;
 
-  const systemCount = counts.system
-  const domainCount = counts.domain
-
-
+  // ── Render ──
 
   if (loading && templates.length === 0) {
-    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
-      <Spin size="large" />
-    </div>
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+        <Spin size="large" />
+      </div>
+    );
   }
 
   if (error && templates.length === 0) {
-    return <Result
-      status="error" title={t('common.loadFailed')} subTitle={error}
-      extra={<Button type="primary" onClick={loadData}>{t('common.retry')}</Button>}
-    />
+    return (
+      <Result
+        status="error"
+        title={t('promptTemplate.loadError')}
+        subTitle={error}
+        extra={
+          <Button type="primary" onClick={loadData}>
+            {t('promptTemplate.retry')}
+          </Button>
+        }
+      />
+    );
   }
 
   return (
     <div className="pt-page">
-      { }
+      {/* Page header */}
       <div className="pt-header">
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: colors.brandDark, margin: 0 }}>
             📋 {t('promptTemplate.title')}
           </h1>
-          <div style={{ fontSize: 14, color: '#94a3b8', marginTop: 4 }}>
-            {t('promptTemplate.description')}
-          </div>
+          <div style={{ fontSize: 14, color: '#94a3b8', marginTop: 4 }}>{t('promptTemplate.description')}</div>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-          {t('promptTemplate.create')}
-        </Button>
+        {scope === 'domain' && (
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+            {t('promptTemplate.create')}
+          </Button>
+        )}
       </div>
 
-      { }
+      {/* Scope tabs */}
       <div className="pt-toolbar-card">
         <div className="pt-scope-tabs">
-          <button
-            className={`pt-scope-tab ${scope === 'system' ? 'active' : ''}`}
+          <Button
+            type={scope === 'system' ? 'primary' : 'default'}
+            ghost={scope !== 'system'}
+            icon={<GlobalOutlined />}
             onClick={() => setScope('system')}
+            style={{ borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
-            <GlobalOutlined /> {t('promptTemplate.systemScope')}
-            <span className="pt-tab-count">{systemCount}</span>
-          </button>
-          <button
-            className={`pt-scope-tab ${scope === 'domain' ? 'active' : ''}`}
+            {t('promptTemplate.systemScope')}
+            <span
+              style={{
+                fontSize: 11,
+                background: scope === 'system' ? 'rgba(255,255,255,0.3)' : '#e2e8f0',
+                color: scope === 'system' ? '#fff' : '#64748b',
+                padding: '1px 8px',
+                borderRadius: 10,
+                minWidth: 20,
+                textAlign: 'center',
+              }}
+            >
+              {systemCount}
+            </span>
+          </Button>
+          <Button
+            type={scope === 'domain' ? 'primary' : 'default'}
+            ghost={scope !== 'domain'}
+            icon={<AppstoreOutlined />}
             onClick={() => setScope('domain')}
+            style={{ borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
-            <AppstoreOutlined /> {t('promptTemplate.domainScope')}
-            <span className="pt-tab-count">{domainCount}</span>
-          </button>
+            {t('promptTemplate.domainScope')}
+            <span
+              style={{
+                fontSize: 11,
+                background: scope === 'domain' ? 'rgba(255,255,255,0.3)' : '#e2e8f0',
+                color: scope === 'domain' ? '#fff' : '#64748b',
+                padding: '1px 8px',
+                borderRadius: 10,
+                minWidth: 20,
+                textAlign: 'center',
+              }}
+            >
+              {domainCount}
+            </span>
+          </Button>
         </div>
       </div>
 
-      { }
+      {/* Search bar */}
       <div className="pt-toolbar-card">
         <div className="pt-search-bar">
           <Input
             prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
             placeholder={t('promptTemplate.searchPlaceholder')}
             value={keywordInput}
-            onChange={e => setKeywordInput(e.target.value)}
+            onChange={(e) => setKeywordInput(e.target.value)}
             allowClear
             style={{ width: 320 }}
           />
@@ -235,18 +283,18 @@ export default function PromptTemplates() {
             style={{ width: 150 }}
           >
             <Select.Option value="all">{t('promptTemplate.allCategories')}</Select.Option>
-            {PROMPT_CATEGORIES.map(cat => (
-              <Select.Option key={cat} value={cat}>{t(cat)}</Select.Option>
+            {PROMPT_CATEGORIES.map((cat) => (
+              <Select.Option key={cat} value={cat}>
+                {t(PROMPT_CATEGORY_LABEL_KEYS[cat] || cat)}
+              </Select.Option>
             ))}
           </Select>
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 13, color: '#94a3b8' }}>
-            {t('promptTemplate.countText', { count: listTotal })}
-          </span>
+          <span style={{ fontSize: 13, color: '#94a3b8' }}>{t('promptTemplate.countText', { count: listTotal })}</span>
         </div>
       </div>
 
-      { }
+      {/* Template grid */}
       {templates.length === 0 ? (
         <div className="pt-empty">
           <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.4 }}>📂</div>
@@ -256,7 +304,7 @@ export default function PromptTemplates() {
         </div>
       ) : (
         <div className="pt-grid">
-          {templates.map(tpl => (
+          {templates.map((tpl) => (
             <PromptCard
               key={tpl.id}
               template={tpl}
@@ -270,7 +318,7 @@ export default function PromptTemplates() {
         </div>
       )}
 
-      { }
+      {/* Create/Edit/View Modal */}
       <CreateEditModal
         open={modalOpen}
         mode={modalMode}
@@ -279,38 +327,23 @@ export default function PromptTemplates() {
         onSubmit={handleSubmit}
       />
 
-      { }
+      {/* Version Modal */}
       <VersionModal
         open={versionModalOpen}
         template={versionTemplate}
         onClose={() => setVersionModalOpen(false)}
         onRollback={loadData}
+        onViewDetail={(ver) => setDetailVersion(ver)}
+        domainSpaceId={domainSpaceId}
       />
 
-      { }
-      <Modal
-        title={t('promptTemplate.delete')}
-        open={!!deletingId}
-        onOk={handleDeleteConfirm}
-        onCancel={() => setDeletingId(null)}
-        okText={t('common.confirmDelete')}
-        cancelText={t('common.cancel')}
-        okButtonProps={{ danger: true }}
-      >
-        <div style={{ textAlign: 'center', padding: '12px 0' }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: 12, background: '#fef2f2', color: '#dc2626',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 22, margin: '0 auto 12px',
-          }}>
-            🗑️
-          </div>
-          <strong>{t('promptTemplate.deleteConfirm')}</strong>
-          <p style={{ color: '#64748b', margin: '4px 0 0', fontSize: 13 }}>
-            {t('promptTemplate.deleteConfirmDesc')}
-          </p>
-        </div>
-      </Modal>
+      <VersionDetailModal
+        open={detailVersion !== null}
+        version={detailVersion}
+        onClose={() => setDetailVersion(null)}
+      />
+
+      <DeleteConfirmModal deletingId={deletingId} onClose={() => setDeletingId(null)} onDeleted={loadData} />
     </div>
-  )
+  );
 }

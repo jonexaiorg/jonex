@@ -27,7 +27,7 @@ class RAGAnythingConfig:
     """Default output directory for parsed content."""
 
     parser: str = field(default=get_env_value("PARSER", "mineru", str))
-    """Parser selection: 'mineru', 'docling', or 'paddleocr'."""
+    """Parser selection: 'mineru', 'mineru_online', 'docling', or 'paddleocr'."""
 
     display_content_stats: bool = field(
         default=get_env_value("DISPLAY_CONTENT_STATS", True, bool)
@@ -254,6 +254,74 @@ class RAGAnythingConfig:
     )
     """Maximum cached video analysis entries before LRU eviction."""
 
+    # Video Analysis Backend Selection
+    # ---
+    video_analysis_binding: str = field(
+        default=get_env_value("VIDEO_ANALYSIS_BINDING", "local", str)
+    )
+    """Default video analysis backend binding. Built-in options: ``"local"``, ``"mps"``.
+
+    - ``local`` — local pipeline (ASR + keyframes + VLM description)
+    - ``mps``   — Tencent Cloud MPS VideoComprehension (cloud-based)
+
+    When multiple backends are available, this setting controls which one
+    is used as the default. Per-video override can be implemented via
+    :meth:`VideoModalProcessor._select_backend`.
+    """
+
+    # MPS (Media Processing Service) Configuration
+    # ---
+    mps_secret_id: str = field(
+        default=get_env_value("MPS_SECRET_ID", "", str)
+    )
+    """Tencent Cloud SecretId for MPS authentication."""
+
+    mps_secret_key: str = field(
+        default=get_env_value("MPS_SECRET_KEY", "", str)
+    )
+    """Tencent Cloud SecretKey for MPS authentication."""
+
+    mps_region: str = field(
+        default=get_env_value("MPS_REGION", "ap-guangzhou", str)
+    )
+    """MPS service region (e.g. ``ap-guangzhou``, ``ap-beijing``)."""
+
+    mps_cos_bucket: str = field(
+        default=get_env_value("MPS_COS_BUCKET", "", str)
+    )
+    """COS bucket name where video files are stored."""
+
+    mps_cos_region: str = field(
+        default=get_env_value("MPS_COS_REGION", "ap-guangzhou", str)
+    )
+    """COS bucket region."""
+
+    mps_definition: int = field(
+        default=get_env_value("MPS_DEFINITION", 33, int)
+    )
+    """MPS AI analysis template definition ID.
+    33 = VideoComprehension (default)."""
+
+    mps_timeout: int = field(
+        default=get_env_value("MPS_TIMEOUT", 600, int)
+    )
+    """Maximum time (seconds) to wait for an MPS task to complete."""
+
+    mps_poll_interval: int = field(
+        default=get_env_value("MPS_POLL_INTERVAL", 3, int)
+    )
+    """Interval (seconds) between MPS task status polls."""
+
+    mps_max_retries: int = field(
+        default=get_env_value("MPS_MAX_RETRIES", 3, int)
+    )
+    """Maximum number of retries for transient DescribeTaskDetail failures."""
+
+    mps_prompt_category: str = field(
+        default=get_env_value("MPS_PROMPT_CATEGORY", "mps_video_understanding", str)
+    )
+    """Prompt template category name for MPS video understanding analysis."""
+
     # Batch Processing Configuration
     # ---
     max_concurrent_files: int = field(
@@ -277,6 +345,20 @@ class RAGAnythingConfig:
         default=get_env_value("RECURSIVE_FOLDER_PROCESSING", True, bool)
     )
     """Whether to recursively process subfolders in batch mode."""
+
+    # [jonex] 多模态描述并发度（scene=raganything_ingest）
+    # ---
+    max_parallel_multimodal: int = field(
+        default=get_env_value("MAX_PARALLEL_MULTIMODAL", 4, int)
+    )
+    """[jonex] 单文档内多模态描述 LLM 调用的并发上限（scene=raganything_ingest）。
+
+    HTTP 入库模式下 PipelineServices.lightrag=None，MultimodalStage 原先兜底恒为 2，
+    把表格/公式/文本块描述的并发锁死。此字段替代硬编码兜底，可经环境变量
+    MAX_PARALLEL_MULTIMODAL 调高以吃满上游 RPM 额度。
+
+    注意：该信号量是「每文档」创建的，实际并发 ≈ WORKER_COUNT × max_parallel_multimodal，
+    调高时需与上游限流（如 200 次/分钟）及 lightrag_extract/ontology 抽取的并发额度一并权衡。"""
 
     # Context Extraction Configuration
     # ---

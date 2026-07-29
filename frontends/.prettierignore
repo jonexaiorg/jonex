@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+_template
+*.js
+*.mjs
+*.cjs
+*.json
+*.css
+*.scss
+*.less
+*.html

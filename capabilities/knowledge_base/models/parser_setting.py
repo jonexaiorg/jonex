@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""KB 级解析引擎设置模型。"""
 import uuid
 
 from sqlalchemy import Column, String, Text
@@ -11,16 +11,17 @@ from jonex_core.common.entity import SoftDeleteMixin, TenantMixin, TimestampMixi
 
 
 class KnowledgeParserSetting(TenantMixin, TimestampMixin, SoftDeleteMixin, Base):
-
+    """知识库解析配置，一行对应一个 KB 下的一类解析器（parser_type）。"""
 
     __tablename__ = "knowledge_parser_settings"
     __table_args__ = {"schema": "knowledge_base"}
 
     id = Column(String(64), primary_key=True, default=lambda: uuid.uuid4().hex)
     knowledge_base_id = Column(String(128), nullable=False, index=True)
-    file_type = Column(String(64), nullable=False)
-    file_type_label = Column(String(128), nullable=False)
+    parser_type = Column(String(64), nullable=False)
     parser_config_id = Column(String(64), nullable=True)
+    # 主解析提示词在 atomic-rag 的 prompt 配置 id（下发 prompt_ids 用；空=未关联）
+    prompt_config_id = Column(String(64), nullable=True)
     preprocessing_json = Column(JSONB, nullable=False, default=list)
     postprocessing_json = Column(JSONB, nullable=False, default=list)
     prompt_text = Column(Text, nullable=True)
@@ -39,9 +40,9 @@ class KnowledgeParserSetting(TenantMixin, TimestampMixin, SoftDeleteMixin, Base)
             "id": self.id,
             "tenant_id": self.tenant_id,
             "knowledge_base_id": self.knowledge_base_id,
-            "file_type": self.file_type,
-            "file_type_label": self.file_type_label,
+            "parser_type": self.parser_type,
             "parser_config_id": self.parser_config_id,
+            "prompt_config_id": self.prompt_config_id,
             "preprocessing_json": self.preprocessing_json or [],
             "postprocessing_json": self.postprocessing_json or [],
             "prompt_text": self.prompt_text or "",

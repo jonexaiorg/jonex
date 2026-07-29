@@ -1,4 +1,6 @@
-
+"""
+Repository for ontology template bindings and compiled schemas.
+"""
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -6,13 +8,14 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jonex_core.common.exceptions import ResourceConflictError
+from jonex_core.common.i18n import translate
 from jonex_core.common.tenant import require_tenant
 
 from ..models.ontology_schema import OntologyCompiledSchema, OntologyTemplateBinding
 
 
 class OntologySchemaRepository:
-
+    """Tenant-scoped CRUD for ontology bindings and compiled schema snapshots."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -114,8 +117,8 @@ class OntologySchemaRepository:
         now_naive = datetime.utcnow()
         if old:
             if expected_version is not None:
-
-
+                # 原子乐观锁：仅当 DB 版本仍等于 expected 时更新并自增；否则并发冲突。
+                # 用 Core UPDATE 判 rowcount，避免 service 层"读-比对-写"竞态。
                 stmt = (
                     update(OntologyCompiledSchema)
                     .where(
@@ -147,10 +150,10 @@ class OntologySchemaRepository:
                 result = await self.session.execute(stmt)
                 if result.first() is None:
                     raise ResourceConflictError(
-                        message="schema 已被更新，请刷新后重试",
+                        message=translate("err.ontology.schema_stale", fallback="schema 已被更新，请刷新后重试"),
                         details={"expected_schema_version": expected_version},
                     )
-
+                # Core UPDATE 不会刷新 identity map 中已加载的 old，过期后重取最新对象
                 self.session.expire(old)
                 return await self.get_compiled_schema(tenant_id, knowledge_base_id)
 

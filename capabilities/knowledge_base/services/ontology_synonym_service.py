@@ -1,11 +1,19 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""KB-level ontology synonym CRUD + batch import service.
 
-
+本期范围：仅存储 + 管理（CRUD + 批量导入/导出）。抽取/查询归一化生效为后续。
+规则见 docs/kb-compile-tab-and-synonym-plan.md §3.7。
+"""
+import logging
 import uuid
 
 from jonex_core.common import get_db_session
 from jonex_core.common.exceptions import InvalidParameterError, ResourceConflictError
+from jonex_core.common.i18n import translate
 from jonex_core.common.tenant import require_tenant
+
+logger = logging.getLogger(__name__)
 
 from ..dtos.ontology_synonym import (
     MAX_IMPORT_GROUPS,
@@ -17,30 +25,33 @@ from ..repository.ontology_synonym_repository import OntologySynonymRepository
 
 
 def _to_halfwidth(text: str) -> str:
-
+    """全角转半角。"""
     out = []
     for ch in text:
         code = ord(ch)
-        if code == 0x3000:
+        if code == 0x3000:  # 全角空格
             code = 0x20
-        elif 0xFF01 <= code <= 0xFF5E:
+        elif 0xFF01 <= code <= 0xFF5E:  # 全角 ASCII
             code -= 0xFEE0
         out.append(chr(code))
     return "".join(out)
 
 
 def _normalize_display(term: str) -> str:
-
+    """用于存储/展示的归一：trim + 全角转半角（保留大小写）。"""
     return _to_halfwidth((term or "").strip())
 
 
 def _normalize_key(term: str) -> str:
-
+    """用于去重/跨组冲突判定的归一键：display 归一后再大小写不敏感。"""
     return _normalize_display(term).casefold()
 
 
 def _normalize_group(terms: list) -> tuple[list[str], list[str]]:
+    """归一化一组词。
 
+    返回 (display_terms, keys)：display_terms 去重保序用于存储，keys 为对应归一键。
+    """
     display_terms: list[str] = []
     keys: list[str] = []
     seen: set[str] = set()
@@ -49,7 +60,7 @@ def _normalize_group(terms: list) -> tuple[list[str], list[str]]:
         if not disp:
             continue
         if len(disp) > MAX_TERM_LENGTH:
-            raise InvalidParameterError(message=f"Synonym exceeds the maximum length ({MAX_TERM_LENGTH}): {disp[:20]}...")
+            raise InvalidParameterError(message=translate("err.synonym.term_too_long", params={"max": str(MAX_TERM_LENGTH), "term": disp[:20]}, fallback=f"同义词超过长度上限({MAX_TERM_LENGTH}): {disp[:20]}...")  )  # 原消息)
         key = disp.casefold()
         if key in seen:
             continue
@@ -60,21 +71,31 @@ def _normalize_group(terms: list) -> tuple[list[str], list[str]]:
 
 
 def _resolve_canonical(canonical, display_terms: list[str], keys: list[str]) -> str:
-
+    """校验并返回 canonical（缺省取 terms[0]，必须属于 terms）。"""
     if canonical is None or not str(canonical).strip():
         return display_terms[0]
     c_key = _normalize_key(str(canonical))
     if c_key not in keys:
-        raise InvalidParameterError(message="canonical must be included in terms")
+        raise InvalidParameterError(message=translate("err.synonym.canonical_not_in_terms", fallback="canonical 必须属于 terms")  )  # 原消息)
     return display_terms[keys.index(c_key)]
 
 
 class OntologySynonymService:
-
+    """知识库级同义词组 CRUD + 批量导入。"""
 
     async def _ensure_kb(self, session, kb_id: str, tenant_id: str) -> None:
-
+        """校验 KB 归属存在（不存在抛 ResourceNotFoundError）。"""
         await KnowledgeInfoRepository(session).get_required(kb_id, tenant_id)
+
+    async def _invalidate_schema_cache(self, tenant_id: str, kb_id: str) -> None:
+        """[jonex] 同义词变更后清 compiled schema 缓存（key 与 atomic-rag 侧共用），
+        使抽取端 prompt 的同义词最终一致。异常忽略（软提示层，不影响写图强一致归并）。"""
+        try:
+            from .ontology_compiler import OntologyCompiler
+
+            await OntologyCompiler().invalidate_cache(tenant_id, kb_id)
+        except Exception as e:
+            logger.warning("Synonym cache invalidate failed: kb=%s err=%s", kb_id, e)
 
     async def list(self, tenant_id: str, kb_id: str, page: int = 1, page_size: int = 20) -> dict:
         tenant_id = require_tenant(tenant_id)
@@ -102,16 +123,16 @@ class OntologySynonymService:
 
             display_terms, keys = _normalize_group(data.get("terms") or [])
             if len(display_terms) < 2:
-                raise InvalidParameterError(message="Each synonym group must contain at least 2 unique terms")
+                raise InvalidParameterError(message=translate("err.synonym.min_terms", fallback="每组同义词去重后至少需要 2 个词")  )  # 原消息)
             if len(display_terms) > MAX_TERMS_PER_GROUP:
-                raise InvalidParameterError(message=f"Synonym group exceeds the maximum size ({MAX_TERMS_PER_GROUP})")
+                raise InvalidParameterError(message=translate("err.synonym.max_terms", params={"max": str(MAX_TERMS_PER_GROUP)}, fallback=f"每组同义词数量超过上限({MAX_TERMS_PER_GROUP})")  )  # 原消息)
             canonical = _resolve_canonical(data.get("canonical"), display_terms, keys)
 
-
+            # 跨组唯一（一期禁止一词多组）
             used = await self._used_term_keys(repo, tenant_id, kb_id)
             clash = [k for k in keys if k in used]
             if clash:
-                raise ResourceConflictError(message=f"Term appears in multiple groups: {clash[0]}")
+                raise ResourceConflictError(message=translate("err.synonym.cross_group_duplicate", params={"word": clash[0]}, fallback=f"存在跨组重复词: {clash[0]}")  )  # 原消息)
 
             obj = await repo.create(
                 id=uuid.uuid4().hex,
@@ -121,6 +142,7 @@ class OntologySynonymService:
                 canonical=canonical,
             )
             await session.commit()
+            await self._invalidate_schema_cache(tenant_id, kb_id)
             return obj.to_dict()
 
     async def update(self, tenant_id: str, synonym_id: str, data: dict) -> dict:
@@ -133,17 +155,17 @@ class OntologySynonymService:
             if new_terms is not None:
                 display_terms, keys = _normalize_group(new_terms)
                 if len(display_terms) < 2:
-                    raise InvalidParameterError(message="Each synonym group must contain at least 2 unique terms")
+                    raise InvalidParameterError(message=translate("err.synonym.min_terms", fallback="每组同义词去重后至少需要 2 个词")  )  # 原消息)
                 if len(display_terms) > MAX_TERMS_PER_GROUP:
-                    raise InvalidParameterError(message=f"Synonym group exceeds the maximum size ({MAX_TERMS_PER_GROUP})")
+                    raise InvalidParameterError(message=translate("err.synonym.max_terms", params={"max": str(MAX_TERMS_PER_GROUP)}, fallback=f"每组同义词数量超过上限({MAX_TERMS_PER_GROUP})")  )  # 原消息)
                 used = await self._used_term_keys(
                     repo, tenant_id, obj.knowledge_base_id, exclude_id=obj.id
                 )
                 clash = [k for k in keys if k in used]
                 if clash:
-                    raise ResourceConflictError(message=f"Term appears in multiple groups: {clash[0]}")
+                    raise ResourceConflictError(message=translate("err.synonym.cross_group_duplicate", params={"word": clash[0]}, fallback=f"存在跨组重复词: {clash[0]}")  )  # 原消息)
                 obj.terms = display_terms
-
+                # canonical 随 terms 一起校验（用新 canonical 或旧值或 terms[0]）
                 canonical_src = data.get("canonical", obj.canonical)
                 obj.canonical = _resolve_canonical(canonical_src, display_terms, keys)
             elif "canonical" in data:
@@ -151,6 +173,7 @@ class OntologySynonymService:
                 obj.canonical = _resolve_canonical(data.get("canonical"), display_terms, keys)
 
             await session.commit()
+            await self._invalidate_schema_cache(tenant_id, obj.knowledge_base_id)
             return obj.to_dict()
 
     async def delete(self, tenant_id: str, synonym_id: str) -> bool:
@@ -158,16 +181,18 @@ class OntologySynonymService:
         async with get_db_session() as session:
             repo = OntologySynonymRepository(session)
             obj = await repo.get_required(synonym_id, tenant_id)
+            kb_id = obj.knowledge_base_id
             await repo.delete_soft(obj)
             await session.commit()
+            await self._invalidate_schema_cache(tenant_id, kb_id)
             return True
 
     async def batch_import(self, tenant_id: str, kb_id: str, groups: list) -> dict:
-
+        """先全量校验后写入：出现任一 failed 则整批不写库，正常返回 {created, skipped, failed}。"""
         tenant_id = require_tenant(tenant_id)
         groups = groups or []
         if len(groups) > MAX_IMPORT_GROUPS:
-            raise InvalidParameterError(message=f"Import exceeds the maximum number of groups ({MAX_IMPORT_GROUPS})")
+            raise InvalidParameterError(message=translate("err.synonym.import_max_groups", params={"max": str(MAX_IMPORT_GROUPS)}, fallback=f"单次导入组数超过上限({MAX_IMPORT_GROUPS})")  )  # 原消息)
 
         async with get_db_session() as session:
             await self._ensure_kb(session, kb_id, tenant_id)
@@ -201,11 +226,11 @@ class OntologySynonymService:
                     continue
 
                 signature = frozenset(keys)
-
+                # 完全重复组 → skipped（不算失败、不写入）
                 if signature in existing_signatures or signature in batch_signatures:
                     skipped += 1
                     continue
-
+                # 跨组词冲突 → failed
                 clash = [k for k in keys if k in existing_keys or k in batch_keys]
                 if clash:
                     failed.append({"index": index, "reason": f"跨组重复词: {clash[0]}"})
@@ -215,7 +240,7 @@ class OntologySynonymService:
                 batch_keys.update(keys)
                 to_create.append((display_terms, keys))
 
-
+            # 有失败 → 整批不写库，正常返回
             if failed:
                 return {"created": 0, "skipped": skipped, "failed": failed}
 
@@ -229,6 +254,7 @@ class OntologySynonymService:
                 )
             if to_create:
                 await session.commit()
+                await self._invalidate_schema_cache(tenant_id, kb_id)
 
             return {"created": len(to_create), "skipped": skipped, "failed": []}
 

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""Repository for Knowledge Base search history."""
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -24,6 +24,7 @@ class KnowledgeSearchHistoryRepository(BaseRepository[KnowledgeSearchHistory]):
         knowledge_base_id: str,
         offset: int = 0,
         limit: int = 20,
+        domain_space_id: str | None = None,
     ) -> list[KnowledgeSearchHistory]:
         conditions = [
             KnowledgeSearchHistory.tenant_id == self._tenant_id(tenant_id),
@@ -32,6 +33,8 @@ class KnowledgeSearchHistoryRepository(BaseRepository[KnowledgeSearchHistory]):
         ]
         if knowledge_base_id:
             conditions.append(KnowledgeSearchHistory.knowledge_base_id == knowledge_base_id)
+        if domain_space_id is not None:
+            conditions.append(KnowledgeSearchHistory.domain_space_id == domain_space_id)
         stmt = (
             select(KnowledgeSearchHistory)
             .where(*conditions)
@@ -47,6 +50,7 @@ class KnowledgeSearchHistoryRepository(BaseRepository[KnowledgeSearchHistory]):
         tenant_id: str,
         user_id: str,
         knowledge_base_id: str,
+        domain_space_id: str | None = None,
     ) -> int:
         conditions = [
             KnowledgeSearchHistory.tenant_id == self._tenant_id(tenant_id),
@@ -55,6 +59,8 @@ class KnowledgeSearchHistoryRepository(BaseRepository[KnowledgeSearchHistory]):
         ]
         if knowledge_base_id:
             conditions.append(KnowledgeSearchHistory.knowledge_base_id == knowledge_base_id)
+        if domain_space_id is not None:
+            conditions.append(KnowledgeSearchHistory.domain_space_id == domain_space_id)
         result = await self.session.execute(
             select(func.count())
             .select_from(KnowledgeSearchHistory)
@@ -76,6 +82,7 @@ class KnowledgeSearchHistoryRepository(BaseRepository[KnowledgeSearchHistory]):
             "query": query,
             "query_hash": build_query_hash(query),
             "knowledge_base_id": data["knowledge_base_id"],
+            "domain_space_id": data.get("domain_space_id"),
             "mode": data.get("mode") or "hybrid",
             "top_k": data.get("top_k") or 5,
             "status": data.get("status") or "done",
@@ -113,25 +120,31 @@ class KnowledgeSearchHistoryRepository(BaseRepository[KnowledgeSearchHistory]):
         user_id: str,
         knowledge_base_id: str,
         history_id: str,
+        domain_space_id: str | None = None,
     ) -> bool:
         history = await self.get_by_id(history_id, tenant_id)
         if (
             not history
             or history.user_id != user_id
             or (knowledge_base_id and history.knowledge_base_id != knowledge_base_id)
+            or (domain_space_id is not None and history.domain_space_id != domain_space_id)
         ):
             return False
         history.is_deleted = 1
         await self.session.flush()
         return True
 
-    async def clear_for_user(self, tenant_id: str, user_id: str, knowledge_base_id: str) -> int:
+    async def clear_for_user(
+        self, tenant_id: str, user_id: str, knowledge_base_id: str,
+        domain_space_id: str | None = None,
+    ) -> int:
         histories = await self.list_by_user(
             tenant_id,
             user_id,
             knowledge_base_id=knowledge_base_id,
             offset=0,
             limit=1000,
+            domain_space_id=domain_space_id,
         )
         for history in histories:
             history.is_deleted = 1

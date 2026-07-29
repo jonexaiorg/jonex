@@ -1,41 +1,28 @@
+# syntax=docker/dockerfile:1
+# ============================================================
+# Jonex Platform - Sidecar 代理 Dockerfile
+# 功能：统一 API 入口、认证、计量、限流
+# 说明：派生自共享基础镜像 Python_Base（jonex/python-base:local），
+#       公共前置层（时区 / 腾讯源 / apt 三件 / pip 源 / 依赖安装）
+#       已由 base 镜像承载，本文件仅追加 sidecar 特有源码。
+#       sidecar 无额外系统依赖，故不派生 apt 层。
+# ============================================================
 
-FROM python:3.12.13-slim AS base
+ARG PYTHON_BASE=jonex/python-base:local
+FROM ${PYTHON_BASE} AS base
 
-WORKDIR /app
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
-    LOG_LEVEL=INFO
-
-RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && echo "Asia/Shanghai" > /etc/timezone
-
-RUN sed -i 's|^URIs: http://deb.debian.org/debian|URIs: http://mirrors.cloud.tencent.com/debian|' /etc/apt/sources.list.d/debian.sources
-RUN sed -i 's|^URIs: http://deb.debian.org/debian-security|URIs: http://mirrors.cloud.tencent.com/debian-security|' /etc/apt/sources.list.d/debian.sources
-
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip config set global.index-url https://mirrors.cloud.tencent.com/pypi/simple \
-    && pip config set global.trusted-host mirrors.cloud.tencent.com
-
-COPY requirements.txt .
-
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements.txt
-
+# 复制核心代码
 COPY jonex_core/ ./jonex_core/
 
+# 复制主入口
 COPY main.py .
 
+# 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
+# 暴露端口
 EXPOSE 8000
 
+# 启动命令（支持通过环境变量调整 worker 数量）
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${WORKERS:-4}"]

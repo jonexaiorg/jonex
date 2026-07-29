@@ -397,3 +397,13 @@ vendored 改动，须**重建 lightrag 镜像**：`docker compose build lightrag
 - `Reference/Rag-anything/JONEX_CHANGES.md` §十四（raganything 侧 `get_chunk_by_id` + action + chunk_ids 透传）。
 - `jonex_core/capability/atomic/rag/lightrag_adapter.py`（v1 兼容路径）、`client.py`（`RemoteRAGClient.get_chunk_by_id`）、
   `capabilities/knowledge_base/services/document_service.py`（`get_chunk` 直查）。
+
+### 10.3 单文档状态直查端点 `GET /documents/{doc_id}`（P0-1 dup-failed 三态判定）
+
+| 文件 | 位置 | 说明 |
+|---|---|---|
+| `lightrag/api/routers/document_routes.py` | `create_document_routes` 内，`/chunks/{chunk_id}` 与 `/chunks/update` 之间 | **新增只读端点** `@router.get("/{doc_id}")`（完整路径 `/documents/{doc_id}`）：`_resolve_rag(http_request)` 取 workspace-scoped rag → `rag.doc_status.get_by_id(doc_id)` 查 LightRAG 内部 doc-hash 主键，返回 `{id, status, content_summary, content_length, created_at, updated_at, track_id, chunks_count, error_msg, metadata, file_path}`；doc 不存在 → 404 |
+
+用途：pipeline 轮询层（`stages.py` PushChunksStage）dup-failed 三态判定，按原件当前状态区分良性成功/可恢复等待/硬失败。无此端点时，所有 dup 因查不到原件状态而静默落入 hard_failed → strict 整体失败 → reparse 全量回滚。
+
+> ⚠ 路由次序：`/{doc_id}` 注册在所有具名 GET 路由（`/pipeline_status`、`/track_status/{track_id}`、`/status_counts`、`/chunks/{chunk_id}`）**之后**，FastAPI 按注册序匹配，不抢具名路径。LightRAG 内部 doc-hash id 格式为 `doc-<md5>` 或 `dup-<md5>`，不会与现有具名路径冲突。

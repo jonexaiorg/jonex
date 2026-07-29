@@ -1,3 +1,9 @@
+# ============================================================
+# GPU 加速覆盖配置
+# 基础 docker-compose.yml 不默认启用 GPU。叠加本文件可启用
+# NVIDIA GPU 加速 MinerU 文档解析。
+# 使用: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+# ============================================================
 
 services:
   atomic-rag:

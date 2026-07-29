@@ -1,4 +1,9 @@
+"""
+业务领域 — AI Skill MCP 化 Repository
 
+- SkillCatalogRepository: 平台共享 Skill 目录，不传租户
+- TenantSkillRepository: 租户技能启用状态，必须传租户
+"""
 from sqlalchemy import and_, func, or_, select
 
 from jonex_core.common.repository import BaseRepository
@@ -63,7 +68,7 @@ class SkillCatalogRepository(BaseRepository[SkillCatalog]):
         return int(result.scalar_one())
 
     async def get_published_required(self, skill_id: str) -> SkillCatalog:
-
+        """获取已发布 Skill，不存在则抛异常"""
         return await self.get_required_shared(skill_id)
 
 

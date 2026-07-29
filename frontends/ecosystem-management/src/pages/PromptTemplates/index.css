@@ -1,4 +1,4 @@
-
+/* ── Page Layout ──────────────────────────────────────────── */
 .pt-page {
   padding: 0;
   min-height: 100%;
@@ -11,7 +11,7 @@
   margin-bottom: 20px;
 }
 
-
+/* ── Toolbar Card ─────────────────────────────────────────── */
 .pt-toolbar-card {
   background: #fff;
   border: 1px solid #e2e8f0;
@@ -26,7 +26,7 @@
   gap: 12px;
 }
 
-
+/* ── Scope Tabs ───────────────────────────────────────────── */
 .pt-scope-tabs {
   display: flex;
   gap: 6px;
@@ -73,7 +73,7 @@
   color: #2563eb;
 }
 
-
+/* ── Grid ─────────────────────────────────────────────────── */
 .pt-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -88,7 +88,7 @@
   .pt-grid { grid-template-columns: 1fr; }
 }
 
-
+/* ── Empty ────────────────────────────────────────────────── */
 .pt-empty {
   text-align: center;
   padding: 60px 20px;
@@ -96,7 +96,7 @@
   grid-column: 1 / -1;
 }
 
-
+/* ── Card ─────────────────────────────────────────────────── */
 .pt-card {
   background: #fff;
   border: 1px solid #e2e8f0;
@@ -157,7 +157,7 @@
   overflow: hidden;
 }
 
-
+/* ── Status badge ─────────────────────────────────────────── */
 .pt-status {
   position: absolute;
   top: 16px;
@@ -177,7 +177,7 @@
   color: #94a3b8;
 }
 
-
+/* ── Preview ──────────────────────────────────────────────── */
 .pt-preview {
   background: #f8fafc;
   border: 1px solid #e8edf3;
@@ -203,7 +203,7 @@
   background: linear-gradient(transparent, #f8fafc);
 }
 
-
+/* ── Tags ─────────────────────────────────────────────────── */
 .pt-tags {
   display: flex;
   gap: 6px;
@@ -244,7 +244,7 @@
   border: 1px solid #ddd6fe;
 }
 
-
+/* ── Actions ──────────────────────────────────────────────── */
 .pt-actions {
   display: flex;
   gap: 6px;
@@ -253,27 +253,3 @@
   padding-top: 10px;
   border-top: 1px solid #f1f5f9;
 }
-
-.pt-actions button {
-  padding: 5px 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.2s;
-  color: #475569;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.pt-actions button:hover {
-  background: #f8fafc;
-}
-
-.pt-btn-edit:hover { color: #2563eb; border-color: #bfdbfe; }
-.pt-btn-view:hover { color: #2563eb; border-color: #bfdbfe; }
-.pt-btn-copy:hover, .pt-btn-copy-text:hover { color: #059669; border-color: #a7f3d0; }
-.pt-btn-ver:hover { color: #7c3aed; border-color: #ddd6fe; }
-.pt-btn-del:hover { color: #dc2626; border-color: #fecaca; }

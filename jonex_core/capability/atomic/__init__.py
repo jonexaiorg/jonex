@@ -1,9 +1,9 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-"""Atomic capability layer - provides the most fundamental technical capability encapsulation
+"""原子能力层 - 提供最基础的技术能力封装
 
-Recommended entry point: use the FactoryFunction in each `client` module (`get_llm_client()`, etc.),
-rather than directly instantiating adapter classes, to support switching between LOCAL / REMOTE / MOCK deployment modes.
+对外建议入口：使用各 `client` 模块下的工厂函数（`get_llm_client()` 等），
+而非直接实例化适配器类，以支持 LOCAL / REMOTE / MOCK 三种部署模式切换。
 """
 
 from .base import AtomicCapability
@@ -11,18 +11,18 @@ from .llm.qwen_adapter import QwenLLMCapability
 from .vector.milvus_adapter import MilvusVectorCapability
 from .audio.asr_adapter import ASRCapability
 
-# Client Abstract + Factory (recommended entry point)
+# Client 抽象 + 工厂（推荐入口）
 from .llm.client import LLMClient, get_llm_client
 from .vector.client import VectorClient, get_vector_client
 from .audio.client import ASRClient, get_asr_client
 
 __all__ = [
-    # Adapter (Local implementation / retained for legacy)
+    # 适配器（Local 实现 / 历史保留）
     "AtomicCapability",
     "QwenLLMCapability",
     "MilvusVectorCapability",
     "ASRCapability",
-    # Client Abstract and Factory (recommended to use)
+    # Client 抽象与工厂（推荐使用）
     "LLMClient",
     "get_llm_client",
     "VectorClient",

@@ -22,7 +22,9 @@
     "no": "否",
     "all": "全部",
     "export": "导出",
-    "import": "导入"
+    "import": "导入",
+    "expandSidebar": "展开侧边栏",
+    "collapseSidebar": "收起侧边栏"
   },
   "auth": {
     "login": "登录",
@@ -30,6 +32,7 @@
     "username": "用户名",
     "password": "密码",
     "admin": "管理员",
+    "systemAdmin": "系统管理员",
     "user": "普通用户",
     "loginSuccess": "登录成功",
     "loginFailed": "登录失败",
@@ -99,11 +102,49 @@
     "en": "English"
   },
   "site": {
-    "title": "Jonex Platform",
+    "title": "悦溪平台",
     "subtitle": "AI 能力平台"
   },
   "space": {
     "select": "选择领域空间",
     "add": "添加领域空间"
+  },
+  "shell": {
+    "enterUsername": "请输入用户名",
+    "enterPassword": "请输入密码",
+    "selectTenant": "请选择租户",
+    "selectTenantPlaceholder": "选择租户",
+    "selectTenantToContinue": "请选择租户后继续登录",
+    "continueLogin": "继续登录",
+    "welcome": "欢迎，{{name}}",
+    "redirectNotAllowed": "登录成功，但回跳地址不在允许范围内",
+    "missingRedirectAppId": "登录成功，但缺少回跳应用标识",
+    "loginSyncFailed": "登录成功，但登录态同步失败，请稍后重试",
+    "loginSubtitle": "多模态领域知识引擎 · 登录",
+    "testAccount": "测试账号：admin / admin123",
+    "welcomeToPlatform": "{{name}}，欢迎使用悦溪",
+    "platformSubtitle": "智能知识管理与 AI 能力平台",
+    "manifestLoadFailed": "加载应用清单失败",
+    "appNotFound": "应用未找到",
+    "appNotFoundDetail": "未找到应用\"{{appId}}\"",
+    "appDisabled": "应用已停用",
+    "appDisabledDetail": "「{{name}}」已被管理员停用",
+    "noAccess": "无访问权限",
+    "noAccessDetail": "你没有权限访问「{{name}}」",
+    "loadFailed": "加载失败",
+    "loadFailedDetail": "无法加载「{{name}}」: {{error}}",
+    "openStandalone": "独立打开",
+    "loadingApp": "正在加载应用...",
+    "loadAppFailed": "应用加载失败",
+    "cannotLoadSubApp": "无法加载子应用",
+    "openInNewWindow": "在新窗口打开",
+    "appRunError": "应用运行出错",
+    "selectSpace": "选择领域空间",
+    "addSpace": "添加领域空间",
+    "builtInTenants": {
+      "demo": "悦溪演示租户",
+      "alpha": "悦溪 Alpha 测试租户",
+      "beta": "悦溪 Beta 测试租户"
+    }
   }
 }

@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-"""ASR speech-to-text adapter
+"""ASR 语音转文本适配器
 
-Integrates with speech recognition service, provides audio-to-text capability.
+对接语音识别服务，提供音频转文本能力。
 """
 
 from typing import Any, Dict, List, Optional
@@ -11,44 +11,45 @@ from jonex_core.capability.atomic.base import AtomicCapability
 from jonex_core.capability.models import CapabilityRequest, CapabilityResponse, CapabilityMetadata, CapabilityType
 from jonex_core.common import get_config, get_logger
 from jonex_core.common.exceptions import CapabilityInvokeError, InvalidParameterError
+from jonex_core.common.i18n import translate
 
 logger = get_logger("atomic.audio.asr")
 
 
 class ASRCapability(AtomicCapability):
-    """ASR speech-to-text capability adapter"""
+    """ASR 语音转文本能力适配器"""
 
     def _build_metadata(self) -> CapabilityMetadata:
-        """Build capabilityMetadata"""
+        """构建能力元数据"""
         return CapabilityMetadata(
             capability_id="audio.asr",
-            capability_name="ASR Speech to text",
+            capability_name="ASR 语音转文本",
             capability_type=CapabilityType.ATOMIC,
             version="v1",
-            description="Automatic speech recognition technology, converts audio to text",
+            description="自动语音识别技术，将音频转换为文本",
             tags=["audio", "asr"],
         )
 
     async def validate_input(self, request: CapabilityRequest) -> bool:
-        """Validate input parameters"""
+        """验证输入参数"""
         if not request.payload:
-            raise InvalidParameterError(message="ASR Request payload cannot be empty")
+            raise InvalidParameterError(message=translate("err.asr.payload_required", fallback="ASR 请求 payload 不能为空"))
 
         action = request.payload.get("action", "transcribe")
 
         if action == "transcribe":
             if "audio_url" not in request.payload and "audio_data" not in request.payload:
-                raise InvalidParameterError(message="transcribe mode must provide audio_url or audio_data")
+                raise InvalidParameterError(message=translate("err.capability.missing_action_param", params={"action": "transcribe", "param": "audio_url 或 audio_data"}, fallback="transcribe 模式必须提供 audio_url 或 audio_data"))
         elif action == "transcribe_file":
             if "file_path" not in request.payload:
-                raise InvalidParameterError(message="transcribe_file mode must provide file_path")
+                raise InvalidParameterError(message=translate("err.capability.missing_action_param", params={"action": "transcribe_file", "param": "file_path"}, fallback="transcribe_file 模式必须提供 file_path"))
         else:
-            raise InvalidParameterError(message=f"Unsupported action: {action}")
+            raise InvalidParameterError(message=translate("err.capability.unsupported_action", params={"action": action}, fallback=f"不支持的 action: {action}"))
 
         return True
 
     async def execute(self, request: CapabilityRequest) -> CapabilityResponse:
-        """Execute ASR capability invocation"""
+        """执行 ASR 能力调用"""
         await self.validate_input(request)
 
         action = request.payload.get("action", "transcribe")
@@ -60,7 +61,7 @@ class ASRCapability(AtomicCapability):
                 return CapabilityResponse.ok(
                     request_id=request.request_id,
                     data={"text": result},
-                    message="Speech to text success",
+                    message="语音转文本成功",
                 )
             elif action == "transcribe_file":
                 file_path = request.payload["file_path"]
@@ -68,29 +69,29 @@ class ASRCapability(AtomicCapability):
                 return CapabilityResponse.ok(
                     request_id=request.request_id,
                     data={"text": result},
-                    message="Audio file speech to text success",
+                    message="语音文件转文本成功",
                 )
         except Exception as e:
-            logger.error(f"ASR Invocation failed: {e}")
+            logger.error(f"ASR 调用失败: {e}")
             raise CapabilityInvokeError(
-                message=f"ASR Invocation failed: {str(e)}",
+                message=translate("err.asr.invoke_failed", fallback="ASR 调用失败"),
                 details={"action": action},
                 cause=e,
             )
 
     async def transcribe(self, audio_url: str) -> str:
         """
-        Speech to text (via URL)
+        语音转文本（通过 URL）
 
-        Note: Currently a mock implementation. In actual deployment, integrate with a real ASR service.
+        注意：当前为 mock 实现，实际部署时需要接入真实 ASR 服务。
         """
         config = get_config()
 
         if config.ENV == "dev":
-            logger.warning(f"[Mock] Transcribing audio: {audio_url}")
-            return f"[Mock ASR] This is the transcription result of audio {audio_url}. Audio content: The speaker stated that this project is progressing smoothly with good team collaboration."
+            logger.warning(f"[Mock] 正在转写音频: {audio_url}")
+            return f"[Mock ASR] 这是音频 {audio_url} 的转写结果。访谈内容：受访者表示本次项目进展顺利，团队协作良好。"
 
-        # TODO: Connect to a real ASR service (Alibaba Cloud speech service, Baidu speech, etc.)
+        # TODO: 接入真实的 ASR 服务（阿里云语音服务、百度语音等）
         # import httpx
         # async with httpx.AsyncClient() as client:
         #     response = await client.post(
@@ -100,19 +101,19 @@ class ASRCapability(AtomicCapability):
         #     )
         #     return response.json()["result"]
 
-        raise CapabilityInvokeError(message="ASR Service not configured")
+        raise CapabilityInvokeError(message=translate("err.capability.service_not_configured", params={"service_name": "ASR"}, fallback="ASR 服务未配置"))
 
     async def transcribe_file(self, file_path: str) -> str:
         """
-        Speech to text (via local file)
+        语音转文本（通过本地文件）
 
-        Note: Currently a mock implementation. In actual deployment, integrate with a real ASR service.
+        注意：当前为 mock 实现，实际部署时需要接入真实 ASR 服务。
         """
         config = get_config()
 
         if config.ENV == "dev":
-            logger.warning(f"[Mock] Transcribing local audio file: {file_path}")
-            return f"[Mock ASR] This is the transcription result of local file {file_path}. Content summary: project progress report, including requirements analysis, technology selection, development plan, etc."
+            logger.warning(f"[Mock] 正在转写本地音频文件: {file_path}")
+            return f"[Mock ASR] 这是本地文件 {file_path} 的转写结果。内容摘要：项目进度汇报，包含需求分析、技术选型、开发计划等。"
 
-        # TODO: Connect to a real ASR service
-        raise CapabilityInvokeError(message="ASR Service not configured")
+        # TODO: 接入真实的 ASR 服务
+        raise CapabilityInvokeError(message=translate("err.capability.service_not_configured", params={"service_name": "ASR"}, fallback="ASR 服务未配置"))

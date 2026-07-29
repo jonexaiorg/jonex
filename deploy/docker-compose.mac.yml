@@ -1,3 +1,9 @@
+# ============================================================
+# Mac CPU 开发环境覆盖配置
+# 基础 docker-compose.yml 无 GPU 依赖（GPU 加速由 docker-compose.gpu.yml 提供）。
+# Mac 本地开发通过叠加本文件降低 CPU/内存资源占用，适用于无独显的 Mac 机器。
+# 使用: docker compose -f docker-compose.yml -f docker-compose.mac.yml -f docker-compose.override.yml up
+# ============================================================
 
 services:
   atomic-rag:

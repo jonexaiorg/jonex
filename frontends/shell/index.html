@@ -1,13 +1,14 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Jonex平台</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <title>Jonex</title>
   </head>
   <body>
     <div id="root"></div>
-    <script>window.__JONEX_CONFIG__ = __JONEX_CONFIG_PLACEHOLDER__;</script>
+    <script>window.__JONEX_CONFIG__ = (typeof __JONEX_CONFIG_PLACEHOLDER__ !== 'undefined' ? __JONEX_CONFIG_PLACEHOLDER__ : (window.__JONEX_CONFIG__ || {}));</script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

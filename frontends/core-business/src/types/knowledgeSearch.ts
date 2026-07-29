@@ -1,76 +1,190 @@
-export type KnowledgeSearchMode = 'local' | 'global' | 'hybrid' | 'naive' | 'mix' | 'bypass'
+export type KnowledgeSearchMode = 'local' | 'global' | 'hybrid' | 'naive' | 'mix' | 'bypass';
 
 export interface KnowledgeSearchOverview {
-  totalDocuments: number
-  totalEntities: number
-  totalRelations: number
-  todaySearches: number
-  avgResponseTimeMs: number
-  totalDomains?: number
-  sourceFiles?: number
-  dataSources?: number
+  totalDocuments: number;
+  totalEntities: number;
+  totalRelations: number;
+  todaySearches: number;
+  avgResponseTimeMs: number;
+  totalDomains?: number;
+  sourceFiles?: number;
+  dataSources?: number;
 }
 
 export interface KnowledgeSearchDomain {
-  id: string
-  name: string
-  description?: string
-  knowledgeCount?: number
+  id: string;
+  name: string;
+  description?: string;
+  domain_type?: string;
+  status?: string;
+  space_id?: string;
+  space_name?: string;
+  kb_ids?: string[];
+  kb_names?: string[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface KnowledgeSearchHistoryItem {
-  id: string
-  query: string
-  searchedAt: string
-  resultCount: number
-  domain?: string
-  domainId?: string
-  status?: 'done' | 'stopped' | 'error'
-  answerPreview?: string
-  referenceCount?: number
-  durationMs?: number
-  mode?: 'hybrid'
-  topK?: number
+  id: string;
+  query: string;
+  searchedAt: string;
+  resultCount: number;
+  domain?: string;
+  domainId?: string;
+  domainSpaceId?: string;
+  status?: 'done' | 'stopped' | 'error';
+  answerPreview?: string;
+  referenceCount?: number;
+  durationMs?: number;
+  mode?: 'hybrid';
+  topK?: number;
 }
 
 export interface SaveKnowledgeSearchHistoryPayload {
-  query: string
-  resultCount: number
-  domain?: string
-  domainId?: string
-  status: 'done'
-  answerPreview?: string
-  referenceCount?: number
-  durationMs?: number
-  mode?: 'hybrid'
-  topK?: number
+  query: string;
+  resultCount: number;
+  domain?: string;
+  domainId?: string;
+  domainSpaceId?: string;
+  status: 'done';
+  answerPreview?: string;
+  referenceCount?: number;
+  durationMs?: number;
+  mode?: 'hybrid';
+  topK?: number;
 }
 
 export interface KnowledgeSearchStreamParams {
-  query: string
-  mode?: KnowledgeSearchMode
-  topK?: number
-  domainId?: string
+  query: string;
+  mode?: KnowledgeSearchMode;
+  topK?: number;
+  domainId?: string;
+  /** 知识库 ID 列表，至少一个 */
+  kbIds?: string[];
+}
+
+/** 引用位置（与后端 SourceLocation 对齐） */
+export interface KnowledgeReferenceLocation {
+  type: 'chunk' | 'char' | 'page' | 'timestamp' | 'document';
+  chunk_index?: number | null;
+  char_start?: number | null;
+  char_end?: number | null;
+  page_no?: number | null;
+  time_start?: number | null;
+  time_end?: number | null;
+  /** 命中片段原文文本（RAG 链路带 chunk content 时有值） */
+  text?: string | null;
+}
+
+/** 结构化引用（与后端 SourceReference 对齐） */
+export interface KnowledgeReference {
+  doc_id: string;
+  kb_id?: string | null;
+  file_name: string;
+  mime_type?: string | null;
+  file_size?: number | null;
+  media_type: 'text' | 'pdf' | 'audio' | 'video' | 'image' | 'other';
+  raw_url?: string | null;
+  locations: KnowledgeReferenceLocation[];
+}
+
+/** 推理链单步（与后端 ReasoningStep 对齐） */
+export interface ReasoningStep {
+  stage: string;
+  title: string;
+  status: 'running' | 'done' | 'skipped' | 'failed';
+  summary?: string | null;
+  detail?: Record<string, unknown> | null;
+  duration_ms?: number | null;
+}
+
+/** 推理链（与后端 ReasoningTrace 对齐） */
+export interface ReasoningTrace {
+  steps: ReasoningStep[];
+  final_source: string;
+  total_ms?: number | null;
+}
+
+export interface KnowledgeSearchStreamMeta {
+  source?: string;
+  references?: KnowledgeReference[];
+  reasoning?: ReasoningTrace | null;
+  rag_used?: boolean;
 }
 
 export interface KnowledgeSearchStreamHandlers {
-  onDelta: (content: string, rawChunk?: unknown) => void
-  onDone?: () => void
-  onError?: (error: Error) => void
+  onDelta: (content: string, meta?: KnowledgeSearchStreamMeta) => void;
+  onDone?: (meta?: KnowledgeSearchStreamMeta) => void;
+  onError?: (error: Error) => void;
 }
 
-export type KnowledgeSearchViewStatus =
-  | 'initial'
-  | 'loading'
-  | 'searching'
-  | 'done'
-  | 'empty'
-  | 'error'
+export type KnowledgeSearchViewStatus = 'initial' | 'loading' | 'searching' | 'done' | 'empty' | 'error';
 
-export type KnowledgeSearchRunStatus =
-  | 'idle'
-  | 'searching'
-  | 'done'
-  | 'empty'
-  | 'stopped'
-  | 'error'
+// ── 情况追踪（搜索反馈管理） ──────────────────────────────────
+
+/** 搜索反馈单条记录 */
+export interface SearchFeedbackItem {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  session_id: string;
+  query: string;
+  answer_preview: string | null;
+  knowledge_base_id: string;
+  knowledge_base_name: string | null;
+  feedback_type: SearchFeedbackType;
+  adopted: boolean;
+  searched_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** 搜索反馈列表响应 */
+export interface SearchFeedbackListResponse {
+  items: SearchFeedbackItem[];
+  total: number;
+  like_count: number;
+  dislike_count: number;
+  page: number;
+  page_size: number;
+}
+
+/** 搜索反馈统计 */
+export interface SearchFeedbackStats {
+  total: number;
+  like_count: number;
+  dislike_count: number;
+}
+
+export type KnowledgeSearchRunStatus = 'idle' | 'searching' | 'done' | 'empty' | 'stopped' | 'error';
+
+/** 搜索结果反馈类型 */
+export type SearchFeedbackType = 'like' | 'dislike';
+
+/** 提交结果反馈的参数（按搜索会话评价回答质量） */
+export interface SubmitSearchFeedbackParams {
+  sessionId: string;
+  query: string;
+  answerPreview: string;
+  feedbackType: SearchFeedbackType;
+  /** 搜索结果引用的知识库 ID 列表，用于按 KB 分别存储 */
+  kbIds: string[];
+  /** 搜索时间（ISO 格式） */
+  searchedAt?: string;
+}
+
+/** 提交反馈后的响应 */
+export interface SubmitSearchFeedbackResponse {
+  success: boolean;
+  feedbackType: SearchFeedbackType;
+  likeCount: number;
+  dislikeCount: number;
+}
+
+/** 取消结果反馈的参数 */
+export interface CancelSearchFeedbackParams {
+  sessionId: string;
+  feedbackType: SearchFeedbackType;
+  kbIds: string[];
+}

@@ -340,7 +340,7 @@ async def main():
     # Create RAGAnything configuration
     config = RAGAnythingConfig(
         working_dir="./rag_storage",
-        parser="mineru",  # Parser selection: mineru, docling, or paddleocr
+        parser="mineru",  # Parser selection: mineru, mineru_online, docling, or paddleocr
         parse_method="auto",  # Parse method: auto, ocr, or txt
         enable_image_processing=True,
         enable_table_processing=True,
@@ -1054,7 +1054,7 @@ Create a `.env` file (refer to `.env.example`):
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_BASE_URL=your_base_url  # Optional
 OUTPUT_DIR=./output             # Default output directory for parsed documents
-PARSER=mineru                   # Parser selection: mineru, docling, or paddleocr
+PARSER=mineru                   # Parser selection: mineru, mineru_online, docling, or paddleocr
 PARSE_METHOD=auto              # Parse method: auto, ocr, or txt
 ```
 
@@ -1091,6 +1091,11 @@ RAGAnything now supports multiple parsers, each with specific advantages:
 - Powerful OCR and table extraction capabilities
 - GPU acceleration support
 
+#### MinerU Online Parser
+- Uses MinerU's official online Precision Extract API instead of local models
+- Set `PARSER=mineru_online` and `MINERU_API_TOKEN`
+- Downloads the result zip and reads MinerU `content_list` JSON for the normal RAG-Anything pipeline
+
 #### Docling Parser
 - Optimized for Office documents and HTML files
 - Better document structure preservation
@@ -1124,6 +1129,19 @@ mineru -p input.pdf -o output_dir -m ocr     # OCR-focused parsing
 mineru -p input.pdf -o output_dir -b pipeline --device cuda  # GPU acceleration
 ```
 
+For MinerU's online Precision Extract API:
+
+```bash
+PARSER=mineru_online
+MINERU_API_TOKEN=your_mineru_api_token
+MINERU_API_BASE_URL=https://mineru.net
+MINERU_MODEL_VERSION=vlm
+MINERU_POLL_INTERVAL=5
+MINERU_POLL_TIMEOUT=1800
+```
+
+`mineru_online` uses MinerU's batch upload flow: it requests a signed upload URL, uploads the local file, polls the batch result, downloads the returned zip, and reads the `*_content_list.json` inside it.
+
 You can also configure parsing through RAGAnything parameters:
 
 ```python
@@ -1132,7 +1150,7 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # or "ocr", "txt"
-    parser="mineru"               # Optional: "mineru", "docling", or "paddleocr"
+    parser="mineru"               # Optional: "mineru", "mineru_online", "docling", or "paddleocr"
 )
 
 # Advanced parsing configuration with special parameters
@@ -1140,7 +1158,7 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # Parsing method: "auto", "ocr", "txt"
-    parser="mineru",              # Parser selection: "mineru", "docling", or "paddleocr"
+    parser="mineru",              # Parser selection: "mineru", "mineru_online", "docling", or "paddleocr"
 
     # MinerU special parameters - all supported kwargs:
     lang="ch",                   # Document language for OCR optimization (e.g., "ch", "en", "ja")
@@ -1160,7 +1178,7 @@ await rag.process_document_complete(
 )
 ```
 
-> **Note**: MinerU 2.0 no longer uses the `magic-pdf.json` configuration file. All settings are now passed as command-line parameters or function arguments. RAG-Anything supports multiple document parsers, including MinerU, Docling, and PaddleOCR.
+> **Note**: MinerU 2.0 no longer uses the `magic-pdf.json` configuration file. All settings are now passed as command-line parameters or function arguments. RAG-Anything supports multiple document parsers, including MinerU, MinerU Online, Docling, and PaddleOCR.
 
 ### Processing Requirements
 

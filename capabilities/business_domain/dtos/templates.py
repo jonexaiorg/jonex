@@ -1,4 +1,8 @@
+"""
+业务领域模板 DTOs。
 
+租户由认证上下文/Gateway/Sidecar 传递，所有外部请求体都不接收 tenant_id。
+"""
 from datetime import datetime
 from typing import Any, Optional
 
@@ -110,7 +114,7 @@ class TemplateConstraintUpdateRequest(BaseModel):
     suggestion: Optional[str] = None
 
 
-
+# ── Response ──────────────────────────────────────────────
 
 
 class TemplateDomainResponse(BaseModel):
@@ -206,16 +210,16 @@ class TemplateConstraintResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
-
+# ── 发布/编译预览/影响范围 ─────────────────────────────────
 
 
 class PublishScenarioRequest(BaseModel):
-
+    """发布模板场景。触发 version/hash 更新。"""
     pass
 
 
 class CompilePreviewResponse(BaseModel):
-
+    """编译预览响应。"""
     entity_types: list[dict] = Field(default_factory=list)
     relation_types: list[dict] = Field(default_factory=list)
     source_version: int = 1

@@ -1,19 +1,19 @@
-import React from 'react'
-import { useTranslation } from 'react-i18next'
-import { Card } from 'antd'
-import { RobotOutlined, ShareAltOutlined, ApartmentOutlined } from '@ant-design/icons'
-import OntologyTab from '@/pages/DomainKnowledgeCompileResults/OntologyTab'
-import RelationTab from '@/pages/DomainKnowledgeCompileResults/RelationTab'
-import GraphTab from '@/pages/DomainKnowledgeCompileResults/GraphTab'
-import type { OntologyInstanceSummary, RelationInstanceSummary } from '@/types/domainKnowledge'
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { Card } from 'antd';
+import { RobotOutlined, ShareAltOutlined, ApartmentOutlined } from '@ant-design/icons';
+import OntologyTab from '@/pages/DomainKnowledgeCompileResults/OntologyTab';
+import RelationTab from '@/pages/DomainKnowledgeCompileResults/RelationTab';
+import GraphTab from '@/pages/DomainKnowledgeCompileResults/GraphTab';
+import type { OntologyInstanceSummary, RelationInstanceSummary } from '@/types/domainKnowledge';
 
 interface CompileResultPanelProps {
-  kbId: string
-  docId?: string
-  activeSubNav: string
-  onSubNavChange: (key: string) => void
-  entityTypes: OntologyInstanceSummary[] | null
-  relationTypes: RelationInstanceSummary[] | null
+  kbId: string;
+  docId?: string;
+  activeSubNav: string;
+  onSubNavChange: (key: string) => void;
+  entityTypes: OntologyInstanceSummary[] | null;
+  relationTypes: RelationInstanceSummary[] | null;
 }
 
 export default function CompileResultPanel({
@@ -24,13 +24,13 @@ export default function CompileResultPanel({
   entityTypes,
   relationTypes,
 }: CompileResultPanelProps) {
-  const { t } = useTranslation()
+  const { t } = useTranslation();
 
   const navItems = [
     { key: 'ontology', label: t('domainKnowledge.ontologyInstances'), icon: <RobotOutlined /> },
     { key: 'relation', label: t('domainKnowledge.relationInstances'), icon: <ShareAltOutlined /> },
     { key: 'graph', label: t('domainKnowledge.graphBreadcrumb'), icon: <ApartmentOutlined /> },
-  ]
+  ];
 
   return (
     <Card
@@ -54,7 +54,7 @@ export default function CompileResultPanel({
           }}
         >
           {navItems.map((item) => {
-            const active = activeSubNav === item.key
+            const active = activeSubNav === item.key;
             return (
               <div
                 key={item.key}
@@ -77,25 +77,25 @@ export default function CompileResultPanel({
                 {item.icon}
                 <span>{item.label}</span>
               </div>
-            )
+            );
           })}
         </div>
 
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {activeSubNav === 'ontology' && (
-            <OntologyTab
-              kbId={kbId}
-              docId={docId}
-              data={entityTypes}
-              title={t('domainKnowledge.ontologyInstances')}
-            />
+            <OntologyTab kbId={kbId} docId={docId} data={entityTypes} title={t('domainKnowledge.ontologyInstances')} />
           )}
           {activeSubNav === 'relation' && (
-            <RelationTab kbId={kbId} docId={docId} data={relationTypes} title={t('domainKnowledge.relationInstances')} />
+            <RelationTab
+              kbId={kbId}
+              docId={docId}
+              data={relationTypes}
+              title={t('domainKnowledge.relationInstances')}
+            />
           )}
           {activeSubNav === 'graph' && <GraphTab kbId={kbId} />}
         </div>
       </div>
     </Card>
-  )
+  );
 }

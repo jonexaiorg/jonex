@@ -1,6 +1,6 @@
-import React from 'react'
-import { Tooltip } from 'antd'
-import { useTranslation } from 'react-i18next'
+import React from 'react';
+import { Tooltip } from 'antd';
+import { useTranslation } from 'react-i18next';
 import {
   ClockCircleOutlined,
   LoadingOutlined,
@@ -8,13 +8,8 @@ import {
   CloseCircleFilled,
   WarningFilled,
   HourglassOutlined,
-} from '@ant-design/icons'
-import {
-  deriveDocPhase,
-  PHASE_DISPLAY,
-  type DocPhase,
-  type PhaseIcon,
-} from '@/utils/docPhase'
+} from '@ant-design/icons';
+import { deriveDocPhase, PHASE_DISPLAY, type DocPhase, type PhaseIcon } from '@/utils/docPhase';
 
 const ICON_MAP: Record<PhaseIcon, React.ComponentType<{ style?: React.CSSProperties }>> = {
   clock: ClockCircleOutlined,
@@ -23,17 +18,17 @@ const ICON_MAP: Record<PhaseIcon, React.ComponentType<{ style?: React.CSSPropert
   error: CloseCircleFilled,
   warning: WarningFilled,
   hourglass: HourglassOutlined,
-}
+};
 
 export interface DocumentStatusBadgeProps {
   /** 后端原始 status（pending/parsing/ready/failed/deleting/deleted）。 */
-  docStatus?: string | null
+  docStatus?: string | null;
   /** 后端原始 ontology_status（pending/extracting/ready/failed）。 */
-  ontologyStatus?: string | null
+  ontologyStatus?: string | null;
   /** 解析失败原因（parse_failed 时 hover 展示）。 */
-  errorMessage?: string | null
+  errorMessage?: string | null;
   /** 编译失败原因（compile_failed 时 hover 展示）。 */
-  ontologyError?: string | null
+  ontologyError?: string | null;
 }
 
 /**
@@ -47,12 +42,12 @@ export default function DocumentStatusBadge({
   errorMessage,
   ontologyError,
 }: DocumentStatusBadgeProps) {
-  const { t } = useTranslation()
-  const phase: DocPhase | null = deriveDocPhase(docStatus, ontologyStatus)
-  if (!phase) return <span style={{ color: '#cbd5e1' }}>—</span>
+  const { t } = useTranslation();
+  const phase: DocPhase | null = deriveDocPhase(docStatus, ontologyStatus);
+  if (!phase) return <span style={{ color: '#cbd5e1' }}>—</span>;
 
-  const d = PHASE_DISPLAY[phase]
-  const Icon = ICON_MAP[d.icon]
+  const d = PHASE_DISPLAY[phase];
+  const Icon = ICON_MAP[d.icon];
 
   const badge = (
     <span
@@ -79,21 +74,14 @@ export default function DocumentStatusBadge({
         <Icon style={{ fontSize: 12 }} />
         {t(d.label)}
       </span>
-      {d.hint && (
-        <span style={{ fontSize: 11, color: '#94a3b8' }}>{t(d.hint)}</span>
-      )}
+      {d.hint && <span style={{ fontSize: 11, color: '#94a3b8' }}>{t(d.hint)}</span>}
     </span>
-  )
+  );
 
   // 失败态挂错误 tooltip（有原因才挂）
-  const errText =
-    phase === 'parse_failed'
-      ? errorMessage
-      : phase === 'compile_failed'
-        ? ontologyError
-        : undefined
+  const errText = phase === 'parse_failed' ? errorMessage : phase === 'compile_failed' ? ontologyError : undefined;
   if (errText) {
-    return <Tooltip title={errText}>{badge}</Tooltip>
+    return <Tooltip title={errText}>{badge}</Tooltip>;
   }
-  return badge
+  return badge;
 }

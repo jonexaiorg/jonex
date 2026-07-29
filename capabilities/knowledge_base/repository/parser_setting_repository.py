@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""KnowledgeParserSetting 仓储。"""
 
 from sqlalchemy import select
 
@@ -20,14 +20,14 @@ class KnowledgeParserSettingRepository(BaseRepository[KnowledgeParserSetting]):
             extra_conditions=[KnowledgeParserSetting.knowledge_base_id == knowledge_base_id],
         )
 
-    async def get_by_kb_file_type(
-        self, tenant_id: str, knowledge_base_id: str, file_type: str,
+    async def get_by_kb_parser_type(
+        self, tenant_id: str, knowledge_base_id: str, parser_type: str,
     ) -> KnowledgeParserSetting | None:
         result = await self.session.execute(
             select(KnowledgeParserSetting).where(
                 KnowledgeParserSetting.tenant_id == tenant_id,
                 KnowledgeParserSetting.knowledge_base_id == knowledge_base_id,
-                KnowledgeParserSetting.file_type == file_type,
+                KnowledgeParserSetting.parser_type == parser_type,
                 KnowledgeParserSetting.is_deleted == 0,
             )
         )

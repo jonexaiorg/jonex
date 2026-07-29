@@ -12,6 +12,7 @@ import threading
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -21,6 +22,9 @@ from typing import (
     Type,
     TypedDict,
 )
+
+if TYPE_CHECKING:
+    from raganything.config import RAGAnythingConfig
 
 
 # ── Type Definitions ──────────────────────────────────────────────────────────
@@ -435,3 +439,38 @@ class AsrBackend(ABC):
 
         wrapper.asr_identity = self.identity
         return wrapper
+
+
+def create_asr_backend(config, asr_model_func=None):
+    """Unified ASR backend factory.
+
+    If *asr_model_func* is provided, wraps it in a LegacyFunctionBackend.
+    Otherwise auto-selects from the registry using ``config.asr_binding``.
+
+    Args:
+        config: A :class:`~raganything.config.RAGAnythingConfig` instance.
+        asr_model_func: Optional legacy ASR function. When provided a
+            :class:`~raganything.asr.backends.legacy.LegacyFunctionBackend`
+            is created to wrap it.
+
+    Returns:
+        An :class:`AsrBackend` instance, ready for transcription.
+
+    Raises:
+        RuntimeError: If the selected backend's config validation fails.
+    """
+    if asr_model_func is not None:
+        from raganything.asr.backends.legacy import LegacyFunctionBackend
+        return LegacyFunctionBackend(config, asr_model_func)
+
+    backend_cls = get_asr_backend(config.asr_binding)
+    issues = backend_cls.validate_config(config)
+    if issues:
+        parts = []
+        for i in issues:
+            parts.append(f'[{i["level"]}] {i["field"]}: {i["message"]}')
+        raise RuntimeError(
+            f"ASR backend '{config.asr_binding}' config invalid: "
+            f"{'; '.join(parts)}"
+        )
+    return backend_cls(config)

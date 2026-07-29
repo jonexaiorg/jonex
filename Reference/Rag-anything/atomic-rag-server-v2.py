@@ -227,6 +227,11 @@ async def handle_get_task_status(params: dict, tenant_id: str, task_manager, **k
             "schema_version": getattr(task, "schema_version", 0),
             "schema_hash": getattr(task, "schema_hash", ""),
             "current_step": task.current_step or "",
+            # [jonex] 3-A：暴露 cleanup 进度，供 KB 对账按删除量算动态超时
+            "cleanup_total": getattr(task, "cleanup_total", 0),
+            "cleanup_pending_count": (
+                len(task.delete_pending_ids or []) + len(task.compensate_pending_ids or [])
+            ),
             "stage_timings": [
                 {
                     "stage": s.stage,

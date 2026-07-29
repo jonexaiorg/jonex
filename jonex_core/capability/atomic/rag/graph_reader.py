@@ -1,6 +1,22 @@
 #!/usr/bin/python3
+# -*- coding:utf-8 -*-
+"""
+LightRAG 图数据 HTTP 读取器（LightRAGGraphReader）—— [jonex] 悦溪新增文件。
 
+替代 storage_reader.LightRAGStorageReader 的本地 JSON 读取：存储升级（向量→Milvus、
+KV/DocStatus→PG）后 LightRAG 不再写本地 vdb_*.json，改为经 lightrag-server HTTP 端点
+穷举实体/关系/图/文档数据（图仍在 Neo4j）。
 
+设计要点（见 docs/ontology-storage-source-http-refactor-plan.md）：
+- **无状态单例 + workspace 走方法参数**：不在构造时固定 tenant/kb；每次调用从 scope 的
+  tenant_id/knowledge_base_id 现算 LIGHTRAG-WORKSPACE 头，天然支持多租户并发、杜绝串库。
+- **输出结构与 LightRAGStorageReader 完全一致**：消费方（本体 worker / adapter action /
+  rag client / 前端）零改契约；仅方法由同步改为 **async**（调用方在 async 上下文加 await）。
+- `get_graph` 不走 `/graphs`（BFS 语义不同），改用穷举端点自拼（全图→过滤→截断）。
+- `get_document_parse_result` 强制 document_id scope，避免整库 N+1。
+- 依赖 LightRAG 源码新增端点：GET /graph/entities|relationships|counts|summary
+  （见 Reference/LightRAG/JONEX_CHANGES.md 九）。
+"""
 
 from __future__ import annotations
 
@@ -15,12 +31,12 @@ from jonex_core.common.file_source_util import lightrag_workspace
 
 logger = logging.getLogger(__name__)
 
-
+# 文档分页服务端约束：page_size ∈ [10,200]
 _DOC_PAGE_MAX = 200
 
 
 def _pick_first(sep_values: str) -> str:
-
+    """取 <SEP> 分隔多值的首个非空段（合并实体的 file_path/source_id 为多值）。"""
     if not sep_values:
         return ""
     parts = [p.strip() for p in str(sep_values).split("<SEP>") if p.strip()]
@@ -28,7 +44,7 @@ def _pick_first(sep_values: str) -> str:
 
 
 def _extract_basename(file_path: str) -> str:
-
+    """从 file_source / 路径提取干净文件名（兼容新老格式）。"""
     if "|" in file_path:
         raw = file_path.split("|file=")[-1] if "|file=" in file_path else file_path
         raw = raw.split("|chunk=")[0] if "|chunk=" in raw else raw
@@ -48,7 +64,7 @@ def _infer_entity_type(name: str, content: str = "") -> str:
 
 
 def _to_epoch(value: Any) -> Optional[int]:
-
+    """created_at 统一为 int epoch 秒（Neo4j 存 int(time.time())）。"""
     if value is None:
         return None
     try:
@@ -58,7 +74,7 @@ def _to_epoch(value: Any) -> Optional[int]:
 
 
 class LightRAGGraphReader:
-
+    """LightRAG 图数据 HTTP 读取器（无状态单例；workspace 从 scope 现算）。"""
 
     def __init__(self) -> None:
         self.base_url = os.getenv("LIGHTRAG_API_URL", "http://lightrag:9621").rstrip("/")
@@ -66,7 +82,7 @@ class LightRAGGraphReader:
         self.timeout = float(os.getenv("LIGHTRAG_API_TIMEOUT", "300"))
         self._client: Optional[httpx.AsyncClient] = None
 
-
+    # ── low-level ─────────────────────────────
 
     def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -102,7 +118,7 @@ class LightRAGGraphReader:
             await self._client.aclose()
             self._client = None
 
-
+    # ── scope → endpoint filter ───────────────
 
     @staticmethod
     def _scope_doc_id(scope: dict) -> Optional[str]:
@@ -127,10 +143,10 @@ class LightRAGGraphReader:
             "page_size": page_size,
         }
 
-
+    # ── documents (via /documents/paginated) ──
 
     async def _fetch_all_doc_status(self, scope: dict, status: Optional[str] = None) -> list[dict]:
-
+        """穷举 LightRAG 全部文档状态（循环 /documents/paginated）。"""
         docs: list[dict] = []
         page = 1
         while True:
@@ -189,7 +205,7 @@ class LightRAGGraphReader:
         result["scope_warning"] = scope.get("scope_warning")
         return result
 
-
+    # ── entities (via /graph/entities) ────────
 
     def _map_entity(self, e: dict) -> dict:
         name = e.get("entity_name", "") or ""
@@ -215,7 +231,7 @@ class LightRAGGraphReader:
         document_id: Optional[str] = None,
         with_degree: bool = True,
     ) -> dict:
-
+        """with_degree=False 时跳过服务端度数聚合（本体抽取不需要 relations_count，省开销）。"""
         scope = scope or {}
         doc_id = document_id or self._scope_doc_id(scope)
         fpath = file_path or self._scope_file_path(scope)
@@ -239,7 +255,7 @@ class LightRAGGraphReader:
             "scope_warning": scope.get("scope_warning"),
         }
 
-
+    # ── relationships (via /graph/relationships) ──
 
     def _map_relation(self, r: dict) -> dict:
         src = r.get("src_id", "") or ""
@@ -268,7 +284,7 @@ class LightRAGGraphReader:
         scope = scope or {}
         doc_id = document_id or self._scope_doc_id(scope)
         fpath = file_path or self._scope_file_path(scope)
-
+        # src/tgt 过滤下推到服务端（配合服务端 total），避免"取一页再客户端过滤"漏返
         data = await self._get(
             "/graph/relationships",
             {"page": page, "page_size": page_size, "doc_id": doc_id,
@@ -286,7 +302,7 @@ class LightRAGGraphReader:
             "scope_warning": scope.get("scope_warning"),
         }
 
-
+    # ── summary (via status_counts + /graph/counts) ──
 
     async def get_summary(self, scope: Optional[dict] = None) -> dict:
         scope = scope or {}
@@ -295,8 +311,8 @@ class LightRAGGraphReader:
         documents_count = processed = failed = chunks_count = 0
         last_updated: Optional[str] = None
         try:
-
-
+            # 穷举全部文档：精确统计文档数 / 已处理 / 失败 / chunk 总数 / 最近更新时间
+            # （与旧 storage_reader 从 doc_status.json 全量统计口径一致）
             raw = await self._fetch_all_doc_status(scope)
             documents_count = len(raw)
             for d in raw:
@@ -310,7 +326,7 @@ class LightRAGGraphReader:
                 if upd and (last_updated is None or upd > last_updated):
                     last_updated = upd
         except Exception as exc:
-            logger.warning("get_summary document count failed: %s", exc)
+            logger.warning("get_summary 文档计数失败: %s", exc)
 
         entities_count = relationships_count = 0
         try:
@@ -320,7 +336,7 @@ class LightRAGGraphReader:
             entities_count = int(gc.get("entities_count", 0) or 0)
             relationships_count = int(gc.get("relationships_count", 0) or 0)
         except Exception as exc:
-            logger.warning("get_summary graph count failed: %s", exc)
+            logger.warning("get_summary 图计数失败: %s", exc)
 
         return {
             "knowledge_base_id": scope.get("knowledge_base_id"),
@@ -332,15 +348,15 @@ class LightRAGGraphReader:
             "documents_count": documents_count,
             "processed_documents_count": processed or documents_count,
             "failed_documents_count": failed,
-            "chunks_count": chunks_count,
+            "chunks_count": chunks_count,   # 由全量文档 chunks_count 汇总
             "entities_count": entities_count,
             "relationships_count": relationships_count,
             "compile_versions_count": 0,
             "last_updated_at": last_updated,
-            "storage_files": {},
+            "storage_files": {},   # 文件系统概念，HTTP 版移除（保留空 dict 兼容字段存在性）
         }
 
-
+    # ── graph summary (via /graph/summary) ────
 
     async def get_graph_summary(self, scope: Optional[dict] = None) -> dict:
         scope = scope or {}
@@ -358,7 +374,7 @@ class LightRAGGraphReader:
             for label, cnt in sorted(type_map.items(), key=lambda x: -int(x[1]))
         ]
         rel_dist = [{"label": "default", "count": edges_count, "pct": 100.0}] if edges_count else []
-
+        # 无向度均值近似：2*边数 / 节点数
         avg_degree = round(2 * edges_count / max(nodes_count, 1), 2)
         return {
             "nodes_count": nodes_count,
@@ -370,7 +386,7 @@ class LightRAGGraphReader:
             "relation_distribution": rel_dist,
         }
 
-
+    # ── graph (自拼：穷举 entities + relationships → 过滤 → 截断) ──
 
     async def _fetch_all_entities(self, scope: dict, keyword: Optional[str], with_degree: bool) -> list[dict]:
         doc_id = self._scope_doc_id(scope)
@@ -428,8 +444,8 @@ class LightRAGGraphReader:
         if document_id:
             scope = {**scope, "document_ids": [document_id]}
 
-
-
+        # keyword 下推服务端（按实体名+描述过滤），避免大库下拉全量再客户端过滤；
+        # 图不需要度数（下面按边自算），故 with_degree=False。
         entities = await self._fetch_all_entities(scope, keyword=keyword, with_degree=False)
         relations = await self._fetch_all_relations(scope, keyword=None)
 
@@ -453,8 +469,8 @@ class LightRAGGraphReader:
         for r in relations:
             src = r.get("src_id", "") or ""
             tgt = r.get("tgt_id", "") or ""
-
-
+            # 有 keyword 时只保留两端都命中的边，构成一致子图（无 keyword 保留全图）；
+            # 无 keyword 时 seen 为全部节点，条件恒真。
             if keyword and (src not in seen or tgt not in seen):
                 continue
             edges.append({
@@ -472,15 +488,15 @@ class LightRAGGraphReader:
 
         return {"nodes": nodes[:limit], "edges": edges[:limit]}
 
-
+    # ── composite parse-result (强制 document_id scope) ──
 
     async def get_document_parse_result(self, scope: Optional[dict] = None) -> dict:
         scope = scope or {}
         if not (scope.get("document_ids")):
-            logger.warning("get_document_parse_result called without document_id scope; returning an empty result to avoid a knowledge-base-wide N+1 query")
+            logger.warning("get_document_parse_result 未带 document_id scope，返回空结果（避免整库 N+1）")
             return {"summary": await self.get_summary(scope), "documents": [], "entities": [], "relationships": []}
-
-
+        # 单文档 scope 下实体/关系量有限；page_size=500 与本体 worker 口径一致，
+        # 覆盖绝大多数密集文档（>500 实体的极端文档会截断，前端解析结果页可接受）。
         summary = await self.get_summary(scope)
         documents = await self.get_documents(scope, page=1, page_size=500)
         entities = await self.get_entities(scope, page=1, page_size=500, with_degree=False)

@@ -16,11 +16,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from typing import List, Optional
 
 from raganything.video_analysis import (
     VideoAnalysisBackend,
@@ -155,9 +153,6 @@ class MPSVideoBackend(VideoAnalysisBackend):
             return
         try:
             from tencentcloud.common import credential
-            from tencentcloud.common.exception.tencent_cloud_sdk_exception import (
-                TencentCloudSDKException,
-            )
             from tencentcloud.mps.v20190612 import mps_client
         except ImportError:
             raise MPSConfigError(
@@ -424,17 +419,58 @@ class MPSVideoBackend(VideoAnalysisBackend):
         try:
             obj = json.loads(cleaned)
         except json.JSONDecodeError as exc:
-            raise MPSBackendError(f"Failed to parse MPS result JSON: {exc}") from exc
+            logger.error(
+                "MPS result JSON parse failed at char %d: %s",
+                exc.pos, exc.msg,
+            )
+            logger.error("MPS raw    (first 500): %s", raw[:500])
+            logger.error("MPS cleaned (first 500): %s", cleaned[:500])
+            raise MPSBackendError(
+                f"Failed to parse MPS result JSON: {exc}"
+            ) from exc
 
-        raw_scenes = obj.get("scenes")
-        tags = obj.get("tags")
+        # MPS 视频理解接口返回两种格式：
+        #   1. 对象（带 prompt）：{"box_2d": [...], "body": "{\"scenes\":[...],\"tags\":[...]}"}
+        #   2. 数组（不带 prompt）：[{"box_2d": [...], "<desc_key>": "..."}, ...]
+        #      描述字段名随语言变化（"シーンの説明"、"scene_description" 等）。
+        if isinstance(obj, list):
+            # 格式 2：数组，每个元素就是一个 scene
+            raw_scenes = obj
+            tags = None
+        else:
+            # 格式 1：scenes / tags 嵌在 body 字段里（JSON 字符串），需二次解析
+            body = obj.get("body")
+            if isinstance(body, str) and body.strip().startswith("{"):
+                try:
+                    inner = json.loads(body)
+                    raw_scenes = inner.get("scenes")
+                    tags = inner.get("tags")
+                    logger.debug("MPS result: parsed body → scenes=%d tags=%d",
+                                 len(raw_scenes or []), len(tags or []))
+                except json.JSONDecodeError:
+                    logger.warning("MPS result: body is not valid JSON, using outer object")
+                    raw_scenes = obj.get("scenes")
+                    tags = obj.get("tags")
+            else:
+                raw_scenes = obj.get("scenes")
+                tags = obj.get("tags")
 
         # Normalise scenes: parse MPS time_range ("MM:SS-MM:SS")
         # into start_time / end_time (float seconds) for downstream.
+        # Also normalise the description key — MPS may return it as
+        # "シーンの説明" (Japanese), "scene_description", etc.
+        _DESC_CANDIDATES = ("description", "scene_description",
+                            "シーンの説明", "场景描述", "場景描述")
         scenes = []
         if raw_scenes:
             for s in raw_scenes:
                 scene = dict(s)
+                # Normalise description key
+                if "description" not in scene:
+                    for key in _DESC_CANDIDATES:
+                        if key in scene:
+                            scene["description"] = scene.pop(key)
+                            break
                 time_range = scene.pop("time_range", None)
                 if time_range:
                     parts = time_range.split("-")
@@ -450,7 +486,7 @@ class MPSVideoBackend(VideoAnalysisBackend):
                 scenes.append(scene)
 
         # Use MPS-level summary if present, otherwise build from scenes/tags
-        summary = obj.get("summary") or ""
+        summary = (obj.get("summary") or "") if isinstance(obj, dict) else ""
         if not summary:
             summary_parts = []
             if scenes:
@@ -485,9 +521,9 @@ class MPSVideoBackend(VideoAnalysisBackend):
 
 
 def _looks_like_json(text: str) -> bool:
-    """Quick check whether *text* looks like a JSON object."""
+    """Quick check whether *text* looks like a JSON object or array."""
     t = text.strip()
-    return t.startswith("{") and t.endswith("}")
+    return (t.startswith("{") and t.endswith("}")) or (t.startswith("[") and t.endswith("]"))
 
 
 def _parse_mps_timestamp(ts: str) -> float:

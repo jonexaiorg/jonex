@@ -1,24 +1,20 @@
-import React, { useMemo } from 'react'
-import { Card, Table, Tag, Breadcrumb, Button } from 'antd'
-import {
-  ArrowLeftOutlined,
-  LinkOutlined,
-  FileTextOutlined,
-  NodeIndexOutlined,
-} from '@ant-design/icons'
-import { useNavigate, useParams } from 'react-router-dom'
-import type { GraphRelation } from '@/types/viewModels'
-
-const graphRelations: GraphRelation[] = []
+import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Card, Table, Tag, Breadcrumb, Button } from 'antd';
+import { ArrowLeftOutlined, LinkOutlined, FileTextOutlined, NodeIndexOutlined } from '@ant-design/icons';
+import { useNavigate, useParams } from 'react-router-dom';
+import { MOCK_GRAPH_RELATIONS } from '@/data/mock';
+import type { GraphRelation } from '@/data/mock';
 
 export default function DomainKnowledgeRelationDetail() {
-  const { id, relationId } = useParams<{ id: string; relationId: string }>()
-  const navigate = useNavigate()
+  const { t } = useTranslation();
+  const { id, relationId } = useParams<{ id: string; relationId: string }>();
+  const navigate = useNavigate();
 
   const relation: GraphRelation | undefined = useMemo(
-    () => graphRelations.find((rel) => rel.id === relationId),
+    () => MOCK_GRAPH_RELATIONS.find((rel) => rel.id === relationId),
     [relationId],
-  )
+  );
 
   if (!relation) {
     return (
@@ -35,45 +31,37 @@ export default function DomainKnowledgeRelationDetail() {
             cursor: 'pointer',
           }}
         >
-          <ArrowLeftOutlined /> 返回知识图谱
+          <ArrowLeftOutlined /> {t('domainKnowledge.backToGraph')}
         </a>
         <Card
           className="yx-card"
           style={{ borderRadius: 14, border: '1px solid #eef2f6', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
           styles={{ body: { padding: 48, textAlign: 'center' as const } }}
         >
-          <div style={{ fontSize: 16, color: '#94a3b8' }}>未找到该关系</div>
-          <Button
-            type="primary"
-            style={{ marginTop: 16 }}
-            onClick={() => navigate(`/domain-knowledge/${id}/graph`)}
-          >
-            返回知识图谱
+          <div style={{ fontSize: 16, color: '#94a3b8' }}>{t('domainKnowledge.relationNotFound')}</div>
+          <Button type="primary" style={{ marginTop: 16 }} onClick={() => navigate(`/domain-knowledge/${id}/graph`)}>
+            {t('domainKnowledge.backToGraph')}
           </Button>
         </Card>
       </div>
-    )
+    );
   }
 
   const propertyColumns = [
     {
-      title: '属性名',
+      title: t('domainKnowledge.propertyName'),
       dataIndex: 'key',
       key: 'key',
       width: 160,
-      render: (v: string) => (
-        <span style={{ fontWeight: 600, color: '#0b2b5c', fontSize: 13 }}>{v}</span>
-      ),
+      render: (v: string) => <span style={{ fontWeight: 600, color: '#0b2b5c', fontSize: 13 }}>{v}</span>,
     },
     {
-      title: '属性值',
+      title: t('domainKnowledge.propertyValue'),
       dataIndex: 'value',
       key: 'value',
-      render: (v: string) => (
-        <span style={{ color: '#475569', fontSize: 13 }}>{v}</span>
-      ),
+      render: (v: string) => <span style={{ color: '#475569', fontSize: 13 }}>{v}</span>,
     },
-  ]
+  ];
 
   return (
     <div>
@@ -84,25 +72,25 @@ export default function DomainKnowledgeRelationDetail() {
             {
               title: (
                 <a onClick={() => navigate('/domain-knowledge')} style={{ color: '#64748b' }}>
-                  领域知识管理
+                  {t('navigation.domainKnowledge')}
                 </a>
               ),
             },
             {
               title: (
                 <a onClick={() => navigate(`/domain-knowledge/${id}`)} style={{ color: '#64748b' }}>
-                  知识库详情
+                  {t('domainKnowledge.detail')}
                 </a>
               ),
             },
             {
               title: (
                 <a onClick={() => navigate(`/domain-knowledge/${id}/graph`)} style={{ color: '#64748b' }}>
-                  知识图谱
+                  {t('domainKnowledge.graphBreadcrumb')}
                 </a>
               ),
             },
-            { title: <span style={{ color: '#0b2b5c', fontWeight: 500 }}>关系详情</span> },
+            { title: <span style={{ color: '#0b2b5c', fontWeight: 500 }}>{t('route.relationDetail')}</span> },
           ]}
         />
       </div>
@@ -120,7 +108,7 @@ export default function DomainKnowledgeRelationDetail() {
           cursor: 'pointer',
         }}
       >
-        <ArrowLeftOutlined style={{ fontSize: 12 }} /> 返回知识图谱
+        <ArrowLeftOutlined style={{ fontSize: 12 }} /> {t('domainKnowledge.backToGraph')}
       </a>
 
       {/* Page Title */}
@@ -172,7 +160,7 @@ export default function DomainKnowledgeRelationDetail() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <LinkOutlined style={{ color: '#10b981' }} />
             <span style={{ fontSize: 15, fontWeight: 600, color: '#0b2b5c' }}>
-              关系概览
+              {t('domainKnowledge.relationOverview')}
             </span>
           </div>
         }
@@ -191,10 +179,8 @@ export default function DomainKnowledgeRelationDetail() {
           >
             <NodeIndexOutlined style={{ color: '#3b82f6', fontSize: 16 }} />
             <div>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>源实体</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#0b2b5c' }}>
-                {relation.sourceEntity}
-              </div>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>{t('domainKnowledge.sourceEntity')}</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#0b2b5c' }}>{relation.sourceEntity}</div>
             </div>
           </div>
 
@@ -215,10 +201,8 @@ export default function DomainKnowledgeRelationDetail() {
           >
             <NodeIndexOutlined style={{ color: '#10b981', fontSize: 16 }} />
             <div>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>目标实体</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#0b2b5c' }}>
-                {relation.targetEntity}
-              </div>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>{t('domainKnowledge.targetEntity')}</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#0b2b5c' }}>{relation.targetEntity}</div>
             </div>
           </div>
         </div>
@@ -235,7 +219,7 @@ export default function DomainKnowledgeRelationDetail() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <FileTextOutlined style={{ color: '#3b82f6' }} />
               <span style={{ fontSize: 15, fontWeight: 600, color: '#0b2b5c' }}>
-                关系属性
+                {t('domainKnowledge.relationProperties')}
               </span>
             </div>
           }
@@ -259,7 +243,7 @@ export default function DomainKnowledgeRelationDetail() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <FileTextOutlined style={{ color: '#f97316' }} />
               <span style={{ fontSize: 15, fontWeight: 600, color: '#0b2b5c' }}>
-                原文片段
+                {t('domainKnowledge.sourceSnippets')}
               </span>
             </div>
           }
@@ -279,15 +263,12 @@ export default function DomainKnowledgeRelationDetail() {
                   borderLeft: '3px solid #f59e0b',
                 }}
               >
-                <FileTextOutlined
-                  style={{ color: '#f59e0b', marginRight: 8, fontSize: 12 }}
-                />
-                "{snippet}"
+                <FileTextOutlined style={{ color: '#f59e0b', marginRight: 8, fontSize: 12 }} />"{snippet}"
               </div>
             ))}
           </div>
         </Card>
       </div>
     </div>
-  )
+  );
 }

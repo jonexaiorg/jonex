@@ -1,108 +1,86 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 """
-Jonex platform - API Gateway
+悦溪平台 - API 网关
 
-Unified entry point, responsible for:
-- Request routing
-- Authentication and authorization
-- Rate limiting and circuit breaking
-- Log tracing
-- CORS handling
-- Health check
+统一入口，负责：
+- 请求路由
+- 认证鉴权
+- 限流熔断
+- 日志追踪
+- CORS 处理
+- 健康检查
 """
 
 import time
 import uuid
-from typing import Optional
 
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from jonex_core.common import (
     get_config,
     get_logger,
+    setup_logging,
     set_request_id,
     register_exception_handlers,
+    install_locale_middleware,
     MissingApiKeyError,
     InvalidApiKeyError,
+    require_tenant,
 )
 
 config = get_config()
 logger = get_logger("api_gateway")
 
 
-# ==================== Request model ====================
-class CapabilityInvokeRequest(BaseModel):
-    """Capability invocation request"""
-    capability_id: str
-    action: str = "execute"
-    payload: dict
-    tenant_id: str = "default"
-    user_id: Optional[str] = None
-    context: Optional[dict] = None
-
-
-# ==================== Dependency injection ====================
+# ==================== 依赖注入 ====================
 async def verify_api_key(request: Request) -> str:
     """
-    Verify API Key
+    验证 API Key
 
     Args:
-        request: FastAPI Request object
+        request: FastAPI 请求对象
 
     Returns:
-        Tenant ID
+        租户 ID
 
     Raises:
-        MissingApiKeyError: Missing API Key
-        InvalidApiKeyError: Invalid API Key
+        MissingApiKeyError: 缺少 API Key
+        InvalidApiKeyError: API Key 无效
     """
     api_key = request.headers.get("X-API-Key")
     if not api_key:
         raise MissingApiKeyError()
 
-    # TODO: Verify API Key from Database
-    # Temporary implementation: API Key for testing
+    # TODO: 从数据库验证 API Key
+    # 临时实现：测试用 API Key
     if api_key.startswith("jonex_test_"):
-        tenant_id = api_key.replace("jonex_test_", "")
-        return tenant_id
+        return require_tenant(api_key.removeprefix("jonex_test_"))
     else:
         raise InvalidApiKeyError()
 
 
-async def rate_limit(request: Request):
-    """
-    Rate limiting middleware
-
-    TODO: Use Redis to implement real rate limiting
-    """
-    # No actual rate limiting for now, just a placeholder
-    pass
-
-
-# ==================== Create application ====================
+# ==================== 创建应用 ====================
 def create_app() -> FastAPI:
     """
-    Create FastAPI application
+    创建 FastAPI 应用
 
     Returns:
-        FastAPI application instance
+        FastAPI 应用实例
     """
     app = FastAPI(
-        title="Jonex platform API Gateway",
-        description="Jonex platform unified API entry point, providing capability invocation, authentication and authorization, rate limiting and circuit breaking, etc.",
+        title="悦溪平台 API 网关",
+        description="悦溪平台统一 API 入口，提供能力调用、认证鉴权、限流熔断等功能",
         version="0.1.0",
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
     )
 
-    # CORS middleware
-    # In production environment, specify specific domains via AUTH_CORS_ORIGINS (supports credentials)
-    # In development environment when not configured, defaults to allow_origins=["*"] (credentials not allowed, complies with browser CORS specification)
+    # CORS 中间件
+    # 生产环境通过 AUTH_CORS_ORIGINS 指定具体域名（支持 credentials）
+    # 开发环境未配置时默认 allow_origins=["*"]（不允许 credentials，符合浏览器 CORS 规范）
     origins = config.cors_origins_list
     app.add_middleware(
         CORSMiddleware,
@@ -112,36 +90,36 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Request ID middleware
+    # 请求 ID 中间件
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):
-        """Generate a unique ID for each request, used for tracing"""
+        """为每个请求生成唯一 ID，用于链路追踪"""
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         set_request_id(request_id)
-        # Inject Request ID into request state
+        # 将请求 ID 注入到请求 state 中
         request.state.request_id = request_id
         start_time = time.perf_counter()
 
         response = await call_next(request)
 
-        # Calculate request duration
+        # 计算请求耗时
         process_time = (time.perf_counter() - start_time) * 1000
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Process-Time-Ms"] = f"{process_time:.2f}"
 
         return response
 
-    # Logging middleware
+    # 日志中间件
     @app.middleware("http")
     async def logging_middleware(request: Request, call_next):
-        """Log requests"""
+        """记录请求日志"""
         request_id = getattr(request.state, "request_id", "N/A")
         method = request.method
         url = str(request.url.path)
         client_host = getattr(request.client, "host", "unknown")
 
         logger.info(
-            f"[{request_id}] {method} {url} - from {client_host}"
+            f"[{request_id}] {method} {url} - 来自 {client_host}"
         )
 
         start_time = time.perf_counter()
@@ -150,80 +128,83 @@ def create_app() -> FastAPI:
 
         logger.info(
             f"[{request_id}] {method} {url} - "
-            f"status code: {response.status_code}, duration: {process_time:.2f}ms"
+            f"状态码: {response.status_code}, 耗时: {process_time:.2f}ms"
         )
 
         return response
 
-    # Global exception handler (unified exception system)
+    # 全局异常处理（统一异常体系）
     register_exception_handlers(app)
 
-    # ==================== Route registration ====================
-    register_routes(app)
+    # 国际化 locale 中间件（X-Lang 解析 + contextvars 上下文）
+    install_locale_middleware(app)
 
-    # ==================== Start event ====================
     @app.on_event("startup")
-    async def startup_init_database():
-        """Initialize database table structure on startup (auto-create tables)"""
-        from jonex_core.common import init_database
-        await init_database()
+    async def configure_local_file_logging():
+        # uvicorn 启动时会重设一部分 logging 配置；在 startup 再补一次文件 handler，
+        # 确保本地开发可按 request_id 从日志文件定位问题。
+        setup_logging(enable_file=True)
+        logger.info("API Gateway 本地文件日志已启用")
+
+    # ==================== 路由注册 ====================
+    register_routes(app)
 
     return app
 
 
 def register_routes(app: FastAPI):
     """
-    Register all routes
+    注册所有路由
 
     Args:
-        app: FastAPI application instance
+        app: FastAPI 应用实例
     """
-    # ==================== Health check ====================
-    @app.get("/health", summary="Health check", tags=["System"])
+    # ==================== 健康检查 ====================
+    @app.get("/health", summary="健康检查", tags=["系统"])
     async def health_check():
         """
-        Service health check endpoint
+        服务健康检查端点
 
         Returns:
-            Service status information
+            服务状态信息
         """
-        # Note: The capability list is now managed by Sidecar uniformly,
-        # API Gateway no longer holds capability instances, only does business route aggregation
+        # 注意：能力列表现在由 Sidecar 统一管理，
+        # API Gateway 不再持有能力实例，仅做业务路由聚合
         return {
             "status": "healthy",
             "service": "jonex-api-gateway",
             "version": "0.1.0",
-            "note": "For the capability list, query via Sidecar endpoint: GET http://sidecar:8001/capabilities",
+            "note": "能力列表请通过 Sidecar 端点查询: GET http://sidecar:8001/capabilities",
         }
 
-    @app.get("/ready", summary="Ready check", tags=["System"])
+    @app.get("/ready", summary="就绪检查", tags=["系统"])
     async def ready_check():
         """
-        Service ready check (for K8s readinessProbe)
+        服务就绪检查（用于 K8s readinessProbe）
 
         Returns:
-            Ready status information
+            就绪状态信息
         """
         return {
             "status": "ready",
             "service": "jonex-api-gateway",
         }
 
-    # ==================== Capability-related interfaces (migrated to Sidecar) ====================
-    # Note: Capability list and invocation interfaces are uniformly provided by Sidecar proxy
-    # Sidecar is responsible for: authentication, metering, rate limiting, capability routing
-    # API Gateway focuses on: business route aggregation, CORS handling, request tracing
+    # ==================== 能力相关接口（已迁移至 Sidecar）====================
+    # 说明：能力列表和调用接口已统一由 Sidecar 代理提供
+    # Sidecar 负责：认证、计量、限流、能力路由
+    # API Gateway 专注于：业务路由聚合、CORS处理、请求追踪
 
-    # ==================== System management interface ====================
-    @app.get("/system/info", summary="Get system info", tags=["System management"])
+    # ==================== 系统管理接口 ====================
+    @app.get("/system/info", summary="获取系统信息", tags=["系统管理"])
     async def get_system_info(
         _: str = Depends(verify_api_key),
     ):
         """
-        Get system info
+        获取系统信息
 
         Returns:
-            System info
+            系统信息
         """
         return {
             "code": 0,
@@ -238,25 +219,29 @@ def register_routes(app: FastAPI):
             }
         }
 
-    # ==================== Import route modules ====================
+    # ==================== 导入路由模块 ====================
     try:
-        from api_gateway.routes import knowledge_base_router, tcadp_router, auth_router
-        app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
-        app.include_router(knowledge_base_router, prefix="/api/v1/knowledge-base", tags=["Knowledge base"])
+        from api_gateway.routes import knowledge_base_router, tcadp_router, auth_router, platform_router, ecosystem_router
+        from api_gateway.routes import knowledge_base_ingest_router
+        app.include_router(auth_router, prefix="/api/v1/auth", tags=["认证"])
+        app.include_router(platform_router, prefix="/api/v1/platform", tags=["平台管理"])
+        app.include_router(knowledge_base_router, prefix="/api/v1/knowledge-base", tags=["知识库"])
+        app.include_router(knowledge_base_ingest_router, prefix="/api/v1/knowledge-base", tags=["知识库-入站推送"])
+        app.include_router(ecosystem_router, tags=["生态管理"])
         app.include_router(tcadp_router)
-        logger.info("Business route modules loaded successfully")
+        logger.info("业务路由模块加载成功")
     except ImportError as e:
-        logger.warning(f"Business route modules failed to load (may not be implemented yet): {e}")
+        logger.warning(f"业务路由模块加载失败（可能尚未实现）: {e}")
 
 
-# Global application instance
+# 全局应用实例
 app = create_app()
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    logger.info("Starting API gateway service...")
+    logger.info("启动 API 网关服务...")
     uvicorn.run(
         "api_gateway.main:app",
         host="0.0.0.0",

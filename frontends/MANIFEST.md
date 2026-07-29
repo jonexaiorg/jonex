@@ -1,37 +1,39 @@
-# 前端子应用清单
+# 前端应用清单
 
-> ⚠️ DOCUMENTATION ONLY：本文档仅作记录，当前未被任何脚本自动消费。
-> 子应用 ≥ 3 个时再考虑改为 manifest.yaml 并做 Nginx 配置自动生成。
+本文档记录当前前端应用的运行约定。生产环境的应用清单以平台后端注册表为准，由 `GET /api/v1/platform/frontend/apps` 输出；`frontends/shell/public/app-manifest.json` 只作为本地开发和后端不可用时的 fallback。
 
-## Shell 应用（入口）
-- 路径：`/`
-- 职责：唯一登录入口、全局导航、路由守卫、多子应用切换
-- 开发端口：5173
-- 状态：✅ 开发中
+新前端子应用必须遵循根目录 [frontend-development-standard.md](../frontend-development-standard.md)。
 
-## 业务子应用
+## Shell
 
+| 项 | 值 |
+|---|---|
+| 包名 | `@jonex/shell` |
+| 职责 | 登录、全局导航、应用清单加载、权限守卫、子应用挂载 |
+| 访问路径 | `/` |
+| 开发端口 | `5173` |
+| 生产容器 | `shell-frontend` |
 
-### core-business（核心业务）
-- 挂载路径：`/core-business/`
-- API 前缀：`/api/v1/`
-- 状态：✅ 开发中
-- 开发端口：5175
+## 子应用
 
-### platform-management（平台管理）
-- 挂载路径：`/platform-management/`
-- API 前缀：`/api/v1/`
-- 状态：✅ 开发中
-- 开发端口：5177
+| 应用 | 包名 | hosted 路径 | standalone 路径 | remote entry | scope | 端口 |
+|---|---|---|---|---|---|---|
+| 核心业务 | `@jonex/core-business` | `/apps/core-business` | `/core-business/` | `/remotes/core-business/assets/remoteEntry.js` | `coreBusiness` | `5175` |
+| 平台管理 | `@jonex/platform-management` | `/apps/platform-management` | `/platform-management/` | `/remotes/platform-management/assets/remoteEntry.js` | `platformManagement` | `5177` |
+| 生态管理 | `@jonex/ecosystem-management` | `/apps/ecosystem-management` | `/ecosystem-management/` | `/remotes/ecosystem-management/assets/remoteEntry.js` | `ecosystemManagement` | `5176` |
+| 专家访谈 | `@jonex/expert-call` | `/apps/expert-call` | `/expert-call/` | `/remotes/expert-call/assets/remoteEntry.js` | `expertCall` | `5174` |
 
-### ecosystem-management（生态管理）
-- 挂载路径：`/ecosystem-management/`
-- API 前缀：`/api/v1/`
-- 状态：✅ 开发中
-- 开发端口：5176
+## API 约定
 
-### knowledge-base（知识库）
-- 挂载路径：`/kb/`
-- API 前缀：`/api/v1/knowledge-base/`
-- 状态：⏸️ 规划中
-- 本体能力：知识库管理后台含本体 TBox schema 配置、本体实体 / 关系可视化图谱、本体查询调试等页面（待开发）
+- 前端只能调用 `/api/v1/**`。
+- 专家访谈统一调用 `/api/v1/expert-call/**`。
+- 不允许新增业务 API 兼容前缀。
+- 不允许前端直连 Sidecar、能力服务容器名或宿主调试端口。
+
+## 变更流程
+
+1. 在平台后端注册应用、菜单、权限和 remote 元数据。
+2. 同步更新 `frontends/shell/public/app-manifest.json` 作为本地 fallback。
+3. 在 `deploy/nginx/frontend-gateway.conf` 配置 standalone 路径和 remote assets 反代。
+4. 新增或调整子应用自身 `Dockerfile`、`nginx/default.conf`、`vite.config.ts`。
+5. 在 `frontends/` 根目录运行 `pnpm run typecheck` 和 `pnpm run build`，必要时再用 `pnpm --filter <package> typecheck` 定位单个子应用问题。

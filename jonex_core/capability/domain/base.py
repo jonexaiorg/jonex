@@ -1,10 +1,9 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-"""Domain capability base class
+"""领域能力基类
 
-All domain capabilities must inherit this class. Domain capabilities are responsible
-for orchestrating 1-N atomic capabilities, performing domain-level data formatting,
-validation and aggregation, without directly accessing the database.
+所有领域能力必须继承此类，领域能力负责编排 1-N 个原子能力，
+做领域级数据格式化、校验、聚合，不直接访问数据库。
 """
 
 from abc import abstractmethod
@@ -15,40 +14,39 @@ from jonex_core.capability.models import CapabilityType, CapabilityRequest, Capa
 
 
 class DomainCapability(BaseCapability):
-    """Domain capability abstract base class
+    """领域能力抽象基类
 
-    All domain capabilities (speech processing, text generation, knowledge retrieval, etc.)
-    must inherit this class. Domain capabilities are responsible for orchestrating 1-N
-    atomic capabilities, without directly accessing the database.
+    所有领域能力（语音处理、文本生成、知识检索等）必须继承此类。
+    领域能力负责编排 1-N 个原子能力，不直接访问数据库。
     """
 
     @property
     def capability_type(self) -> CapabilityType:
-        """Domain capability type"""
+        """领域能力类型"""
         return CapabilityType.DOMAIN
 
     @abstractmethod
     async def validate_input(self, request: CapabilityRequest) -> bool:
         """
-        Validate the legitimacy of input parameters
+        验证输入参数的合法性
 
         Args:
-            request: Capability invocation request
+            request: 能力调用请求
 
         Returns:
-            bool: Whether the parameters are valid
+            bool: 参数是否合法
         """
         pass
 
     @abstractmethod
     async def execute(self, request: CapabilityRequest) -> CapabilityResponse:
         """
-        Execute domain capability
+        执行领域能力
 
         Args:
-            request: Capability invocation request
+            request: 能力调用请求
 
         Returns:
-            CapabilityResponse: Standardized capability invocation result
+            CapabilityResponse: 标准化的能力调用结果
         """
         pass

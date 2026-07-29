@@ -47,6 +47,8 @@ neo4jWorkDir/
 
 # Data & Storage
 inputs/
+# RAG storage (generated data — keep local only)
+rag_service_data/
 rag_storage*/
 examples/input/
 examples/output/
@@ -82,3 +84,5 @@ CLAUDE.md
 
 # Python version config (local only)
 .python-version
+
+# Presets (contain API keys / connection info — keep local only)

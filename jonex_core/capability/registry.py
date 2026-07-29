@@ -1,55 +1,57 @@
 from typing import Dict, Optional, List
 from .base import BaseCapability
 from .models import CapabilityRequest, CapabilityResponse
+from jonex_core.common.exceptions import JonexException
+from jonex_core.common.i18n import translate
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class CapabilityRegistry:
-    """Capability registration center
+    """能力注册中心
 
-    Responsible for capability registration, discovery, routing and invocation.
+    负责能力的注册、发现、路由和调用。
     """
 
     def __init__(self):
         self._capabilities: Dict[str, BaseCapability] = {}
-        logger.info("Capability registration center initialized")
+        logger.info("能力注册中心初始化完成")
 
     def register(self, capability: BaseCapability) -> None:
-        """Register capability"""
+        """注册能力"""
         metadata = capability.get_metadata()
         full_id = metadata.full_id
         if full_id in self._capabilities:
-            logger.warning(f"Capability {full_id} already exists, will be overwritten")
+            logger.warning(f"能力 {full_id} 已存在，将覆盖")
         self._capabilities[full_id] = capability
-        logger.info(f"Capability {full_id} ({metadata.capability_name}) registered successfully")
+        logger.info(f"能力 {full_id} ({metadata.capability_name}) 注册成功")
 
     def unregister(self, capability_id: str, version: str = "v1") -> None:
-        """Deregister capability"""
+        """注销能力"""
         full_id = f"{capability_id}.{version}"
         if full_id in self._capabilities:
             del self._capabilities[full_id]
-            logger.info(f"Capability {full_id} has been deregistered")
+            logger.info(f"能力 {full_id} 已注销")
 
     def get_capability(self, capability_id: str, version: Optional[str] = None) -> Optional[BaseCapability]:
-        """Get capability instance
+        """获取能力实例
 
         Args:
-            capability_id: Capability ID, supports full format "type.id.version" or shorthand "id"
-            version: Version, required when using shorthand ID
+            capability_id: 能力ID，支持完整格式 "type.id.version" 或简写 "id"
+            version: 版本号，简写ID时需要指定
         """
         if "." in capability_id:
             full_id = capability_id
         elif version:
-            # First try matching each type
+            # 先尝试各类型匹配
             for cap_type in ["business", "domain", "atomic"]:
                 full_id = f"{cap_type}.{capability_id}.{version}"
                 if full_id in self._capabilities:
                     return self._capabilities[full_id]
             return None
         else:
-            # No version, find the latest version
+            # 没有版本，找最新版本
             for cid, cap in self._capabilities.items():
                 if capability_id in cid:
                     return cap
@@ -58,39 +60,48 @@ class CapabilityRegistry:
         return self._capabilities.get(full_id)
 
     async def invoke(self, capability_id: str, request: CapabilityRequest) -> CapabilityResponse:
-        """Invoke capability
+        """调用能力
 
         Args:
-            capability_id: Capability ID
-            request: Invocation request
+            capability_id: 能力ID
+            request: 调用请求
 
         Returns:
-            CapabilityResponse: Invocation response
+            CapabilityResponse: 调用响应
         """
         capability = self.get_capability(capability_id)
         if not capability:
-            logger.error(f"Capability {capability_id} Not found")
+            logger.error(f"能力 {capability_id} 未找到")
             return CapabilityResponse.error(
                 request_id=request.request_id,
                 code=404,
-                message=f"Capability {capability_id} Not found"
+                message=translate("err.capability.not_found", params={"capability_id": capability_id}, fallback=f"能力 {capability_id} 未找到")
             )
 
         try:
-            logger.info(f"Invoke capability {capability_id}, request_id={request.request_id}")
+            logger.info(f"调用能力 {capability_id}, request_id={request.request_id}")
             response = await capability(request)
-            logger.info(f"Capability {capability_id} invocation completed, success={response.success}")
+            logger.info(f"能力 {capability_id} 调用完成, success={response.success}")
             return response
+        except JonexException as e:
+            logger.warning(f"能力 {capability_id} 业务异常: code={e.code}, message={e.message}")
+            return CapabilityResponse.error(
+                request_id=request.request_id,
+                code=e.code,
+                message=e.message,
+                details=e.details if e.details else None,
+                params=e.params if e.params else None,
+            )
         except Exception as e:
-            logger.exception(f"Capability {capability_id} invocation exception: {e}")
+            logger.exception(f"能力 {capability_id} 调用异常: {e}")
             return CapabilityResponse.error(
                 request_id=request.request_id,
                 code=500,
-                message=f"Capability invocation exception: {str(e)}"
+                message=translate("err.capability.invoke_exception", params={"error": str(e)}, fallback=f"能力调用异常: {str(e)}")
             )
 
     def list_capabilities(self) -> List[dict]:
-        """List all registered capabilities"""
+        """列出所有已注册能力"""
         result = []
         for cap in self._capabilities.values():
             meta = cap.get_metadata()
@@ -104,12 +115,12 @@ class CapabilityRegistry:
         return result
 
 
-# Global singleton
+# 全局单例
 _global_registry: Optional[CapabilityRegistry] = None
 
 
 def get_capability_registry() -> CapabilityRegistry:
-    """Get global capability registration center instance"""
+    """获取全局能力注册中心实例"""
     global _global_registry
     if _global_registry is None:
         _global_registry = CapabilityRegistry()

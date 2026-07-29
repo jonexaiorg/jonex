@@ -9,7 +9,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from raganything.image_transport import (
-    ImageTransport,
     CosImageHost,
     PrepareResult,
     VLMSupport,
@@ -401,7 +400,7 @@ class TestCosImageHostIntegration:
                 content_length = resp.headers.get("Content-Length", "0")
                 print(f"  Content-Type: {content_type}, Content-Length: {content_length}")
                 assert content_type.startswith("image/"), f"Unexpected Content-Type: {content_type}"
-                assert int(content_length) > 0, f"Zero Content-Length"
+                assert int(content_length) > 0, "Zero Content-Length"
         except urllib.error.HTTPError as e:
             # 403 = private bucket (object exists, ACL denies anonymous read)
             # 404 = truly not found (still waiting for consistency or deleted)

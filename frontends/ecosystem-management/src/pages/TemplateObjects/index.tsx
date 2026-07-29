@@ -1,68 +1,130 @@
-import React, { useState, useMemo } from 'react'
-import { Card, Table, Tag, Input, Select } from 'antd'
-import { SearchOutlined } from '@ant-design/icons'
-import { colors, radius } from '@jonex/platform-theme/tokens'
-import type { TemplateObject } from '../../types/catalog'
+import React, { useState, useMemo } from 'react';
+import { Card, Table, Tag, Input, Select } from 'antd';
+import { SearchOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import { colors, radius } from '@jonex/platform-theme/tokens';
+import type { TemplateObject } from '../../data/mock';
 
-const initialObjects: TemplateObject[] = []
-
-const STATUS_MAP: Record<string, { label: string; cls: string }> = {
-  active: { label: '启用', cls: 'active' },
-  draft: { label: '草稿', cls: 'pending' },
-}
+const objectDefs = [
+  {
+    id: 'disease',
+    domainId: 'healthcare',
+    fields: [
+      { id: 'diseaseName', type: 'string', required: true },
+      { id: 'icdCode', type: 'string', required: true },
+      { id: 'symptomDescription', type: 'text', required: false },
+    ],
+    status: 'active' as const,
+  },
+  {
+    id: 'drug',
+    domainId: 'healthcare',
+    fields: [
+      { id: 'drugName', type: 'string', required: true },
+      { id: 'approvalNumber', type: 'string', required: true },
+      { id: 'manufacturer', type: 'string', required: false },
+    ],
+    status: 'active' as const,
+  },
+  {
+    id: 'company',
+    domainId: 'fintech',
+    fields: [
+      { id: 'companyName', type: 'string', required: true },
+      { id: 'creditCode', type: 'string', required: true },
+      { id: 'industry', type: 'string', required: false },
+    ],
+    status: 'active' as const,
+  },
+];
 
 export default function TemplateObjects() {
-  const [objects] = useState<TemplateObject[]>(initialObjects)
-  const [search, setSearch] = useState('')
-  const [domainFilter, setDomainFilter] = useState<string>('')
+  const { t } = useTranslation();
+  const [search, setSearch] = useState('');
+  const [domainFilter, setDomainFilter] = useState<string>('');
+  const objects = useMemo<TemplateObject[]>(
+    () =>
+      objectDefs.map((object) => ({
+        id: `to-${object.id}`,
+        name: t(`templateObjects.demo.objects.${object.id}`),
+        domainId: object.domainId,
+        domainName: t(`templateObjects.demo.domains.${object.domainId}`),
+        fields: object.fields.map((field) => ({
+          name: t(`templateObjects.demo.fields.${field.id}`),
+          type: field.type,
+          required: field.required,
+        })),
+        status: object.status,
+      })),
+    [t],
+  );
 
-  const domainNames = useMemo(() => [...new Set(objects.map((o) => o.domainName))], [objects])
+  const domains = useMemo(
+    () => [...new Map(objects.map((object) => [object.domainId, object.domainName])).entries()],
+    [objects],
+  );
 
   const filtered = useMemo(() => {
     return objects.filter((o) => {
-      if (search && !o.name.includes(search)) return false
-      if (domainFilter && o.domainName !== domainFilter) return false
-      return true
-    })
-  }, [objects, search, domainFilter])
+      if (search && !o.name.includes(search)) return false;
+      if (domainFilter && o.domainId !== domainFilter) return false;
+      return true;
+    });
+  }, [objects, search, domainFilter]);
+
+  const statusLabelMap: Record<string, string> = {
+    active: t('status.active'),
+    draft: t('status.draft'),
+  };
+  const statusClsMap: Record<string, string> = {
+    active: 'active',
+    draft: 'pending',
+  };
 
   const columns = [
-    { title: '对象名称', dataIndex: 'name', key: 'name', width: 140 },
+    { title: t('templateObjects.columnName'), dataIndex: 'name', key: 'name', width: 140 },
     {
-      title: '所属领域',
+      title: t('templateObjects.columnDomain'),
       dataIndex: 'domainName',
       key: 'domainName',
       width: 120,
       render: (v: string) => <Tag>{v}</Tag>,
     },
     {
-      title: '字段数',
+      title: t('templateObjects.columnFieldCount'),
       key: 'fieldCount',
       width: 80,
       align: 'center' as const,
       render: (_: unknown, record: TemplateObject) => record.fields.length,
     },
     {
-      title: '状态',
+      title: t('templateObjects.columnStatus'),
       dataIndex: 'status',
       key: 'status',
       width: 80,
-      render: (v: string) => <span className={`yx-status-badge ${STATUS_MAP[v]?.cls || v}`}>{STATUS_MAP[v]?.label || v}</span>,
+      render: (v: string) => (
+        <span className={`yx-status-badge ${statusClsMap[v] || v}`}>{statusLabelMap[v] || v}</span>
+      ),
     },
-  ]
+  ];
 
   return (
     <div>
       <div className="yx-page-title">
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: colors.brandDark, marginBottom: 4 }}>模板对象管理</h1>
-        <p style={{ color: colors.textMuted, margin: '4px 0 0', fontSize: 14 }}>管理模板中的对象定义与字段配置</p>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: colors.brandDark, marginBottom: 4 }}>
+          {t('templateObjects.pageTitle')}
+        </h1>
+        <p style={{ color: colors.textMuted, margin: '4px 0 0', fontSize: 14 }}>{t('templateObjects.pageSubtitle')}</p>
       </div>
 
-      <div className="yx-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div
+        className="yx-toolbar"
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}
+      >
         <div style={{ display: 'flex', gap: 12 }}>
           <Input
             className="yx-search-box"
-            placeholder="搜索对象名称"
+            placeholder={t('templateObjects.searchPlaceholder')}
             prefix={<SearchOutlined />}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -70,12 +132,12 @@ export default function TemplateObjects() {
             style={{ width: 260 }}
           />
           <Select
-            placeholder="按领域筛选"
+            placeholder={t('templateObjects.domainFilterPlaceholder')}
             value={domainFilter || undefined}
             onChange={(v) => setDomainFilter(v || '')}
             allowClear
             style={{ width: 160 }}
-            options={domainNames.map((d) => ({ label: d, value: d }))}
+            options={domains.map(([value, label]) => ({ label, value }))}
           />
         </div>
       </div>
@@ -88,18 +150,24 @@ export default function TemplateObjects() {
           expandable={{
             expandedRowRender: (record: TemplateObject) => (
               <div style={{ padding: '8px 0' }}>
-                <h4 style={{ marginBottom: 8, fontSize: 13, color: colors.brandDark }}>字段定义</h4>
+                <h4 style={{ marginBottom: 8, fontSize: 13, color: colors.brandDark }}>
+                  {t('templateObjects.fieldDefSection')}
+                </h4>
                 <Table
                   dataSource={record.fields.map((f, i) => ({ ...f, key: i }))}
                   columns={[
-                    { title: '字段名', dataIndex: 'name', key: 'name' },
-                    { title: '类型', dataIndex: 'type', key: 'type', width: 100 },
+                    { title: t('templateObjects.fieldName'), dataIndex: 'name', key: 'name' },
+                    { title: t('templateObjects.fieldType'), dataIndex: 'type', key: 'type', width: 100 },
                     {
-                      title: '必填',
+                      title: t('templateObjects.fieldRequired'),
                       dataIndex: 'required',
                       key: 'required',
                       width: 80,
-                      render: (v: boolean) => <Tag color={v ? 'red' : 'default'}>{v ? '必填' : '可选'}</Tag>,
+                      render: (v: boolean) => (
+                        <Tag color={v ? 'red' : 'default'}>
+                          {v ? t('templateObjects.required') : t('templateObjects.optional')}
+                        </Tag>
+                      ),
                     },
                   ]}
                   rowKey="key"
@@ -115,5 +183,5 @@ export default function TemplateObjects() {
         />
       </Card>
     </div>
-  )
+  );
 }

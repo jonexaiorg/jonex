@@ -1,6 +1,6 @@
 #!/usr/bin/python3
-
-
+# -*- coding:utf-8 -*-
+"""KB 数据源实例模型 — KnowledgeDataSource。"""
 import uuid
 
 from sqlalchemy import Column, DateTime, Integer, String, Text
@@ -11,7 +11,7 @@ from jonex_core.common.entity import SoftDeleteMixin, TenantMixin, TimestampMixi
 
 
 class KnowledgeDataSource(TenantMixin, TimestampMixin, SoftDeleteMixin, Base):
-
+    """知识库数据源实例（api / api_push / storage / file）。"""
 
     __tablename__ = "knowledge_data_sources"
     __table_args__ = {"schema": "knowledge_base"}
@@ -31,13 +31,13 @@ class KnowledgeDataSource(TenantMixin, TimestampMixin, SoftDeleteMixin, Base):
     last_sync_message = Column(Text, nullable=True)
     document_count = Column(Integer, nullable=False, default=0)
 
-
+    # 敏感字段集合：to_dict 时脱敏
     _SECRET_KEYS = ("token_ref", "credential_ref", "ingest_key_hash")
 
     def to_dict(self, *, reveal: bool = False) -> dict:
         cfg = dict(self.config_json or {})
         if not reveal:
-
+            # 脱敏顶层敏感字段 + 嵌套 auth.token_ref
             for k in self._SECRET_KEYS:
                 if k in cfg:
                     cfg[k] = "***"

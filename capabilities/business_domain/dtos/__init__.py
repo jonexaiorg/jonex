@@ -1,4 +1,6 @@
-
+"""
+业务领域 Pydantic DTOs。
+"""
 
 from .templates import (
     CompilePreviewResponse,
@@ -56,7 +58,7 @@ __all__ = [
     "TemplateScenarioCreateRequest",
     "TemplateScenarioResponse",
     "TemplateScenarioUpdateRequest",
-
+    # Prompt Templates
     "CreatePromptTemplateRequest",
     "ListPromptTemplatesQuery",
     "PromptTemplateDetailResponse",

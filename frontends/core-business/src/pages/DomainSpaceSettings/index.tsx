@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useParams, useNavigate } from 'react-router-dom'
-import { observer } from 'mobx-react-lite'
-import { Input, Button, Spin, Result, message, Modal } from 'antd'
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useParams, useNavigate } from 'react-router-dom';
+import { observer } from 'mobx-react-lite';
+import { Input, Button, Spin, Result, message } from 'antd';
 import {
   SaveOutlined,
   TeamOutlined,
@@ -12,264 +12,279 @@ import {
   DeleteOutlined,
   CloseOutlined,
   InfoCircleOutlined,
-} from '@ant-design/icons'
-import { emitSpacesInvalidated, emitSpaceChanged } from '@jonex/shell-sdk'
-import {
-  getSpace,
-  updateSpace,
-  deleteSpace,
-  getSpacePermissions,
-  updateSpacePermissions,
-} from '../../api/domainSpace'
-import type { DomainSpace } from '../../types/domainSpace'
-import { userToPermMember, type PermMember } from '../../types/domainService'
-import { listUsers, type PlatformUser } from '../../api/user'
-import { useStore } from '../../store'
+} from '@ant-design/icons';
+import { emitSpacesInvalidated } from '@jonex/shell-sdk';
+import { getSpace, updateSpace, getSpacePermissions, updateSpacePermissions } from '../../api/domainSpace';
+import type { DomainSpace } from '../../types/domainSpace';
+import { userToPermMember, type PermMember } from '../../types/domainService';
+import { listUsers, type PlatformUser } from '../../api/user';
+import { useStore } from '../../store';
+import DeleteSpaceModal from './DeleteSpaceModal';
+import type { DeleteSpaceModalHandle } from './DeleteSpaceModal';
 
-export default observer(function DomainSpaceSettings() {
-  const { t } = useTranslation()
-  const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const { global } = useStore()
+const DomainSpaceSettings = observer(function DomainSpaceSettings() {
+  const { t } = useTranslation();
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { global } = useStore();
 
-  const [space, setSpace] = useState<DomainSpace | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [space, setSpace] = useState<DomainSpace | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  // 基本信息
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [savingInfo, setSavingInfo] = useState(false);
 
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [savingInfo, setSavingInfo] = useState(false)
+  // 权限成员
+  const [permMembers, setPermMembers] = useState<PermMember[]>([]);
+  const [permLoading, setPermLoading] = useState(false);
+  const [permSaving, setPermSaving] = useState(false);
+  const [permSearch, setPermSearch] = useState('');
 
+  // 用户选择器
+  const [userSelectOpen, setUserSelectOpen] = useState(false);
+  const [userSearchText, setUserSearchText] = useState('');
+  const [availableUsers, setAvailableUsers] = useState<PlatformUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const userSelectRef = useRef<HTMLDivElement>(null);
 
-  const [permMembers, setPermMembers] = useState<PermMember[]>([])
-  const [permLoading, setPermLoading] = useState(false)
-  const [permSaving, setPermSaving] = useState(false)
-  const [permSearch, setPermSearch] = useState('')
+  const deleteRef = useRef<DeleteSpaceModalHandle>(null);
 
-
-  const [userSelectOpen, setUserSelectOpen] = useState(false)
-  const [userSearchText, setUserSearchText] = useState('')
-  const [availableUsers, setAvailableUsers] = useState<PlatformUser[]>([])
-  const [usersLoading, setUsersLoading] = useState(false)
-  const userSelectRef = useRef<HTMLDivElement>(null)
-
-
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-
-
+  // ── 加载空间详情 ──
   const loadSpace = useCallback(async () => {
-    if (!id) return
-    setLoading(true)
-    setError(null)
+    if (!id) return;
+    setLoading(true);
+    setError(null);
     try {
-      const data = await getSpace(id)
-      setSpace(data)
-      setName(data.name)
-      setDescription(data.description || '')
+      const data = await getSpace(id);
+      setSpace(data);
+      setName(data.name);
+      setDescription(data.description || '');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('common.loadFailed'))
+      setError(err instanceof Error ? err.message : t('common.loadFailed'));
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [id])
+  }, [id]);
 
-
+  // ── 加载权限 ──
   const loadPermissions = useCallback(async () => {
-    if (!id) return
-    setPermLoading(true)
+    if (!id) return;
+    setPermLoading(true);
     try {
-      const perms = await getSpacePermissions(id)
+      const perms = await getSpacePermissions(id);
       if (perms.length > 0) {
-        const userMap = new Map<string, PlatformUser>()
+        const userMap = new Map<string, PlatformUser>();
         try {
-          const userResult = await listUsers(1, 100)
-          for (const u of userResult.items) userMap.set(String(u.id), u)
-        } catch {   }
+          const userResult = await listUsers(1, 100);
+          for (const u of userResult.items) userMap.set(String(u.id), u);
+        } catch {
+          /* 用户名解析失败不影响展示 */
+        }
         setPermMembers(
           perms.map((p) => {
-            const uid = String(p.user_id)
-            const user = userMap.get(uid)
-            const role = (p.role === 'manager' ? 'manager' : 'viewer') as 'viewer' | 'manager'
+            const uid = String(p.user_id);
+            const user = userMap.get(uid);
+            const role = (p.role === 'manager' ? 'manager' : 'viewer') as 'viewer' | 'manager';
             return user
               ? userToPermMember(user, role)
               : {
                   id: uid,
-                  name: `用户 ${uid.slice(0, 8)}`,
+                  name: t('domainSpace.userPrefix', { id: uid.slice(0, 8) }),
                   department: '',
                   avatar: uid.charAt(0).toUpperCase(),
                   avatarColor: '#94a3b8',
                   role,
-                }
+                };
           }),
-        )
+        );
       } else {
-        setPermMembers([])
+        setPermMembers([]);
       }
     } catch {
-      setPermMembers([])
+      setPermMembers([]);
     } finally {
-      setPermLoading(false)
+      setPermLoading(false);
     }
-  }, [id])
+  }, [id]);
 
   useEffect(() => {
-    loadSpace()
-    loadPermissions()
-  }, [loadSpace, loadPermissions])
+    loadSpace();
+    loadPermissions();
+  }, [loadSpace, loadPermissions]);
 
-
+  // 在空间详情页时，切换全局空间 → 页面跟随跳转到对应空间的详情
   useEffect(() => {
     if (global.currentSpaceId && id && global.currentSpaceId !== id) {
-      navigate(`/domain-space/${global.currentSpaceId}/settings`, { replace: true })
+      navigate(`/domain-space/${global.currentSpaceId}/settings`, { replace: true });
     }
-  }, [global.currentSpaceId, id, navigate])
+  }, [global.currentSpaceId, id, navigate]);
 
-
+  // 点击外部关闭用户选择器
   useEffect(() => {
-    if (!userSelectOpen) return
+    if (!userSelectOpen) return;
     const handler = (e: MouseEvent) => {
       if (userSelectRef.current && !userSelectRef.current.contains(e.target as Node)) {
-        setUserSelectOpen(false)
-        setUserSearchText('')
+        setUserSelectOpen(false);
+        setUserSearchText('');
       }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [userSelectOpen])
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [userSelectOpen]);
 
   const loadAvailableUsers = useCallback(async () => {
-    setUsersLoading(true)
+    setUsersLoading(true);
     try {
-      const result = await listUsers(1, 100)
-      setAvailableUsers(result.items)
+      const result = await listUsers(1, 100);
+      setAvailableUsers(result.items);
     } catch {
-      setAvailableUsers([])
+      setAvailableUsers([]);
     } finally {
-      setUsersLoading(false)
+      setUsersLoading(false);
     }
-  }, [])
+  }, []);
 
-
+  // ── 基本信息保存 ──
   const handleSaveInfo = async () => {
-    if (!id) return
-    if (!name.trim()) { message.warning(t('domainSpace.nameRequired')); return }
-    setSavingInfo(true)
-    try {
-      await updateSpace(id, { name: name.trim(), description })
-      message.success(t('domainSpace.basicInfoSaved'))
-      await global.refreshSpaces()
-      emitSpacesInvalidated()
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('common.saveFailed'))
-    } finally {
-      setSavingInfo(false)
+    if (!id) return;
+    if (!name.trim()) {
+      message.warning(t('common.nameRequired'));
+      return;
     }
-  }
+    setSavingInfo(true);
+    try {
+      await updateSpace(id, { name: name.trim(), description });
+      message.success(t('common.saveSuccess'));
+      await global.refreshSpaces();
+      emitSpacesInvalidated();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : t('common.saveFailed'));
+    } finally {
+      setSavingInfo(false);
+    }
+  };
 
-
+  // ── 权限成员 ──
   const addPermMember = (user: PlatformUser) => {
     setPermMembers((prev) => {
-      if (prev.some((m) => m.id === String(user.id))) return prev
-      return [...prev, userToPermMember(user, 'viewer')]
-    })
-  }
+      if (prev.some((m) => m.id === String(user.id))) return prev;
+      return [...prev, userToPermMember(user, 'viewer')];
+    });
+  };
 
   const removePermMember = (userId: string) => {
-    setPermMembers((prev) => prev.filter((m) => m.id !== userId))
-  }
+    setPermMembers((prev) => prev.filter((m) => m.id !== userId));
+  };
 
   const setMemberRole = (userId: string, role: 'viewer' | 'manager') => {
-    setPermMembers((prev) => prev.map((m) => (m.id === userId ? { ...m, role } : m)))
-  }
+    setPermMembers((prev) => prev.map((m) => (m.id === userId ? { ...m, role } : m)));
+  };
 
   const handleSavePermissions = async () => {
-    if (!id) return
-    setPermSaving(true)
+    if (!id) return;
+    setPermSaving(true);
     try {
       await updateSpacePermissions(
         id,
         permMembers.map((m) => ({ user_id: m.id, role: m.role })),
-      )
-      message.success(t('permission.saveSuccess'))
+      );
+      message.success(t('common.saveSuccess'));
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('permission.saveFailed'))
+      message.error(err instanceof Error ? err.message : t('common.saveFailed'));
     } finally {
-      setPermSaving(false)
+      setPermSaving(false);
     }
-  }
+  };
 
-  const addedUserIds = new Set(permMembers.map((m) => m.id))
+  const addedUserIds = new Set(permMembers.map((m) => m.id));
   const filteredAvailableUsers = availableUsers.filter((u) => {
-    if (addedUserIds.has(String(u.id))) return false
-    if (!userSearchText) return true
-    const q = userSearchText.toLowerCase()
+    if (addedUserIds.has(String(u.id))) return false;
+    if (!userSearchText) return true;
+    const q = userSearchText.toLowerCase();
     return (
       (u.display_name || '').toLowerCase().includes(q) ||
       u.username.toLowerCase().includes(q) ||
       (u.email || '').toLowerCase().includes(q)
-    )
-  })
+    );
+  });
   const filteredPermMembers = permMembers.filter((m) => {
-    if (!permSearch) return true
-    return m.name.includes(permSearch) || m.department.includes(permSearch)
-  })
+    if (!permSearch) return true;
+    return m.name.includes(permSearch) || m.department.includes(permSearch);
+  });
 
-
-  const handleDelete = async () => {
-    if (!id) return
-    setDeleting(true)
-    try {
-      const wasCurrent = global.currentSpaceId === id
-      await deleteSpace(id)
-      message.success(t('domainSpace.deleteSuccess'))
-      setDeleteOpen(false)
-      await global.refreshSpaces()
-      if (wasCurrent) emitSpaceChanged(global.currentSpaceId)
-      emitSpacesInvalidated()
-      navigate('/domain-space')
-    } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('common.deleteFailed'))
-    } finally {
-      setDeleting(false)
-    }
-  }
+  const handleDeleted = () => {
+    navigate('/domain-space');
+  };
 
   if (loading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}><Spin size="large" /></div>
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+        <Spin size="large" />
+      </div>
+    );
   }
   if (error || !space) {
     return (
       <Result
         status="error"
         title={t('common.loadFailed')}
-        subTitle={error || '未找到该领域空间'}
-        extra={<Button type="primary" onClick={() => navigate('/domain-space')}>{t('domainKnowledge.list')}</Button>}
+        subTitle={error || t('domainSpace.notFound')}
+        extra={
+          <Button type="primary" onClick={() => navigate('/domain-space')}>
+            {t('common.backToList')}
+          </Button>
+        }
       />
-    )
+    );
   }
 
   return (
     <div className="yx-domain-space-page">
-      { }
+      {/* 页面标题 */}
       <div className="yx-page-header">
-        <h1 className="yx-page-title" style={{ margin: 0 }}>{t('domainSpace.settings')} · {space.name}</h1>
+        <h1 className="yx-page-title" style={{ margin: 0 }}>
+          {t('domainSpace.settingsTitle', { name: space.name })}
+        </h1>
       </div>
 
-      { }
+      {/* 基本信息 */}
       <section style={{ marginBottom: 28 }}>
-        <h2 style={{ fontSize: 17, fontWeight: 600, color: '#0b2b5c', marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #eef2f6', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <InfoCircleOutlined style={{ color: '#3b82f6' }} /> {t('domainSpace.basicInfo')}
+        <h2
+          style={{
+            fontSize: 17,
+            fontWeight: 600,
+            color: '#0b2b5c',
+            marginBottom: 16,
+            paddingBottom: 12,
+            borderBottom: '1px solid #eef2f6',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <InfoCircleOutlined style={{ color: '#3b82f6' }} /> {t('domainSpace.sectionInfo')}
         </h2>
         <div className="yx-card" style={{ padding: '24px 28px' }}>
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 6 }}>空间名称</div>
-            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={128} placeholder="领域空间名称" />
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 6 }}>{t('domainSpace.name')}</div>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={128}
+              placeholder={t('domainSpace.nameInputPlaceholder')}
+            />
           </div>
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 6 }}>空间描述</div>
-            <Input.TextArea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="简要描述该空间的用途和范围" />
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 6 }}>{t('domainSpace.description')}</div>
+            <Input.TextArea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              placeholder={t('domainSpace.descriptionPlaceholder')}
+            />
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 8 }}>
             <Button type="primary" icon={<SaveOutlined />} loading={savingInfo} onClick={handleSaveInfo}>
@@ -279,40 +294,82 @@ export default observer(function DomainSpaceSettings() {
         </div>
       </section>
 
-      { }
+      {/* 成员权限 */}
       <section style={{ marginBottom: 28 }}>
-        <h2 style={{ fontSize: 17, fontWeight: 600, color: '#0b2b5c', marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #eef2f6', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <TeamOutlined style={{ color: '#3b82f6' }} /> {t('domainSpace.permission')}
+        <h2
+          style={{
+            fontSize: 17,
+            fontWeight: 600,
+            color: '#0b2b5c',
+            marginBottom: 16,
+            paddingBottom: 12,
+            borderBottom: '1px solid #eef2f6',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <TeamOutlined style={{ color: '#3b82f6' }} /> {t('domainSpace.permissionSettings')}
         </h2>
         <div className="yx-card" style={{ padding: '24px 28px' }}>
-          { }
+          {/* 添加成员 */}
           <div ref={userSelectRef} style={{ position: 'relative', marginBottom: 12 }}>
             <Button
               icon={<UserAddOutlined />}
               onClick={() => {
-                const willOpen = !userSelectOpen
-                setUserSelectOpen(willOpen)
-                setUserSearchText('')
-                if (willOpen && availableUsers.length === 0) loadAvailableUsers()
+                const willOpen = !userSelectOpen;
+                setUserSelectOpen(willOpen);
+                setUserSearchText('');
+                if (willOpen && availableUsers.length === 0) loadAvailableUsers();
               }}
             >
-              {t('domainKnowledge.addMember')}
+              {t('domainSpace.addMember')}
             </Button>
             {userSelectOpen && (
-              <div style={{ position: 'absolute', top: 40, left: 0, zIndex: 10, width: 320, background: '#fff', borderRadius: 8, boxShadow: '0 4px 20px rgba(0,0,0,.12)', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 40,
+                  left: 0,
+                  zIndex: 10,
+                  width: 320,
+                  background: '#fff',
+                  borderRadius: 8,
+                  boxShadow: '0 4px 20px rgba(0,0,0,.12)',
+                  border: '1px solid #e2e8f0',
+                  overflow: 'hidden',
+                }}
+              >
                 <div style={{ padding: '8px 12px', borderBottom: '1px solid #e2e8f0' }}>
-                  <Input size="small" placeholder={t('domainKnowledge.selectMember')} prefix={<SearchOutlined style={{ color: '#94a3b8' }} />} value={userSearchText} onChange={(e) => setUserSearchText(e.target.value)} allowClear />
+                  <Input
+                    size="small"
+                    placeholder={t('domainSpace.searchUserPlaceholder')}
+                    prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+                    value={userSearchText}
+                    onChange={(e) => setUserSearchText(e.target.value)}
+                    allowClear
+                  />
                 </div>
                 <div style={{ maxHeight: 220, overflowY: 'auto' }}>
                   {usersLoading ? (
-                    <div style={{ textAlign: 'center', padding: 20 }}><Spin size="small" /></div>
+                    <div style={{ textAlign: 'center', padding: 20 }}>
+                      <Spin size="small" />
+                    </div>
                   ) : filteredAvailableUsers.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>
-                      {userSearchText ? t('domainKnowledge.selectMember') : t('domainKnowledge.addMemberSoon')}
+                      {userSearchText ? t('domainSpace.noMatchUser') : t('domainSpace.noAvailableUser')}
                     </div>
                   ) : (
                     filteredAvailableUsers.slice(0, 30).map((user) => (
-                      <div key={user.id} className="yx-perm-user-row" style={{ cursor: 'pointer', padding: '8px 12px' }} onClick={() => { addPermMember(user); setUserSearchText('') }}>
+                      <div
+                        key={user.id}
+                        className="yx-perm-user-row"
+                        style={{ cursor: 'pointer', padding: '8px 12px' }}
+                        onClick={() => {
+                          addPermMember(user);
+                          setUserSearchText('');
+                        }}
+                      >
                         <div className="yx-perm-avatar" style={{ background: userToPermMember(user).avatarColor }}>
                           {userToPermMember(user).avatar}
                         </div>
@@ -329,95 +386,121 @@ export default observer(function DomainSpaceSettings() {
             )}
           </div>
 
-          { }
-          <div className="yx-search-box" style={{ width: '100%', marginBottom: 12 }}>
-            <SearchOutlined style={{ color: '#94a3b8', fontSize: 14 }} />
-            <input type="text" placeholder={t('domainKnowledge.selectMember')} value={permSearch} onChange={(e) => setPermSearch(e.target.value)} style={{ width: '100%' }} />
-          </div>
+          {/* 已有成员搜索 */}
+          <Input
+            prefix={<SearchOutlined style={{ color: '#94a3b8', fontSize: 14 }} />}
+            placeholder={t('domainSpace.searchMemberPlaceholder')}
+            value={permSearch}
+            onChange={(e) => setPermSearch(e.target.value)}
+            style={{ width: '100%', marginBottom: 12 }}
+          />
 
-          { }
+          {/* 成员列表 */}
           <div style={{ maxHeight: 320, overflowY: 'auto', marginBottom: 16 }}>
             {permLoading ? (
-              <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
+              <div style={{ textAlign: 'center', padding: 24 }}>
+                <Spin />
+              </div>
             ) : filteredPermMembers.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 24, color: '#94a3b8', fontSize: 13 }}>
-                {permSearch ? t('domainKnowledge.selectMember') : t('domainKnowledge.addMemberSoon')}
+                {permSearch ? t('domainSpace.noMatchMember') : t('domainSpace.noMembers')}
               </div>
             ) : (
               filteredPermMembers.map((member) => (
                 <div key={member.id} className="yx-perm-user-row">
-                  <div className="yx-perm-avatar" style={{ background: member.avatarColor }}>{member.avatar}</div>
+                  <div className="yx-perm-avatar" style={{ background: member.avatarColor }}>
+                    {member.avatar}
+                  </div>
                   <div className="yx-perm-user-info" style={{ flex: 1 }}>
                     <div className="yx-perm-user-name">{member.name}</div>
                     <div className="yx-perm-user-dept">{member.department || `ID: ${member.id.slice(0, 8)}`}</div>
                   </div>
                   <div className="yx-perm-radio">
                     <label className={`yx-perm-radio-label${member.role === 'viewer' ? ' is-checked' : ''}`}>
-                      <input type="radio" name={`perm-${member.id}`} value="viewer" checked={member.role === 'viewer'} onChange={() => setMemberRole(member.id, 'viewer')} />
-                      {t('domainKnowledge.roleView')}
+                      <input
+                        type="radio"
+                        name={`perm-${member.id}`}
+                        value="viewer"
+                        checked={member.role === 'viewer'}
+                        onChange={() => setMemberRole(member.id, 'viewer')}
+                      />
+                      {t('permission.view')}
                     </label>
                     <label className={`yx-perm-radio-label${member.role === 'manager' ? ' is-checked' : ''}`}>
-                      <input type="radio" name={`perm-${member.id}`} value="manager" checked={member.role === 'manager'} onChange={() => setMemberRole(member.id, 'manager')} />
-                      {t('domainKnowledge.roleManage')}
+                      <input
+                        type="radio"
+                        name={`perm-${member.id}`}
+                        value="manager"
+                        checked={member.role === 'manager'}
+                        onChange={() => setMemberRole(member.id, 'manager')}
+                      />
+                      {t('permission.manage')}
                     </label>
                   </div>
-                  <button type="button" className="yx-perm-remove-btn" onClick={() => removePermMember(member.id)} title={t('domainKnowledge.selectMember')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 16, padding: '0 0 0 8px', lineHeight: 1 }}>
+                  <Button
+                    type="text"
+                    className="yx-perm-remove-btn"
+                    onClick={() => removePermMember(member.id)}
+                    title={t('domainSpace.removeMember')}
+                    style={{ color: '#94a3b8', fontSize: 16, padding: '0 0 0 8px', lineHeight: 1 }}
+                  >
                     <CloseOutlined />
-                  </button>
+                  </Button>
                 </div>
               ))
             )}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <Button type="primary" icon={<SaveOutlined />} loading={permSaving} onClick={handleSavePermissions}>
-              {t('domainKnowledge.savePermission')}
+              {t('domainSpace.savePermission')}
             </Button>
           </div>
         </div>
       </section>
 
-      { }
+      {/* 危险区 */}
       <section>
         <div style={{ border: '1px solid #fecaca', borderRadius: 14, overflow: 'hidden' }}>
-          <div style={{ background: '#fef2f2', padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, color: '#dc2626', fontSize: 15 }}>
-            <WarningOutlined /> {t('domainSpace.delete')}
+          <div
+            style={{
+              background: '#fef2f2',
+              padding: '16px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontWeight: 600,
+              color: '#dc2626',
+              fontSize: 15,
+            }}
+          >
+            <WarningOutlined /> {t('domainSpace.dangerZone')}
           </div>
-          <div style={{ background: '#fff', padding: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div
+            style={{
+              background: '#fff',
+              padding: 24,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
             <div>
-              <p style={{ fontSize: 14, color: '#1e293b', fontWeight: 500, marginBottom: 4 }}>{t('domainSpace.delete')}</p>
-              <p style={{ fontSize: 13, color: '#64748b' }}>删除后该空间下的所有领域和知识库将被移除，此操作不可撤销。</p>
+              <p style={{ fontSize: 14, color: '#1e293b', fontWeight: 500, marginBottom: 4 }}>
+                {t('domainSpace.deleteSpaceTitle')}
+              </p>
+              <p style={{ fontSize: 13, color: '#64748b' }}>{t('domainSpace.deleteWarning')}</p>
             </div>
-            <Button danger type="primary" icon={<DeleteOutlined />} onClick={() => setDeleteOpen(true)}>
-              {t('domainSpace.delete')}
+            <Button danger type="primary" icon={<DeleteOutlined />} onClick={() => deleteRef.current?.open(space.name)}>
+              {t('domainSpace.deleteSpaceBtn')}
             </Button>
           </div>
         </div>
       </section>
 
-      { }
-      <Modal
-        wrapClassName="yx-domain-space-modal"
-        title={<span><WarningOutlined style={{ color: '#ef4444', marginRight: 8 }} />{t('validation.confirmDelete')}</span>}
-        open={deleteOpen}
-        onCancel={() => setDeleteOpen(false)}
-        footer={
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 12 }}>
-            <Button onClick={() => setDeleteOpen(false)}>{t('dataSource.cancel')}</Button>
-            <Button danger type="primary" loading={deleting} onClick={handleDelete}>{t('validation.confirmDelete')}</Button>
-          </div>
-        }
-        width={420}
-      >
-        <div style={{ textAlign: 'center', padding: '12px 0' }}>
-          <DeleteOutlined style={{ fontSize: 48, color: '#ef4444', marginBottom: 16, display: 'block' }} />
-          <p style={{ fontSize: 16, color: '#1e293b', fontWeight: 500 }}>
-            确定要删除领域空间 "<strong>{space.name}</strong>" 吗？
-          </p>
-          <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 8 }}>
-            删除后该空间下的所有领域和知识库将被移除，此操作不可撤销。
-          </p>
-        </div>
-      </Modal>
+      <DeleteSpaceModal ref={deleteRef} spaceId={id || ''} onDeleted={handleDeleted} />
     </div>
-  )
-})
+  );
+});
+
+DomainSpaceSettings.displayName = 'DomainSpaceSettings';
+export default DomainSpaceSettings;

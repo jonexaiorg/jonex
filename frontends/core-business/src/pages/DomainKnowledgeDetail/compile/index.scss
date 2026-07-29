@@ -1,0 +1,4 @@
+/* 仅覆盖 AttrInlineTable 内嵌表格的 margin-inline */
+.attr-inline-table.ant-table-wrapper .ant-table {
+  margin-inline: 0 !important;
+}

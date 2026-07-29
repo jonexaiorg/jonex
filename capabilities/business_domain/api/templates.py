@@ -1,4 +1,6 @@
-
+"""
+业务领域 — 业务模板 API 路由
+"""
 from fastapi import APIRouter, Body, Query, Request
 
 from jonex_core.common.response import success_response, error_response
@@ -28,7 +30,7 @@ _service = TemplateService()
 _publish_service = TemplatePublishService()
 
 
-
+# ── 模板领域 ──
 
 @router.get("/templates/domains")
 async def list_template_domains(
@@ -49,7 +51,7 @@ async def create_template_domain(request: Request, payload: TemplateDomainCreate
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.create_domain(tenant_id, payload.dict(exclude_none=True))
-        return success_response(data=result, message="Template domain created successfully")
+        return success_response(data=result, message="模板领域已创建")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -69,7 +71,7 @@ async def update_template_domain(domain_id: str, request: Request, payload: Temp
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.update_domain(domain_id, tenant_id, payload.dict(exclude_unset=True))
-        return success_response(data=result, message="Template domain updated successfully")
+        return success_response(data=result, message="模板领域已更新")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -79,12 +81,12 @@ async def delete_template_domain(domain_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         await _service.delete_domain(domain_id, tenant_id)
-        return success_response(message="Template domain deleted successfully")
+        return success_response(message="模板领域已删除")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── 模板场景 ──
 
 @router.get("/templates/scenarios")
 async def list_template_scenarios(
@@ -106,7 +108,7 @@ async def create_template_scenario(request: Request, payload: TemplateScenarioCr
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.create_scenario(tenant_id, payload.dict(exclude_none=True))
-        return success_response(data=result, message="Template scenario created successfully")
+        return success_response(data=result, message="模板场景已创建")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -126,7 +128,7 @@ async def update_template_scenario(scenario_id: str, request: Request, payload: 
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.update_scenario(scenario_id, tenant_id, payload.dict(exclude_unset=True))
-        return success_response(data=result, message="Template scenario updated successfully")
+        return success_response(data=result, message="模板场景已更新")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -136,12 +138,12 @@ async def delete_template_scenario(scenario_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         await _service.delete_scenario(scenario_id, tenant_id)
-        return success_response(message="Template scenario deleted successfully")
+        return success_response(message="模板场景已删除")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── 模板对象 ──
 
 @router.get("/templates/scenarios/{scenario_id}/objects")
 async def list_template_objects(
@@ -163,7 +165,7 @@ async def create_template_object(scenario_id: str, request: Request, payload: Te
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.create_object(tenant_id, scenario_id, payload.dict(exclude_none=True))
-        return success_response(data=result, message="Template object created successfully")
+        return success_response(data=result, message="模板对象已创建")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -173,7 +175,7 @@ async def update_template_object(object_id: str, request: Request, payload: Temp
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.update_object(object_id, tenant_id, payload.dict(exclude_unset=True))
-        return success_response(data=result, message="Template object updated successfully")
+        return success_response(data=result, message="模板对象已更新")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -183,12 +185,12 @@ async def delete_template_object(object_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         await _service.delete_object(object_id, tenant_id)
-        return success_response(message="Template object deleted successfully")
+        return success_response(message="模板对象已删除")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── 模板关系 ──
 
 @router.get("/templates/scenarios/{scenario_id}/relations")
 async def list_template_relations(
@@ -210,7 +212,7 @@ async def create_template_relation(scenario_id: str, request: Request, payload: 
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.create_relation(tenant_id, scenario_id, payload.dict(exclude_none=True))
-        return success_response(data=result, message="Template relation created successfully")
+        return success_response(data=result, message="模板关系已创建")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -220,7 +222,7 @@ async def update_template_relation(relation_id: str, request: Request, payload: 
     tenant_id = extract_tenant_id(request)
     try:
         result = await _service.update_relation(relation_id, tenant_id, payload.dict(exclude_unset=True))
-        return success_response(data=result, message="Template relation updated successfully")
+        return success_response(data=result, message="模板关系已更新")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -230,12 +232,12 @@ async def delete_template_relation(relation_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         await _service.delete_relation(relation_id, tenant_id)
-        return success_response(message="Template relation deleted successfully")
+        return success_response(message="模板关系已删除")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── 模板约束 ──────────────────────────────────────────
 
 
 @router.get("/templates/scenarios/{scenario_id}/constraints")
@@ -263,7 +265,7 @@ async def create_template_constraint(
     try:
         data = payload.dict(exclude_none=True)
         result = await _service.create_constraint(tenant_id, scenario_id, data)
-        return success_response(data=result, message="Constraint created successfully")
+        return success_response(data=result, message="约束已创建")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -278,7 +280,7 @@ async def update_template_constraint(
     try:
         data = payload.dict(exclude_none=True)
         result = await _service.update_constraint(constraint_id, tenant_id, data)
-        return success_response(data=result, message="Constraint updated successfully")
+        return success_response(data=result, message="约束已更新")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
@@ -291,12 +293,12 @@ async def delete_template_constraint(
     tenant_id = extract_tenant_id(request)
     try:
         await _service.delete_constraint(constraint_id, tenant_id)
-        return success_response(message="Constraint deleted successfully")
+        return success_response(message="约束已删除")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 
 
-
+# ── 模板发布/编译预览/影响范围 ──────────────────────────
 
 
 @router.post("/templates/scenarios/{scenario_id}/publish", summary="发布模板场景")
@@ -308,7 +310,7 @@ async def publish_template_scenario(
     tenant_id = extract_tenant_id(request)
     try:
         result = await _publish_service.publish_scenario(tenant_id, scenario_id)
-        return success_response(data=result, message="Template scenario published successfully")
+        return success_response(data=result, message="模板场景已发布")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)
 

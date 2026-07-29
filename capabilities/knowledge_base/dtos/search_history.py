@@ -1,4 +1,4 @@
-
+"""Knowledge Base search history DTOs."""
 
 from datetime import datetime
 from typing import Any, Optional
@@ -12,6 +12,7 @@ except ImportError:
 class SearchHistoryCreateRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     knowledge_base_id: str = Field(default="", min_length=0, max_length=128)
+    domain_space_id: Optional[str] = Field(default=None, max_length=64, alias="domainSpaceId")
     mode: str = Field(default="hybrid", min_length=1, max_length=32)
     top_k: int = Field(default=5, ge=1, le=50, alias="topK")
     status: str = Field(default="done", max_length=32)
@@ -29,22 +30,26 @@ class SearchHistoryCreateRequest(BaseModel):
 
 class SearchHistoryListRequest(BaseModel):
     knowledge_base_id: str = Field(default="", min_length=0, max_length=128)
+    domain_space_id: Optional[str] = Field(default=None, max_length=64)
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=20, ge=1, le=100)
 
 
 class SearchHistoryDeleteRequest(BaseModel):
     knowledge_base_id: str = Field(default="", min_length=0, max_length=128)
+    domain_space_id: Optional[str] = Field(default=None, max_length=64)
 
 
 class SearchOverviewRequest(BaseModel):
     knowledge_base_id: str = Field(default="", min_length=0, max_length=128)
+    domain_space_id: Optional[str] = Field(default=None, max_length=64)
 
 
 class SearchHistoryResponse(BaseModel):
     id: str
     tenant_id: str
     user_id: str
+    domain_space_id: Optional[str] = None
     query: str
     query_hash: str
     knowledge_base_id: str

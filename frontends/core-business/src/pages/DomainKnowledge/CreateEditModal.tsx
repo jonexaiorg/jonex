@@ -1,19 +1,19 @@
-import React from 'react'
-import { Modal, Input } from 'antd'
-import { PlusOutlined, EditOutlined } from '@ant-design/icons'
-import { useTranslation } from 'react-i18next'
-import type { DomainKnowledgeItem } from '@/types/domainKnowledge'
+import React from 'react';
+import { Modal, Input } from 'antd';
+import { PlusOutlined, EditOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
+import type { DomainKnowledgeItem } from '@/types/domainKnowledge';
 
 interface CreateEditModalProps {
-  open: boolean
-  editingKb: DomainKnowledgeItem | null
-  name: string
-  description: string
-  submitting: boolean
-  onNameChange: (val: string) => void
-  onDescChange: (val: string) => void
-  onOk: () => void
-  onCancel: () => void
+  open: boolean;
+  editingKb: DomainKnowledgeItem | null;
+  name: string;
+  description: string;
+  submitting: boolean;
+  onNameChange: (val: string) => void;
+  onDescChange: (val: string) => void;
+  onOk: () => void;
+  onCancel: () => void;
 }
 
 export default function CreateEditModal({
@@ -27,7 +27,7 @@ export default function CreateEditModal({
   onOk,
   onCancel,
 }: CreateEditModalProps) {
-  const { t } = useTranslation()
+  const { t } = useTranslation();
 
   return (
     <Modal
@@ -47,7 +47,8 @@ export default function CreateEditModal({
           )}
           {editingKb ? t('domainKnowledge.editKnowledgeBase') : t('domainKnowledge.createKnowledgeBase')}
         </span>
-      }>
+      }
+    >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
           <label
@@ -57,7 +58,8 @@ export default function CreateEditModal({
               fontWeight: 500,
               color: '#475569',
               marginBottom: 4,
-            }}>
+            }}
+          >
             {t('domainKnowledge.knowledgeBaseName')} <span style={{ color: '#ef4444' }}>*</span>
           </label>
           <Input
@@ -74,7 +76,8 @@ export default function CreateEditModal({
               fontWeight: 500,
               color: '#475569',
               marginBottom: 4,
-            }}>
+            }}
+          >
             {t('domainKnowledge.description')}
           </label>
           <Input.TextArea
@@ -86,5 +89,5 @@ export default function CreateEditModal({
         </div>
       </div>
     </Modal>
-  )
+  );
 }

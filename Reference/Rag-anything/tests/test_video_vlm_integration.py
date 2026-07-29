@@ -208,7 +208,7 @@ class TestFirstKeyframeVLM:
         finally:
             # Step 5: Cleanup COS
             await cos_host.cleanup(prep.frames)
-            print(f"  Cleaned up COS objects")
+            print("  Cleaned up COS objects")
 
     @pytest.mark.asyncio
     async def test_multiple_frames_but_only_first_vlm(

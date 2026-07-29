@@ -1,14 +1,14 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 """
-Jonex platform - cache connection module
+悦溪平台 - 缓存连接模块
 
-Based on Redis async client, supports:
-- Async Redis operation
-- Distributed lock
-- Connection pool management
-- Retry mechanism
-- Tenant-level cache isolation
+基于 Redis 异步客户端，支持：
+- 异步 Redis 操作
+- 分布式锁
+- 连接池管理
+- 重试机制
+- 租户级缓存隔离
 """
 
 import logging
@@ -27,14 +27,14 @@ logger = logging.getLogger(__name__)
 config = get_config()
 
 
-# ==================== Connection pool management ====================
+# ==================== 连接池管理 ====================
 class RedisPoolManager:
-    """Redis connection pool manager"""
+    """Redis 连接池管理器"""
     _pool: Optional[ConnectionPool] = None
 
     @classmethod
     def get_pool(cls) -> ConnectionPool:
-        """Get async connection pool (lazy loading)"""
+        """获取异步连接池（懒加载）"""
         if cls._pool is None:
             cls._pool = ConnectionPool(
                 host=config.REDIS_HOST,
@@ -48,31 +48,31 @@ class RedisPoolManager:
                 health_check_interval=config.REDIS_HEALTH_CHECK_INTERVAL,
                 decode_responses=config.REDIS_DECODE_RESPONSES,
             )
-            logger.info(f"✅ Redis connection pool initialized (host={config.REDIS_HOST}:{config.REDIS_PORT})")
+            logger.info(f"✅ Redis 连接池已初始化 (host={config.REDIS_HOST}:{config.REDIS_PORT})")
         return cls._pool
 
     @classmethod
     async def close_pool(cls):
-        """Close connection pool"""
+        """关闭连接池"""
         if cls._pool is not None:
             await cls._pool.disconnect()
             cls._pool = None
-            logger.info("✅ Redis connection pool closed")
+            logger.info("✅ Redis 连接池已关闭")
 
 
 def get_redis_client() -> Redis:
-    """Get async Redis client"""
+    """获取异步 Redis 客户端"""
     return Redis(connection_pool=RedisPoolManager.get_pool())
 
 
-# ==================== Retry decorator ====================
+# ==================== 重试装饰器 ====================
 def redis_retry(max_retries: int = 3, delay: float = 0.1):
     """
-    Redis operation retry decorator
+    Redis 操作重试装饰器
 
     Args:
-        max_retries: Maximum retry count
-        delay: Retry delay base (seconds)
+        max_retries: 最大重试次数
+        delay: 重试延迟基数（秒）
     """
     def decorator(func):
         @wraps(func)
@@ -84,26 +84,26 @@ def redis_retry(max_retries: int = 3, delay: float = 0.1):
                 except (ConnectionError, TimeoutError, RedisError) as e:
                     last_exception = e
                     logger.warning(
-                        f"Redis operation failed, retrying ({attempt + 1}/{max_retries}): {e}"
+                        f"Redis 操作失败，尝试重试 ({attempt + 1}/{max_retries}): {e}"
                     )
                     if attempt < max_retries - 1:
                         import asyncio
                         await asyncio.sleep(delay * (attempt + 1))
-            logger.error(f"Redis operation ultimately failed: {last_exception}")
+            logger.error(f"Redis 操作最终失败: {last_exception}")
             raise last_exception
         return wrapper
     return decorator
 
 
-# ==================== Cache utility class ====================
+# ==================== 缓存工具类 ====================
 class CacheUtil:
-    """Redis cache utility class (async)"""
+    """Redis 缓存工具类（异步）"""
 
-    # ==================== Basic operations ====================
+    # ==================== 基础操作 ====================
     @staticmethod
     @redis_retry(max_retries=3)
     async def ping() -> bool:
-        """Health check"""
+        """健康检查"""
         client = get_redis_client()
         try:
             return await client.ping()
@@ -113,7 +113,7 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def get(key: str) -> Optional[Any]:
-        """Get value"""
+        """获取值"""
         client = get_redis_client()
         try:
             return await client.get(key)
@@ -124,12 +124,12 @@ class CacheUtil:
     @redis_retry(max_retries=3)
     async def set(key: str, value: Any, expire: Optional[int] = None) -> bool:
         """
-        Set value
+        设置值
 
         Args:
-            key: Key name
-            value: Value
-            expire: Expiration time (seconds), None means no expiration
+            key: 键名
+            value: 值
+            expire: 过期时间（秒），None 表示不过期
         """
         client = get_redis_client()
         try:
@@ -141,7 +141,7 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def delete(key: str) -> int:
-        """Delete key"""
+        """删除键"""
         client = get_redis_client()
         try:
             return await client.delete(key)
@@ -151,7 +151,7 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def exists(key: str) -> bool:
-        """Check if key exists"""
+        """检查键是否存在"""
         client = get_redis_client()
         try:
             return await client.exists(key) > 0
@@ -161,7 +161,7 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def ttl(key: str) -> int:
-        """Get remaining expiration time (seconds)"""
+        """获取剩余过期时间（秒）"""
         client = get_redis_client()
         try:
             return await client.ttl(key)
@@ -171,18 +171,18 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def expire(key: str, seconds: int) -> bool:
-        """Set expiration time"""
+        """设置过期时间"""
         client = get_redis_client()
         try:
             return await client.expire(key, seconds)
         finally:
             await client.aclose()
 
-    # ==================== Hash operations ====================
+    # ==================== Hash 操作 ====================
     @staticmethod
     @redis_retry(max_retries=3)
     async def hgetall(key: str) -> dict:
-        """Get all hash fields"""
+        """获取 Hash 所有字段"""
         client = get_redis_client()
         try:
             return await client.hgetall(key)
@@ -192,7 +192,7 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def hget(key: str, field: str) -> Optional[Any]:
-        """Get hash field value"""
+        """获取 Hash 字段值"""
         client = get_redis_client()
         try:
             return await client.hget(key, field)
@@ -202,7 +202,7 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def hset(key: str, field: str, value: Any) -> int:
-        """Set hash field value"""
+        """设置 Hash 字段值"""
         client = get_redis_client()
         try:
             return await client.hset(key, field, value)
@@ -212,18 +212,28 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def hdel(key: str, *fields: str) -> int:
-        """Delete hash fields"""
+        """删除 Hash 字段"""
         client = get_redis_client()
         try:
             return await client.hdel(key, *fields)
         finally:
             await client.aclose()
 
-    # ==================== Set operations ====================
+    @staticmethod
+    @redis_retry(max_retries=3)
+    async def hincrby(key: str, field: str, amount: int = 1) -> int:
+        """Hash 字段原子递增"""
+        client = get_redis_client()
+        try:
+            return await client.hincrby(key, field, amount)
+        finally:
+            await client.aclose()
+
+    # ==================== Set 操作 ====================
     @staticmethod
     @redis_retry(max_retries=3)
     async def sadd(key: str, *members: Any) -> int:
-        """Add members to set"""
+        """向 Set 中添加成员"""
         client = get_redis_client()
         try:
             return await client.sadd(key, *members)
@@ -233,7 +243,7 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def smembers(key: str) -> set:
-        """Get all set members"""
+        """获取 Set 所有成员"""
         client = get_redis_client()
         try:
             return await client.smembers(key)
@@ -243,26 +253,26 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def srem(key: str, *members: Any) -> int:
-        """Delete set members"""
+        """删除 Set 成员"""
         client = get_redis_client()
         try:
             return await client.srem(key, *members)
         finally:
             await client.aclose()
 
-    # ==================== Distributed lock ====================
+    # ==================== 分布式锁 ====================
     @staticmethod
     @redis_retry(max_retries=3)
     async def acquire_lock(lock_key: str, lock_timeout: int) -> str:
         """
-        Get Redis distributed lock
+        获取 Redis 分布式锁
 
         Args:
-            lock_key: Lock key name
-            lock_timeout: Lock timeout (milliseconds)
+            lock_key: 锁的键名
+            lock_timeout: 锁超时时间（毫秒）
 
         Returns:
-            Lock unique identifier (returns empty string on failure)
+            锁的唯一标识（若失败返回空字符串）
         """
         lock_id = str(uuid.uuid4())
         client = get_redis_client()
@@ -270,8 +280,8 @@ class CacheUtil:
             acquired = await client.set(
                 lock_key,
                 lock_id,
-                nx=True,       # Only set when key does not exist
-                px=lock_timeout  # Expiration time (milliseconds)
+                nx=True,       # 仅当键不存在时设置
+                px=lock_timeout  # 过期时间（毫秒）
             )
             return lock_id if acquired else ""
         finally:
@@ -281,14 +291,14 @@ class CacheUtil:
     @redis_retry(max_retries=3)
     async def release_lock(lock_key: str, lock_id: str) -> bool:
         """
-        Release Redis distributed lock (uses Lua script for atomicity)
+        释放 Redis 分布式锁（使用 Lua 脚本保证原子性）
 
         Args:
-            lock_key: Lock key name
-            lock_id: Lock unique identifier
+            lock_key: 锁的键名
+            lock_id: 锁的唯一标识
 
         Returns:
-            Whether released successfully
+            是否释放成功
         """
         lua_script = """
            if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -304,11 +314,11 @@ class CacheUtil:
         finally:
             await client.aclose()
 
-    # ==================== Counter ====================
+    # ==================== 计数器 ====================
     @staticmethod
     @redis_retry(max_retries=3)
     async def incr(key: str, amount: int = 1) -> int:
-        """Atomic increment"""
+        """原子递增"""
         client = get_redis_client()
         try:
             return await client.incr(key, amount)
@@ -318,18 +328,18 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def decr(key: str, amount: int = 1) -> int:
-        """Atomic decrement"""
+        """原子递减"""
         client = get_redis_client()
         try:
             return await client.decr(key, amount)
         finally:
             await client.aclose()
 
-    # ==================== Batch operations ====================
+    # ==================== 批量操作 ====================
     @staticmethod
     @redis_retry(max_retries=3)
     async def mget(*keys: str) -> list:
-        """Batch get"""
+        """批量获取"""
         client = get_redis_client()
         try:
             return await client.mget(*keys)
@@ -339,7 +349,7 @@ class CacheUtil:
     @staticmethod
     @redis_retry(max_retries=3)
     async def mset(mapping: dict) -> bool:
-        """Batch set"""
+        """批量设置"""
         client = get_redis_client()
         try:
             return await client.mset(mapping)
@@ -347,16 +357,16 @@ class CacheUtil:
             await client.aclose()
 
 
-# ==================== Tenant-level cache wrapper ====================
+# ==================== 租户级缓存封装 ====================
 class TenantCache:
-    """Tenant-level cache utility, automatically adds tenant prefix"""
+    """租户级缓存工具，自动添加租户前缀"""
 
     def __init__(self, tenant_id: str):
         self.tenant_id = tenant_id
         self._prefix = f"tenant:{tenant_id}:"
 
     def _make_key(self, key: str) -> str:
-        """Build key with tenant prefix"""
+        """构建带租户前缀的键"""
         return f"{self._prefix}{key}"
 
     async def get(self, key: str) -> Optional[Any]:
@@ -378,15 +388,11 @@ class TenantCache:
         return await CacheUtil.release_lock(self._make_key(lock_key), lock_id)
 
 
-# ==================== Helper functions ====================
+# ==================== 快捷函数 ====================
 async def check_redis_health() -> bool:
-    """Check Redis connection health status"""
+    """检查 Redis 连接健康状态"""
     try:
         return await CacheUtil.ping()
     except Exception as e:
-        logger.error(f"Redis health check failed: {e}")
+        logger.error(f"Redis 健康检查失败: {e}")
         return False
-
-
-# Backward compatibility: keep interface consistent with original code
-RedisUtil = CacheUtil

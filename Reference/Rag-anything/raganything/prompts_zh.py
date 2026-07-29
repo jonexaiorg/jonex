@@ -382,3 +382,51 @@ PROMPTS_ZH["audio_chunk"] = """## 音频段落 [{start_time:.0f}s–{end_time:.0
 ### 转录文本:
 {transcript}
 """
+
+# ── Video Processing Prompts (Chinese) ─────────────────────
+
+PROMPTS_ZH["video_chunk"] = """## 视频段落 [{start_time:.0f}s–{end_time:.0f}s]
+
+- **文件**: {file_name}
+- **段落**: {segment_index}/{total_segments}
+- **语言**: {language}
+- **关键帧**: {frame_count}
+
+### 视觉上下文
+{frame_descriptions}
+
+### 转录文本
+{transcript}
+"""
+
+PROMPTS_ZH["video_group_summary_prompt"] = """请用3-5行总结此视频段落。
+包括主要主题和关键要点。若存在，请包括：决策、行动项。
+
+文件: {file_name} | 段落 [{start_time:.0f}s–{end_time:.0f}s]
+
+转录文本:
+{text}"""
+
+PROMPTS_ZH["video_reduce_prompt"] = """请综合这些段落摘要。保留关键事实。
+若存在，请包括决策和行动项。输出3-5行。
+
+批次 {batch_index}/{total_batches}:
+{summaries}"""
+
+PROMPTS_ZH["video_global_prompt"] = """请创建最终全局综合。提供JSON格式：
+
+{{
+    "detailed_description": "全面综合：主要主题、关键论点、决策/行动项（若存在）、说话人角色、整体意义",
+    "entity_info": {{
+        "entity_name": "{entity_name}",
+        "entity_type": "必须从以下选择: {type_enum}",
+        "summary": "简洁的100字摘要"
+    }}
+}}
+
+文件: {file_name} | 时长: {duration}s | 语言: {language}
+关键帧提取: {keyframe_count}
+
+综合摘要:
+{reduced_summary}
+{context}"""

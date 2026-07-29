@@ -1,6 +1,6 @@
-import type { TenantItem } from '../api/tenants'
+import type { TenantItem } from '../api/tenants';
 
-type Translate = (key: string) => string
+type Translate = (key: string) => string;
 
 const BUILT_IN_TENANTS: Record<string, { name: string; description: string; key: string }> = {
   tenant_jonex_demo: {
@@ -18,17 +18,14 @@ const BUILT_IN_TENANTS: Record<string, { name: string; description: string; key:
     description: '用于多租户登录选择流程测试',
     key: 'beta',
   },
-}
+};
 
-export function tenantDisplay(
-  tenant: Pick<TenantItem, 'id' | 'name' | 'description'>,
-  t: Translate,
-) {
-  const builtIn = BUILT_IN_TENANTS[tenant.id]
+export function tenantDisplay(tenant: Pick<TenantItem, 'id' | 'name' | 'description'>, t: Translate) {
+  const builtIn = BUILT_IN_TENANTS[tenant.id];
   return builtIn && tenant.name === builtIn.name && tenant.description === builtIn.description
     ? {
         name: t(`tenantManagement.builtInTenants.${builtIn.key}.name`),
         description: t(`tenantManagement.builtInTenants.${builtIn.key}.description`),
       }
-    : { name: tenant.name, description: tenant.description || '' }
+    : { name: tenant.name, description: tenant.description || '' };
 }

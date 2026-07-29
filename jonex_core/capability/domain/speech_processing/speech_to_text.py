@@ -1,9 +1,9 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-"""Speech to text domain capability
+"""语音转文本领域能力
 
-Orchestrates atomic capabilities via ASRClient. The client is determined as LOCAL / REMOTE / MOCK
-by capability_runtime.yaml; this layer is unaware of deployment form.
+通过 ASRClient 编排原子能力。Client 由 capability_runtime.yaml 决定 LOCAL / REMOTE / MOCK，
+本层不感知部署形态。
 """
 
 from typing import Any, Dict
@@ -15,53 +15,56 @@ from jonex_core.capability.models import (
     CapabilityRequest,
     CapabilityResponse,
 )
-from jonex_core.common import get_logger
+from jonex_core.common import get_logger, require_tenant
 from jonex_core.common.exceptions import CapabilityInvokeError, InvalidParameterError
+from jonex_core.common.i18n import translate
 
 logger = get_logger("domain.speech.stt")
 
 
 class SpeechToTextCapability(DomainCapability):
-    """Speech to text domain capability"""
+    """语音转文本领域能力"""
 
     def __init__(self, asr_client: ASRClient | None = None):
         super().__init__()
-        # In test scenarios, a custom client can be injected
-        self.asr_client: ASRClient = asr_client or get_asr_client()
+        # 测试场景下可注入自定义 client；生产路径按请求租户懒加载。
+        self.asr_client = asr_client
 
     def _build_metadata(self) -> CapabilityMetadata:
         from jonex_core.capability.models import CapabilityType
 
         return CapabilityMetadata(
             capability_id="speech.speech_to_text",
-            capability_name="Speech to text",
+            capability_name="语音转文本",
             capability_type=CapabilityType.DOMAIN,
             version="v1",
-            description="Speech to text domain capability, supports long audio processing, segmentation, timestamps, speaker diarization",
+            description="语音转文本领域能力，支持长音频处理、分段、时间戳、说话人分离",
             tags=["speech", "asr"],
         )
 
     async def validate_input(self, request: CapabilityRequest) -> bool:
         if not request.payload:
-            raise InvalidParameterError(message="Speech to text request payload cannot be empty")
+            raise InvalidParameterError(message=translate("err.stt.payload_required", fallback="语音转文本请求 payload 不能为空"))
 
         action = request.payload.get("action", "transcribe")
         if action not in {"transcribe", "transcribe_with_timestamps", "speaker_diarization"}:
-            raise InvalidParameterError(message=f"Unsupported action: {action}")
+            raise InvalidParameterError(message=translate("err.capability.unsupported_action", params={"action": action}, fallback=f"不支持的 action: {action}"))
 
         if "audio_url" not in request.payload:
-            raise InvalidParameterError(message="audio_url parameter must be provided")
+            raise InvalidParameterError(message=translate("err.capability.missing_action_param", params={"action": "transcribe", "param": "audio_url"}, fallback="必须提供 audio_url 参数"))
         return True
 
     async def execute(self, request: CapabilityRequest) -> CapabilityResponse:
         await self.validate_input(request)
 
+        tenant_id = require_tenant(request.tenant_id)
         action = request.payload.get("action", "transcribe")
         audio_url = request.payload["audio_url"]
+        asr_client = self.asr_client or get_asr_client(tenant_id=tenant_id)
 
         try:
-            logger.info(f"Speech to text: audio_url={audio_url}, action={action}")
-            text = await self.asr_client.transcribe(audio_url)
+            logger.info(f"语音转文本: audio_url={audio_url}, action={action}")
+            text = await asr_client.transcribe(audio_url)
 
             if action == "transcribe":
                 data: Dict[str, Any] = {"text": text}
@@ -75,21 +78,21 @@ class SpeechToTextCapability(DomainCapability):
             return CapabilityResponse.ok(
                 request_id=request.request_id,
                 data=data,
-                message="Speech to text succeeded",
+                message="语音转文本成功",
             )
         except CapabilityInvokeError:
             raise
         except Exception as e:
-            logger.error(f"Speech to text processing failed: {e}")
+            logger.error(f"语音转文本处理失败: {e}")
             raise CapabilityInvokeError(
-                message=f"Speech to text processing failed: {e}",
+                message=translate("err.stt.invoke_failed", fallback="语音转文本处理失败"),
                 details={"action": action, "audio_url": audio_url},
                 cause=e,
             )
 
     @staticmethod
     def _add_timestamps(text: str) -> Dict[str, Any]:
-        """Simple timestamp simulation (actually returned by ASR atomic capability)"""
+        """简易时间戳模拟（实际由 ASR 原子能力返回）"""
         sentences = [s for s in text.split("。") if s.strip()]
         segments = []
         current = 0.0

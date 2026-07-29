@@ -1,4 +1,6 @@
-
+"""
+DTOs for ontology binding, compiled schema query, and KB-side schema editing.
+"""
 from datetime import datetime
 from typing import Any, Optional
 
@@ -96,8 +98,8 @@ class CompiledRelationTypeInput(BaseModel):
 
 class CompiledConstraintInput(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
-    target_type: str = Field(..., min_length=1, max_length=16)
-    target_code: str = Field(..., min_length=1, max_length=257)
+    target_type: str = Field(..., min_length=1, max_length=16)  # entity|attribute|relation
+    target_code: str = Field(..., min_length=1, max_length=257)  # entity=code / attribute=entityCode.attrCode / relation=code
     target_label: Optional[str] = Field(default=None, max_length=255)
     constraint_type: str = Field(default="custom", min_length=1, max_length=32)
     expression: Optional[str] = None
@@ -108,9 +110,9 @@ class SaveCompiledSchemaRequest(BaseModel):
     knowledge_base_id: str = Field(..., min_length=1, max_length=128)
     entity_types: list[CompiledEntityTypeInput] = Field(default_factory=list)
     relation_types: list[CompiledRelationTypeInput] = Field(default_factory=list)
-
+    # 三态：未传/None=保留现有约束；[]=清空；非空=替换
     constraints: Optional[list[CompiledConstraintInput]] = None
-
+    # 乐观锁：编辑器保存必须携带；service 层 None -> 400
     expected_schema_version: Optional[int] = None
 
 

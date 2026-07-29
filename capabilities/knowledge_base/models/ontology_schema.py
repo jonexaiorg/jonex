@@ -1,4 +1,10 @@
+"""
+Knowledge Base — 本体绑定与编译结果模型。
 
+对应表：
+- knowledge_base.ontology_template_bindings
+- knowledge_base.ontology_compiled_schemas
+"""
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, Integer, String, Text
@@ -9,7 +15,7 @@ from jonex_core.common.entity import TenantMixin, TimestampMixin
 
 
 class OntologyTemplateBinding(TenantMixin, TimestampMixin, Base):
-
+    """知识库-模板绑定表，记录每个 KB 绑定的模板领域和场景。"""
 
     __tablename__ = "ontology_template_bindings"
     __table_args__ = {"schema": "knowledge_base"}
@@ -36,7 +42,7 @@ class OntologyTemplateBinding(TenantMixin, TimestampMixin, Base):
 
 
 class OntologyCompiledSchema(TenantMixin, TimestampMixin, Base):
-
+    """知识库级本体编译快照，缓存从业务模板编译出的 ontology schema。"""
 
     __tablename__ = "ontology_compiled_schemas"
     __table_args__ = {"schema": "knowledge_base"}

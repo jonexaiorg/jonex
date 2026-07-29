@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
-"""LLM capability abstract base class"""
+"""LLM 能力抽象基类"""
 
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional
@@ -10,19 +10,19 @@ from jonex_core.capability.models import CapabilityRequest, CapabilityResponse
 
 
 class BaseLLMCapability(AtomicCapability):
-    """LLM abstract base class
+    """LLM 抽象基类
 
-    All large language model adapters must inherit from this class and implement the unified text generation interface.
+    所有大模型适配器必须继承此类，实现统一的文本生成接口。
     """
 
     @abstractmethod
     async def validate_input(self, request: CapabilityRequest) -> bool:
-        """Validate LLM input parameters"""
+        """验证 LLM 输入参数"""
         pass
 
     @abstractmethod
     async def execute(self, request: CapabilityRequest) -> CapabilityResponse:
-        """Execute LLM invocation"""
+        """执行 LLM 调用"""
         pass
 
     @abstractmethod
@@ -33,27 +33,27 @@ class BaseLLMCapability(AtomicCapability):
         max_tokens: Optional[int] = None,
     ) -> str:
         """
-        Chat completion interface
+        聊天补全接口
 
         Args:
-            messages: Conversation history, format like [{"role": "user", "content": "..."}]
-            temperature: Temperature parameter 0-1
-            max_tokens: Maximum generation length
+            messages: 对话历史，格式如 [{"role": "user", "content": "..."}]
+            temperature: 温度参数 0-1
+            max_tokens: 最大生成长度
 
         Returns:
-            str: Generated text content
+            str: 生成的文本内容
         """
         pass
 
     @abstractmethod
     async def embedding(self, text: str) -> List[float]:
         """
-        Text vectorizationInterface
+        文本向量化接口
 
         Args:
-            text: Text to be vectorized
+            text: 待向量化的文本
 
         Returns:
-            List[float]: Vector array
+            List[float]: 向量数组
         """
         pass

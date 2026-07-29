@@ -1,56 +1,67 @@
-import React, { Component, type ReactNode } from 'react'
-import { Result, Button, Space } from 'antd'
+import React, { Component, type ReactNode } from 'react';
+import { Result, Button, Space } from 'antd';
+import { withTranslation, WithTranslation } from 'react-i18next';
 
-interface Props {
-  children: ReactNode
-  appName?: string
-  standaloneUrl?: string
-  onRetry?: () => void
+interface Props extends WithTranslation {
+  children: ReactNode;
+  appName?: string;
+  standaloneUrl?: string;
+  onRetry?: () => void;
 }
 
 interface State {
-  hasError: boolean
-  error: Error | null
+  hasError: boolean;
+  error: Error | null;
 }
 
-export default class RemoteAppError extends Component<Props, State> {
+class RemoteAppError extends Component<Props, State> {
   constructor(props: Props) {
-    super(props)
-    this.state = { hasError: false, error: null }
+    super(props);
+    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error }
+    return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('[shell] Remote app render error:', error, info)
+    console.error('[shell] Remote app render error:', error, info);
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null })
-    this.props.onRetry?.()
-  }
+    this.setState({ hasError: false, error: null });
+    this.props.onRetry?.();
+  };
 
   render() {
     if (this.state.hasError) {
-      const { appName, standaloneUrl } = this.props
+      const { appName, standaloneUrl } = this.props;
       return (
         <Result
           status="warning"
-          title="应用运行出错"
-          subTitle={appName ? `「${appName}」运行时发生错误: ${this.state.error?.message}` : this.state.error?.message}
+          title={this.props.t('shell.appRunError')}
+          subTitle={
+            appName
+              ? this.props.t('shell.appRunErrorMessage', { appName, message: this.state.error?.message ?? '' })
+              : this.state.error?.message
+          }
           extra={
             <Space>
-              <Button type="primary" onClick={this.handleRetry}>重试</Button>
+              <Button type="primary" onClick={this.handleRetry}>
+                {this.props.t('common.retry')}
+              </Button>
               {standaloneUrl && (
-                <Button onClick={() => window.open(standaloneUrl, '_self')}>独立打开</Button>
+                <Button onClick={() => window.open(standaloneUrl, '_self')}>
+                  {this.props.t('shell.openStandalone')}
+                </Button>
               )}
             </Space>
           }
         />
-      )
+      );
     }
-    return this.props.children
+    return this.props.children;
   }
 }
+
+export default withTranslation()(RemoteAppError);

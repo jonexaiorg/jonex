@@ -16,10 +16,33 @@
     "build:shared": "pnpm --filter @jonex/shell-sdk build",
     "build:apps": "pnpm -r --filter @jonex/shell --filter @jonex/core-business --filter @jonex/platform-management --filter @jonex/ecosystem-management --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
-    "i18n:check": "node scripts/check-i18n.mjs",
-    "lint": "pnpm -r --if-present lint"
+    "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx}\"",
+    "lint": "eslint \"**/*.{ts,tsx}\"",
+    "lint:fix": "eslint \"**/*.{ts,tsx}\" --fix",
+    "prepare": "git config core.hooksPath ../.husky"
+  },
+  "lint-staged": {
+    "**/*.{ts,tsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "**/*.{json,md,css,scss,yaml,yml}": [
+      "prettier --write"
+    ]
   },
   "devDependencies": {
-    "typescript": "5.4.5"
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.4.26",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.2.0",
+    "prettier": "^3.9.6",
+    "typescript-eslint": "^8.65.0"
   }
 }

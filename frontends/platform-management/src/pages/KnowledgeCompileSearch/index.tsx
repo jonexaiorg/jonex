@@ -1,41 +1,58 @@
-import React from 'react'
-import { Input, Button, List, Tag, Card, Empty } from 'antd'
-import { SearchOutlined, FileTextOutlined } from '@ant-design/icons'
-import { colors, radius } from '@jonex/platform-theme/tokens'
+import React from 'react';
+import { Input, Button, List, Tag, Card, Empty } from 'antd';
+import { SearchOutlined, FileTextOutlined } from '@ant-design/icons';
+import { colors, radius } from '@jonex/platform-theme/tokens';
+import { useTranslation } from 'react-i18next';
 
-const mockResults = [
-  { id: '1', title: '心血管疾病诊疗指南（2025 版）', source: '医疗知识库', type: '文档片段', score: 0.96, tags: ['心血管', '临床指南'] },
-  { id: '2', title: '血脂异常管理共识', source: '医疗知识库', type: '文档片段', score: 0.93, tags: ['血脂', '管理共识'] },
-  { id: '3', title: '区块链在供应链金融中的应用', source: '金融知识库', type: '文档片段', score: 0.89, tags: ['区块链', '供应链金融'] },
-  { id: '4', title: '智能风控模型设计规范', source: '金融知识库', type: '文档片段', score: 0.87, tags: ['风控', '模型设计'] },
-  { id: '5', title: '个人信息保护法实施细则', source: '法律知识库', type: '法律条文', score: 0.84, tags: ['个人信息', '法律'] },
-]
+const resultDefs = [
+  { id: 'cardioGuide', score: 0.96, tagCount: 2 },
+  { id: 'lipidConsensus', score: 0.93, tagCount: 2 },
+  { id: 'blockchainFinance', score: 0.89, tagCount: 2 },
+  { id: 'riskModel', score: 0.87, tagCount: 2 },
+  { id: 'privacyLaw', score: 0.84, tagCount: 2 },
+];
 
 export default function KnowledgeCompileSearch() {
-  const [query, setQuery] = React.useState('')
-  const [results, setResults] = React.useState<typeof mockResults>([])
-  const [searched, setSearched] = React.useState(false)
+  const { t } = useTranslation();
+  const [query, setQuery] = React.useState('');
+  const [resultIds, setResultIds] = React.useState<string[]>([]);
+  const [searched, setSearched] = React.useState(false);
+  const mockResults = resultDefs.map((result) => ({
+    ...result,
+    title: t(`knowledgeCompile.demo.search.${result.id}.title`),
+    source: t(`knowledgeCompile.demo.search.${result.id}.source`),
+    type: t(`knowledgeCompile.demo.search.${result.id}.type`),
+    tags: Array.from({ length: result.tagCount }, (_, index) =>
+      t(`knowledgeCompile.demo.search.${result.id}.tag${index + 1}`),
+    ),
+  }));
+  const results = mockResults.filter((result) => resultIds.includes(result.id));
 
   const handleSearch = () => {
-    if (!query.trim()) return
-    setResults(mockResults.filter((r) => r.title.includes(query) || r.tags.some((t) => t.includes(query))))
-    setSearched(true)
-  }
+    if (!query.trim()) return;
+    setResultIds(
+      mockResults.filter((r) => r.title.includes(query) || r.tags.some((tag) => tag.includes(query))).map((r) => r.id),
+    );
+    setSearched(true);
+  };
 
   return (
     <div>
       <div className="yx-page-title">
-        <h1>编译检索</h1>
+        <h1>{t('knowledgeCompile.searchTitle')}</h1>
         <p style={{ color: colors.textSecondary, margin: '4px 0 0', fontSize: 14 }}>
-          搜索已编译的知识库内容
+          {t('knowledgeCompile.searchDesc')}
         </p>
       </div>
 
-      <Card style={{ borderRadius: radius.card, border: `1px solid ${colors.border}`, marginBottom: 20 }} styles={{ body: { padding: 24 } }}>
+      <Card
+        style={{ borderRadius: radius.card, border: `1px solid ${colors.border}`, marginBottom: 20 }}
+        styles={{ body: { padding: 24 } }}
+      >
         <div style={{ display: 'flex', gap: 12 }}>
           <Input
             prefix={<SearchOutlined />}
-            placeholder="输入关键词搜索编译知识..."
+            placeholder={t('knowledgeCompile.searchKnowledge')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onPressEnter={handleSearch}
@@ -43,15 +60,20 @@ export default function KnowledgeCompileSearch() {
             size="large"
           />
           <Button type="primary" size="large" onClick={handleSearch}>
-            搜索
+            {t('common.search')}
           </Button>
         </div>
       </Card>
 
       {searched && (
-        <Card style={{ borderRadius: radius.card, border: `1px solid ${colors.border}` }} styles={{ body: { padding: 24 } }}>
+        <Card
+          style={{ borderRadius: radius.card, border: `1px solid ${colors.border}` }}
+          styles={{ body: { padding: 24 } }}
+        >
           <div style={{ marginBottom: 16, color: colors.textSecondary, fontSize: 13 }}>
-            找到 <strong style={{ color: colors.accent }}>{results.length}</strong> 条结果
+            <span
+              dangerouslySetInnerHTML={{ __html: t('knowledgeCompile.searchResults', { count: results.length }) }}
+            />
           </div>
           {results.length > 0 ? (
             <List
@@ -65,12 +87,18 @@ export default function KnowledgeCompileSearch() {
                       <Tag color="blue">{item.type}</Tag>
                     </div>
                     <div style={{ fontSize: 12, color: colors.textMuted, display: 'flex', gap: 16 }}>
-                      <span>来源: {item.source}</span>
-                      <span>相关度: {(item.score * 100).toFixed(0)}%</span>
+                      <span>
+                        {t('knowledgeCompile.source')}: {item.source}
+                      </span>
+                      <span>
+                        {t('knowledgeCompile.similarity')}: {(item.score * 100).toFixed(0)}%
+                      </span>
                     </div>
                     <div style={{ marginTop: 6, display: 'flex', gap: 4 }}>
                       {item.tags.map((t) => (
-                        <Tag key={t} style={{ fontSize: 11 }}>{t}</Tag>
+                        <Tag key={t} style={{ fontSize: 11 }}>
+                          {t}
+                        </Tag>
                       ))}
                     </div>
                   </div>
@@ -78,10 +106,10 @@ export default function KnowledgeCompileSearch() {
               )}
             />
           ) : (
-            <Empty description="未找到匹配的编译结果" />
+            <Empty description={t('knowledgeCompile.noSearchResults')} />
           )}
         </Card>
       )}
     </div>
-  )
+  );
 }

@@ -14,6 +14,15 @@
     "previous": "上一步",
     "loading": "加载中...",
     "noData": "暂无数据",
+    "noDescription": "暂无描述",
+    "status": "状态",
+    "retry": "重试",
+    "refresh": "刷新",
+    "loadFailed": "加载失败",
+    "operationFailed": "操作失败",
+    "saveFailed": "保存失败",
+    "nameRequired": "请输入名称",
+    "confirmDelete": "确认删除",
     "error": "错误",
     "success": "成功",
     "yes": "是",
@@ -42,7 +51,18 @@
     "totalPage": "共 {{total}} 条",
     "dataError": "数据错误",
     "pageNotFound": "页面未找到",
-    "backHome": "返回首页"
+    "backHome": "返回首页",
+    "name": "名称",
+    "description": "描述",
+    "createdAt": "创建时间",
+    "actions": "操作",
+    "type": "类型",
+    "deleteFailed": "删除失败",
+    "close": "关闭",
+    "requestFailed": "请求失败",
+    "maturityProduction": "已上线",
+    "maturityPilot": "试点中",
+    "maturityPlanning": "规划中"
   },
   "auth": {
     "signIn": "登录",
@@ -77,8 +97,8 @@
     "invalidEmail": "请输入有效的邮箱地址",
     "verificationCodeDesc": "输入图像中显示的验证码",
     "password": "请输入密码",
-    "minLength": "最少 {min} 个字符",
-    "maxLength": "最多 {max} 个字符",
+    "minLength": "最少 {{min}} 个字符",
+    "maxLength": "最多 {{max}} 个字符",
     "placeholder": "请输入",
     "selectPlaceholder": "请选择",
     "confirmDelete": "确定要删除此数据吗？"
@@ -96,7 +116,146 @@
     "network": "网络错误，请检查您的连接。"
   },
   "navigation": {
-    "home": "首页"
+    "home": "首页",
+    "ecosystemManagement": "生态管理",
+    "adapterManagement": "适配器管理",
+    "businessMarketplace": "业务商场",
+    "skills": "技能管理",
+    "promptTemplates": "提示词模板",
+    "templateDomains": "模板领域",
+    "templateScenarios": "模板领域场景",
+    "templateObjects": "模板对象管理",
+    "templateRelations": "模板关系管理"
+  },
+  "promptTemplate": {
+    "title": "提示词模板",
+    "description": "管理平台可复用的提示词模板，支持分类筛选、快速复制与统一编排",
+    "create": "新建模板",
+    "edit": "编辑模板",
+    "view": "查看模板",
+    "delete": "删除模板",
+    "copy": "复制模板",
+    "version": "版本管理",
+    "systemScope": "系统全局模板",
+    "domainScope": "领域空间模板",
+    "allCategories": "全部分类",
+    "searchPlaceholder": "搜索模板名称或关键词...",
+    "name": "模板名称",
+    "category": "模板分类",
+    "descriptionField": "模板描述",
+    "content": "提示词内容",
+    "status": "状态",
+    "enabled": "启用",
+    "disabled": "停用",
+    "versionRemark": "版本说明",
+    "versionRemarkHint": "编辑时填写，便于版本追溯",
+    "contentPlaceholder": "请输入提示词内容，可使用 {{变量}} 占位符",
+    "variableHint": "支持使用 {{变量}} 占位符，如：{{用户问题}}",
+    "currentVersion": "当前版本",
+    "versionHistory": "版本历史",
+    "rollback": "回滚",
+    "rollbackConfirm": "确定要回滚到版本 v{{version}} 吗？",
+    "rollbackConfirmDesc": "回滚将以新版本号保存，历史版本保留。",
+    "deleteConfirm": "确定要删除该提示词模板吗？",
+    "deleteConfirmDesc": "删除后不可恢复，请谨慎操作。",
+    "copySuccess": "提示词已复制到剪贴板",
+    "createSuccess": "模板已创建",
+    "updateSuccess": "模板已更新",
+    "deleteSuccess": "模板已删除",
+    "rollbackSuccess": "已回滚到版本 {{version}}",
+    "noSystemTemplates": "暂无系统全局模板",
+    "noDomainTemplates": "暂无领域空间模板，请新建",
+    "loadError": "加载失败",
+    "countText": "共 {{count}} 个模板",
+    "fromSystemCopy": "从系统全局模板复制",
+    "fromDomainCopy": "从领域模板复制",
+    "copyTemplateSuccess": "模板已复制到当前租户",
+    "copyFailed": "复制失败",
+    "saveFailed": "保存失败",
+    "retry": "重试",
+    "createTitle": "新建提示词模板",
+    "editTitle": "编辑提示词模板",
+    "viewTitle": "查看提示词模板（只读）",
+    "nameRequired": "请输入模板名称",
+    "namePlaceholder": "请输入模板名称，如：智能问答助手",
+    "categoryRequired": "请选择分类",
+    "categoryPlaceholder": "请选择分类",
+    "versionRemarkPlaceholder": "简要说明本次修改内容，如：优化拒答逻辑",
+    "targetVersion": "新版本号（可选）",
+    "targetVersionExtra": "留空则自动递增小版本；填写后本次内容更新将保存为指定版本",
+    "targetVersionPlaceholder": "例如：2.0",
+    "descriptionPlaceholder": "简要描述模板的用途",
+    "contentRequired": "请输入提示词内容",
+    "contentTextareaPlaceholder": "请输入提示词内容，可使用 {{variable}} 占位符",
+    "contentExample": "\n\n示例：\n你是专业的知识问答助手……\n上下文：{{retrievedContent}}\n用户问题：{{userQuestion}}",
+    "confirmDeleteBtn": "确认删除",
+    "loadHistoryError": "加载版本历史失败",
+    "rollbackFailed": "回滚失败",
+    "copyContent": "复制内容",
+    "versionColumn": "版本号",
+    "versionDetailLabel": "版本号",
+    "currentTag": "当前",
+    "contentPreview": "内容预览 / 修改说明",
+    "updatedBy": "修改人",
+    "updatedAt": "修改时间",
+    "viewBtn": "查看",
+    "rollbackBtn": "确认回滚",
+    "versionCountLabel": "共",
+    "versionCountUnit": "个历史版本",
+    "versionDetailTitle": "版本内容查看",
+    "updateInfo": "修改时间 / 修改人",
+    "updateDescription": "修改说明",
+    "noDescription": "暂无描述",
+    "viewFullInfo": "查看完整信息",
+    "copyToTenant": "复制到当前租户",
+    "copyText": "复制文本",
+    "copyPromptText": "复制提示词文本",
+    "versionBtn": "版本",
+    "builtInVersionNote": "内置模板",
+    "systemUser": "系统",
+    "systemBuiltIns": {
+      "docSummary": {
+        "name": "文档摘要生成",
+        "description": "对长文档进行自动摘要，输出核心观点与关键信息。",
+        "content": "请阅读以下文档，生成一段不超过 200 字的摘要，包含：\n- 核心主题\n- 关键论点（3 条）\n- 结论建议\n\n文档内容：{{文档内容}}"
+      },
+      "emailReply": {
+        "name": "邮件智能回复",
+        "description": "根据邮件内容生成专业、得体的回复草稿。",
+        "content": "请根据收到的邮件内容，撰写一封得体的回复邮件，要求：\n- 语气专业、礼貌；\n- 覆盖对方所有问题；\n- 200 字以内。\n\n收件邮件：{{邮件内容}}"
+      },
+      "knowledgeQa": {
+        "name": "智能问答助手",
+        "description": "面向通用知识问答场景，结合上下文给出准确、结构化的回答。",
+        "content": "你是一个专业、严谨的知识问答助手。请根据以下上下文回答用户问题，要求：\n1. 仅依据给定上下文作答，不编造信息；\n2. 答案结构化、条理清晰；\n3. 如上下文不足，请如实说明。\n\n上下文：{{检索内容}}\n用户问题：{{用户问题}}"
+      }
+    },
+    "domainBuiltIns": {
+      "contractReview": {
+        "name": "合同条款合规审查",
+        "description": "识别合同中的风险条款与合规问题，并给出修改建议。",
+        "content": "请作为法律合规专家审查以下合同条款，输出：\n- 风险条款清单（标注位置）\n- 合规问题说明\n- 修改建议\n\n合同文本：{{合同内容}}"
+      },
+      "reportAnalysis": {
+        "name": "数据报表解读",
+        "description": "分析业务报表中的趋势、异常与可执行洞察。",
+        "content": "请基于以下报表数据，生成业务解读报告：\n1. 关键指标同比/环比变化\n2. 异常波动归因\n3. 趋势预测与建议\n\n报表数据：{{报表数据}}"
+      }
+    }
+  },
+  "scenarioCatalog": {
+    "title": "应用场景",
+    "subtitle": "行业应用场景目录与扩展入口",
+    "industry": "行业：{{industry}}",
+    "adapterCount": "· 适配器：{{count}} 个"
+  },
+  "promptCategory": {
+    "generalQA": "通用问答",
+    "documentProcessing": "文档处理",
+    "financialAnalysis": "金融分析",
+    "contractReview": "合同审查",
+    "dataAnalysis": "数据分析",
+    "other": "其他"
   },
   "site": {
     "title": ""
@@ -107,7 +266,402 @@
     "paused": "暂停",
     "planned": "计划中",
     "allStatus": "全部状态",
+    "active": "启用",
+    "inactive": "停用",
+    "draft": "草稿",
+    "archived": "已归档",
     "success": "成功",
     "failed": "失败"
+  },
+  "compile": {
+    "attrType": {
+      "string": "字符串",
+      "text": "文本",
+      "number": "数值",
+      "date": "日期",
+      "enum": "枚举",
+      "boolean": "布尔"
+    },
+    "cardinality": {
+      "oneToOne": "一对一",
+      "oneToMany": "一对多",
+      "manyToOne": "多对一",
+      "manyToMany": "多对多"
+    },
+    "constraintTargetType": {
+      "object": "数据对象",
+      "attribute": "属性字段",
+      "relation": "关系"
+    },
+    "constraintType": {
+      "unique": "唯一约束",
+      "exists": "存在约束",
+      "conditional": "条件约束",
+      "range": "值域约束"
+    }
+  },
+  "templateScenarios": {
+    "backToDomains": "返回模板领域",
+    "pageTitle": "模板领域场景",
+    "pageSubtitle": "管理场景名称、描述及关联领域，细化模板应用场景",
+    "domainScenes": "领域场景",
+    "sceneCount": "{{count}} 个",
+    "allDomains": "全部领域",
+    "createScene": "创建场景",
+    "loadingScenes": "正在加载场景...",
+    "noMatchScene": "当前没有匹配的场景",
+    "selectSceneHint": "请从左侧选择一个领域场景",
+    "selectSceneFromLeft": "请从左侧选择一个场景",
+    "noSceneDescription": "暂无场景描述",
+    "refresh": "刷新",
+    "objectTemplate": "对象模板",
+    "relationTemplate": "本体关系模板",
+    "constraintTemplate": "本体约束模板",
+    "constraintNote": "约束用于元数据维护，暂不参与模板发布编译。",
+    "relationNote": "对象与本体关系参与模板发布；约束 Tab 仅维护元数据，暂不影响编译/发布。",
+    "createObject": "创建对象",
+    "createRelation": "创建关系",
+    "createConstraint": "创建约束",
+    "noObjectTemplates": "暂无对象模板",
+    "noRelationTemplates": "暂无本体关系模板",
+    "noConstraintTemplates": "暂无本体约束模板",
+    "sceneName": "场景名称",
+    "sceneNameInput": "请输入场景名称",
+    "sceneDescPlaceholder": "请输入场景描述",
+    "domainLabel": "关联领域名称",
+    "selectDomain": "请选择关联领域",
+    "objectNameInput": "请输入对象名称",
+    "objectDescPlaceholder": "请输入对象描述",
+    "attrDefSection": "属性定义",
+    "addAttribute": "添加属性",
+    "attributes": "属性",
+    "attrType": "属性类型",
+    "relationType": "关系类型",
+    "attrNamePlaceholder": "属性名称",
+    "attrDescPlaceholder": "属性描述",
+    "uniquePrimaryKey": "唯一主键",
+    "attrNameRequired": "请输入属性名称",
+    "sourceObjectSelect": "源对象",
+    "selectSourceObject": "请选择源对象",
+    "targetObjectSelect": "目标对象",
+    "selectTargetObject": "请选择目标对象",
+    "relationNameLabel": "关系名称",
+    "relationNameInput": "请输入关系名称",
+    "relationDescPlaceholder": "请输入关系描述",
+    "selectRelationType": "请选择关系类型",
+    "constraintName": "约束名称",
+    "constraintNameInput": "请输入约束名称",
+    "constraintTargetType": "约束目标类型",
+    "constraintTargetObject": "目标对象",
+    "selectConstraintTarget": "请选择目标对象",
+    "constraintType": "约束类型",
+    "constraintExpression": "约束表达式",
+    "constraintExpressionInput": "请输入约束表达式",
+    "suggestion": "建议",
+    "suggestionInput": "请输入违反约束时的建议",
+    "editScene": "编辑场景",
+    "createSceneTitle": "创建场景",
+    "editObject": "编辑对象",
+    "createObjectTitle": "创建对象",
+    "editRelation": "编辑关系",
+    "createRelationTitle": "创建关系",
+    "editConstraint": "编辑约束",
+    "createConstraintTitle": "创建约束",
+    "deleteScene": "删除场景",
+    "deleteObject": "删除对象",
+    "deleteRelation": "删除关系",
+    "deleteConstraint": "删除约束",
+    "confirmDelete": "确认删除",
+    "deleteConfirmContent": "确认删除 {{name}} 吗？删除后不可恢复。",
+    "sceneUpdated": "场景已更新",
+    "sceneCreated": "场景已创建",
+    "updateSceneFailed": "更新场景失败",
+    "createSceneFailed": "创建场景失败",
+    "objectUpdated": "对象已更新",
+    "objectCreated": "对象已创建",
+    "updateObjectFailed": "更新对象失败",
+    "createObjectFailed": "创建对象失败",
+    "relationUpdated": "关系已更新",
+    "relationCreated": "关系已创建",
+    "updateRelationFailed": "更新关系失败",
+    "createRelationFailed": "创建关系失败",
+    "constraintUpdated": "约束已更新",
+    "constraintCreated": "约束已创建",
+    "saveConstraintFailed": "保存约束失败",
+    "sceneDeleted": "场景已删除",
+    "objectDeleted": "对象已删除",
+    "relationDeleted": "关系已删除",
+    "constraintDeleted": "约束已删除",
+    "deleteFailed": "删除失败",
+    "loadSceneFailed": "加载场景失败",
+    "loadSceneDataFailed": "加载场景模板数据失败",
+    "loadDomainsFailed": "加载模板领域失败",
+    "createDomainFirstWarning": "请先创建模板领域",
+    "createObjectFirstWarning": "请先创建对象模板",
+    "constraintNameWarning": "请输入约束名称",
+    "constraintTargetWarning": "请选择约束目标",
+    "ariaLabelEditScene": "编辑场景",
+    "ariaLabelDeleteScene": "删除场景",
+    "noDescription": "无描述",
+    "noAttributes": "无属性",
+    "builtIn": {
+      "internetGeneral": {
+        "name": "通用互联网知识抽取",
+        "description": "从互联网行业内容中抽取实体与关系。"
+      },
+      "creditRisk": {
+        "name": "信贷风险评估",
+        "description": "基于企业财务数据评估企业信贷风险。"
+      },
+      "investmentAdvisory": {
+        "name": "智能投资顾问",
+        "description": "基于市场数据提供投资分析与建议。"
+      },
+      "medicalRecord": {
+        "name": "病历智能解析",
+        "description": "从电子病历中抽取结构化信息。"
+      },
+      "qualityInspection": {
+        "name": "生产质检分析",
+        "description": "分析制造过程中的质量检测数据。"
+      },
+      "financialReport": {
+        "name": "财务报告分析",
+        "description": "从年度及季度财务报告中抽取结构化信息。"
+      },
+      "llmTechnicalReport": {
+        "name": "大语言模型技术报告分析",
+        "description": "从大语言模型技术报告中抽取结构化信息。"
+      }
+    }
+  },
+  "templateDomains": {
+    "pageTitle": "模板领域",
+    "pageSubtitle": "管理模板领域，定义业务领域的分类与模板集合",
+    "searchPlaceholder": "搜索领域名称...",
+    "createDomain": "创建领域",
+    "emptyText": "暂无模板领域",
+    "createFirst": "创建第一个领域",
+    "noDescription": "暂无描述",
+    "scenarioCount": "{{count}} 个场景",
+    "createTitle": "创建领域",
+    "editTitle": "编辑领域",
+    "nameLabel": "领域名称",
+    "namePlaceholder": "请输入领域名称，如：金融行业",
+    "nameWarning": "请输入领域名称",
+    "descPlaceholder": "请输入领域描述",
+    "confirmDeleteContent": "确认删除该模板领域？删除后不可恢复。",
+    "domainUpdated": "领域已更新",
+    "domainCreated": "领域已创建",
+    "domainDeleted": "领域已删除",
+    "loadFailed": "加载模板领域失败，请重试",
+    "builtIn": {
+      "aiTechReport": {
+        "name": "AI大模型技术报告",
+        "description": "AI大模型技术报告结构化抽取与分析模板领域"
+      },
+      "hardwareInternet": {
+        "name": "硬件互联网",
+        "description": "硬件互联网上市公司财报分析与业务情报模板领域"
+      },
+      "manufacturing": {
+        "name": "制造业",
+        "description": "生产制造、质检与设备运维模板领域"
+      },
+      "healthcare": {
+        "name": "医疗健康",
+        "description": "医疗数据解析与健康管理模板领域"
+      },
+      "financialServices": {
+        "name": "金融行业",
+        "description": "金融机构风控、投顾与客户经营模板领域"
+      },
+      "internetTechnology": {
+        "name": "互联网",
+        "description": "互联网科技公司/产品/技术情报模板领域"
+      }
+    }
+  },
+  "templateObjects": {
+    "pageTitle": "模板对象管理",
+    "pageSubtitle": "管理模板中的对象定义与字段配置",
+    "searchPlaceholder": "搜索对象名称",
+    "domainFilterPlaceholder": "按领域筛选",
+    "columnName": "对象名称",
+    "columnDomain": "所属领域",
+    "columnFieldCount": "字段数",
+    "columnStatus": "状态",
+    "fieldDefSection": "字段定义",
+    "fieldName": "字段名",
+    "fieldType": "类型",
+    "fieldRequired": "必填",
+    "required": "必填",
+    "optional": "可选",
+    "demo": {
+      "domains": {
+        "healthcare": "医疗健康",
+        "fintech": "金融科技"
+      },
+      "objects": {
+        "disease": "疾病",
+        "drug": "药品",
+        "company": "企业"
+      },
+      "fields": {
+        "diseaseName": "疾病名称",
+        "icdCode": "ICD编码",
+        "symptomDescription": "症状描述",
+        "drugName": "药品名称",
+        "approvalNumber": "批准文号",
+        "manufacturer": "生产企业",
+        "companyName": "企业名称",
+        "creditCode": "统一社会信用代码",
+        "industry": "行业分类"
+      }
+    }
+  },
+  "templateRelations": {
+    "pageTitle": "模板关系管理",
+    "pageSubtitle": "管理模板中对象之间的关系定义",
+    "searchPlaceholder": "搜索关系名称、源对象或目标对象",
+    "typeFilterPlaceholder": "按关系类型筛选",
+    "columnName": "关系名称",
+    "columnSource": "源对象",
+    "columnTarget": "目标对象",
+    "columnType": "关系类型",
+    "columnConstraints": "约束说明",
+    "demo": {
+      "objects": {
+        "drug": "药品",
+        "disease": "疾病",
+        "compound": "化合物",
+        "company": "企业"
+      },
+      "relations": {
+        "treats": {
+          "name": "治疗",
+          "constraints": "药品可治疗多种疾病"
+        },
+        "contains": {
+          "name": "包含成分",
+          "constraints": "药品可包含多种化合物"
+        },
+        "controls": {
+          "name": "控股",
+          "constraints": "母子公司关系"
+        }
+      }
+    }
+  },
+  "skills": {
+    "pageTitle": "AI Skills 技能目录",
+    "pageSubtitle": "平台预置 AI 可执行能力目录，租户按需启用或停用",
+    "searchPlaceholder": "搜索技能名称、工具名...",
+    "allCategories": "全部分类",
+    "countText": "共 {{count}} 个技能",
+    "emptyText": "暂无匹配的技能",
+    "detailBtn": "详情",
+    "enabled": "已启用",
+    "disabled": "未启用",
+    "enabledSkill": "技能已启用",
+    "disabledSkill": "技能已停用",
+    "loadFailed": "技能列表加载失败",
+    "categoryLabel": "分类",
+    "toolName": "工具名",
+    "instruction": "工具说明",
+    "inputSchema": "输入参数 Schema",
+    "outputSchema": "输出 Schema",
+    "capability": "能力描述",
+    "categoryImage": "图像处理",
+    "categoryVoice": "语音处理",
+    "categoryDocument": "文档处理",
+    "categoryVideo": "视频处理",
+    "categoryFusion": "融合检索",
+    "categoryCustom": "其他",
+    "builtIn": {
+      "imageRecognition": {
+        "name": "图像识别与分析",
+        "description": "对图片内容进行智能识别，提取物体、文字、场景等多模态信息，支持 OCR 文字识别",
+        "instruction": "当用户需要识别图片中的物体、文字或场景时调用该工具。传入可访问的图片 URL，返回识别结果和置信度。"
+      },
+      "speechToText": {
+        "name": "语音转文本",
+        "description": "将音频文件中的语音内容自动转录为结构化文本，支持多语种和说话人分离",
+        "instruction": "当用户需要将音频、录音转换为文字时调用该工具，支持多语种识别和说话人分离。"
+      },
+      "documentLayout": {
+        "name": "文档版面分析",
+        "description": "分析 PDF、图片等文档的版面结构，识别段落、表格、图表、页眉页脚等元素",
+        "instruction": "当用户需要分析 PDF 或图片文档的版面结构时调用该工具。"
+      },
+      "videoUnderstanding": {
+        "name": "视频内容理解",
+        "description": "对视频内容进行抽帧分析，识别场景、动作、人物及事件时间线",
+        "instruction": "当用户需要理解视频内容时调用该工具，可进行抽帧分析、场景识别、动作检测和时间线提取。"
+      },
+      "multimodalSearch": {
+        "name": "多模态融合检索",
+        "description": "跨文本、图像、语音等多模态数据的统一语义检索与相似度匹配",
+        "instruction": "当用户需要跨文本、图像、语音等多模态数据进行检索时调用该工具。"
+      },
+      "dataExtraction": {
+        "name": "智能数据提取",
+        "description": "从非结构化文档中自动提取关键字段和结构化数据，支持表格、表单、发票等场景",
+        "instruction": "当用户需要从非结构化文档中提取结构化数据时调用该工具。"
+      }
+    },
+    "tags": {
+      "image": "图像", "ocr": "OCR", "recognition": "识别",
+      "speech": "语音", "transcription": "转录", "asr": "ASR",
+      "document": "文档", "layout": "版面", "structured": "结构化",
+      "video": "视频", "frameSampling": "抽帧", "analysis": "分析",
+      "search": "检索", "fusion": "融合", "semantic": "语义",
+      "extraction": "提取"
+    },
+    "schemaDescriptions": {
+      "fileUrl": "可访问的文件地址",
+      "tasks": "识别任务列表",
+      "language": "音频语种，如 zh-CN",
+      "speakerDiarization": "是否启用说话人分离",
+      "outputFormat": "输出格式",
+      "sampleRate": "抽帧间隔（秒）",
+      "modalities": "检索模态范围",
+      "topK": "返回结果数",
+      "schema": "期望提取的字段定义",
+      "documentType": "文档类型"
+    }
+  },
+  "ecosystem": {
+    "adapterTypeDingtalk": "钉钉",
+    "adapterTypeWechatWork": "企业微信",
+    "adapterTypeFeishu": "飞书",
+    "adapterStatusConnected": "已连接",
+    "adapterStatusDisconnected": "未连接",
+    "adapterStatusError": "异常",
+    "adapterStatusPending": "待接入",
+    "adapterList": "适配器列表",
+    "adapterDesc": "生态适配器管理与配置",
+    "businessDomainMarketplace": "业务领域商场",
+    "ecosystemManagementDesc": "生态适配器与业务商场管理",
+    "marketplaceDesc": "领域模板、知识包、预训练模型",
+    "marketplaceDomainTemplates": "领域模板",
+    "marketplaceDomainTemplatesDesc": "各行业领域知识管理模板",
+    "marketplaceKnowledgePackages": "知识包",
+    "marketplaceKnowledgePackagesDesc": "预构建的行业知识库包",
+    "marketplacePretrainedModels": "预训练模型",
+    "marketplacePretrainedModelsDesc": "领域专用预训练 AI 模型",
+    "marketplaceIndustrySolutions": "行业解决方案",
+    "marketplaceIndustrySolutionsDesc": "端到端的行业知识管理方案",
+    "marketplaceComingSoonDesc": "领域模板、知识包、预训练模型与行业解决方案即将上线，敬请期待",
+    "comingSoon": "即将上线",
+    "futureTag": " (未来)",
+    "builtInAdapters": {
+      "adp": { "name": "ADP 适配器", "description": "ADP 人力资源数据接入" },
+      "hiAgent": { "name": "HiAgent 适配器", "description": "HiAgent 智能体平台集成" },
+      "quickSight": { "name": "AWS QuickSight", "description": "AWS 数据分析平台集成" },
+      "gemini": { "name": "Gemini 适配器", "description": "Google Gemini 模型接入" },
+      "workBuddy": { "name": "WorkBuddy", "description": "WorkBuddy 工作流集成" },
+      "claw": { "name": "Claw 适配器", "description": "Claw 数据抓取平台集成" }
+    }
   }
 }

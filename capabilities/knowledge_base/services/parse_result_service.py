@@ -1,4 +1,4 @@
-
+"""Parse result query service for Knowledge Base."""
 
 from jonex_core.capability.atomic.rag.client import get_rag_client
 from jonex_core.common.tenant import require_tenant

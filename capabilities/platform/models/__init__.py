@@ -10,7 +10,7 @@ from capabilities.platform.models.application import Application
 from capabilities.platform.models.application_route import ApplicationRoute
 from capabilities.platform.models.system_config import SystemConfig
 from capabilities.platform.models.audit_log import AuditLog
-from capabilities.platform.models.audit_enums import LogType, Outcome, LogLevel, AuditAction
+from capabilities.platform.models.audit_enums import LogType, Outcome, LogLevel, AuditAction, ResourceType
 from capabilities.platform.models.task_schedule import TaskSchedule
 
 __all__ = [
@@ -30,5 +30,6 @@ __all__ = [
     "Outcome",
     "LogLevel",
     "AuditAction",
+    "ResourceType",
     "TaskSchedule",
 ]

@@ -1,4 +1,6 @@
-
+"""
+知识库 — 领域空间 API 路由
+"""
 from fastapi import APIRouter, Depends, Query, Request
 
 from jonex_core.common.response import success_response, error_response
@@ -83,6 +85,6 @@ async def set_space_permissions(space_id: str, request: Request):
     tenant_id = extract_tenant_id(request)
     try:
         await _service.set_permissions(space_id, tenant_id, body.get("permissions", []))
-        return success_response(message="Permissions updated successfully")
+        return success_response(message="权限已更新")
     except JonexException as e:
         return error_response(code=e.code, message=e.message, status_code=e.status_code, details=e.details)

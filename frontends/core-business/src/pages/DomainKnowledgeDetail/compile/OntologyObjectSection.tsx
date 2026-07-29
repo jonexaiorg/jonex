@@ -1,9 +1,17 @@
-import React from 'react'
-import { useTranslation } from 'react-i18next'
-import { Button, Table } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
-import { AppstoreOutlined, PlusOutlined, ImportOutlined, EditOutlined, DeleteOutlined, MessageOutlined } from '@ant-design/icons'
-import type { OntologyAttribute, OntologyObjectDef } from '@/types/domainKnowledge'
+import React from 'react';
+import './index.scss';
+import { useTranslation } from 'react-i18next';
+import { Button, Table } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import {
+  AppstoreOutlined,
+  PlusOutlined,
+  ImportOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  MessageOutlined,
+} from '@ant-design/icons';
+import type { OntologyAttribute, OntologyObjectDef } from '@/types/domainKnowledge';
 
 const cardStyle: React.CSSProperties = {
   background: '#fff',
@@ -12,7 +20,7 @@ const cardStyle: React.CSSProperties = {
   padding: 24,
   marginBottom: 20,
   boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-}
+};
 
 const h3Style: React.CSSProperties = {
   margin: 0,
@@ -22,101 +30,139 @@ const h3Style: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-}
+};
 
 interface Props {
-  data: OntologyObjectDef[]
-  loading: boolean
-  onCreate: () => void
-  onImport: () => void
-  onEdit: (item: OntologyObjectDef) => void
-  onDelete: (item: OntologyObjectDef) => void
-  onPrompt: (item: OntologyObjectDef) => void
+  data: OntologyObjectDef[];
+  loading: boolean;
+  onCreate: () => void;
+  onImport: () => void;
+  onEdit: (item: OntologyObjectDef) => void;
+  onDelete: (item: OntologyObjectDef) => void;
+  onPrompt: (item: OntologyObjectDef) => void;
 }
 
-function AttrInlineTable({ attrs }: { attrs: OntologyAttribute[] }) {
-  if (!attrs.length) return <span style={{ fontSize: 12, color: '#94a3b8' }}>No attributes</span>
+function AttrInlineTable({ attrs, t }: { attrs: OntologyAttribute[]; t: (key: string, opts?: any) => string }) {
+  if (!attrs.length) return <span style={{ fontSize: 12, color: '#94a3b8' }}>{t('compile.object.noAttributes')}</span>;
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-      <thead>
-        <tr>
-          <th style={{ textAlign: 'left', padding: '3px 6px', color: '#64748b', borderBottom: '1px solid #e8edf3', fontSize: 11 }}>Name</th>
-          <th style={{ textAlign: 'left', padding: '3px 6px', color: '#64748b', borderBottom: '1px solid #e8edf3', fontSize: 11 }}>Description</th>
-          <th style={{ textAlign: 'left', padding: '3px 6px', color: '#64748b', borderBottom: '1px solid #e8edf3', fontSize: 11 }}>Type</th>
-          <th style={{ textAlign: 'left', padding: '3px 6px', color: '#64748b', borderBottom: '1px solid #e8edf3', fontSize: 11 }}>Primary Key</th>
-        </tr>
-      </thead>
-      <tbody>
-        {attrs.map((attr) => (
-          <tr key={attr.id || attr.name}>
-            <td style={{ padding: '3px 6px' }}>{attr.name}</td>
-            <td style={{ padding: '3px 6px' }}>{attr.description || '—'}</td>
-            <td style={{ padding: '3px 6px' }}>{attr.type}</td>
-            <td style={{ padding: '3px 6px' }}>{attr.isPrimaryKey ? 'Yes' : 'No'}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
+    <div style={{ margin: 0, padding: 0 }}>
+      <Table<OntologyAttribute>
+        className="attr-inline-table"
+        columns={[
+          {
+            title: t('compile.object.inlineName'),
+            dataIndex: 'name',
+            key: 'name',
+            width: 120,
+            render: (val: string) => <span style={{ fontSize: 12 }}>{val}</span>,
+          },
+          {
+            title: t('compile.object.inlineDescription'),
+            dataIndex: 'description',
+            key: 'description',
+            render: (val: string | null) => <span style={{ fontSize: 12 }}>{val || '—'}</span>,
+          },
+          {
+            title: t('compile.object.inlineType'),
+            dataIndex: 'type',
+            key: 'type',
+            width: 80,
+            render: (val: string) => <span style={{ fontSize: 12 }}>{val}</span>,
+          },
+          {
+            title: t('compile.object.inlinePrimaryKey'),
+            dataIndex: 'isPrimaryKey',
+            key: 'isPrimaryKey',
+            width: 70,
+            render: (val: boolean) => <span style={{ fontSize: 12 }}>{val ? t('common.yes') : t('common.no')}</span>,
+          },
+        ]}
+        dataSource={attrs}
+        rowKey={(r) => r.id || r.name}
+        pagination={false}
+        size="small"
+        showHeader={false}
+        style={{ marginInline: 0 }}
+      />
+    </div>
+  );
 }
 
-export default function OntologyObjectSection({ data, loading, onCreate, onImport, onEdit, onDelete, onPrompt }: Props) {
-  const { t } = useTranslation()
+export default function OntologyObjectSection({
+  data,
+  loading,
+  onCreate,
+  onImport,
+  onEdit,
+  onDelete,
+  onPrompt,
+}: Props) {
+  const { t } = useTranslation();
   const columns: ColumnsType<OntologyObjectDef> = [
     {
-      title: 'Object Name',
+      title: t('compile.object.name'),
       dataIndex: 'name',
       key: 'name',
       width: 180,
       render: (value) => <strong>{value}</strong>,
     },
     {
-      title: t('domainService.description'),
+      title: t('compile.object.description'),
       dataIndex: 'description',
       key: 'description',
       width: 220,
-      render: (value: string) => value || <span style={{ color: '#94a3b8' }}>None</span>,
+      render: (value: string) => value || <span style={{ color: '#94a3b8' }}>{t('compile.object.noneFallback')}</span>,
     },
     {
-      title: 'Additional Requirements',
+      title: t('compile.object.requirement'),
       dataIndex: 'requirement',
       key: 'requirement',
       width: 220,
-      render: (value: string) => value || <span style={{ color: '#94a3b8' }}>None</span>,
+      render: (value: string) => value || <span style={{ color: '#94a3b8' }}>{t('compile.object.noneFallback')}</span>,
     },
     {
-      title: t('ontology.attribute'),
+      title: t('compile.object.attributes'),
       dataIndex: 'attributes',
       key: 'attributes',
-      render: (attrs: OntologyAttribute[]) => <AttrInlineTable attrs={attrs || []} />,
+      align: 'left',
+      width: 360,
+      render: (attrs: OntologyAttribute[]) => <AttrInlineTable attrs={attrs || []} t={t} />,
     },
     {
-      title: t('knowledgeSearch.actions'),
+      title: t('common.operation'),
       key: 'actions',
       width: 250,
       render: (_, record) => (
         <span>
-          <a className="yx-table-action" onClick={() => onEdit(record)}><EditOutlined /> {t('domainKnowledge.edit')}</a>
-          <a className="yx-table-action" style={{ color: '#ef4444' }} onClick={() => onDelete(record)}><DeleteOutlined /> {t('dataSource.delete')}</a>
-          { }
-          { }
+          <a className="yx-table-action" onClick={() => onEdit(record)}>
+            <EditOutlined /> {t('common.edit')}
+          </a>
+          <a className="yx-table-action" style={{ color: '#ef4444' }} onClick={() => onDelete(record)}>
+            <DeleteOutlined /> {t('common.delete')}
+          </a>
+          {/* 提示词功能暂未实现先隐藏 */}
+          {/* <a className="yx-table-action" style={{ color: '#8b5cf6' }} onClick={() => onPrompt(record)}><MessageOutlined /> 提示词</a> */}
         </span>
       ),
     },
-  ]
+  ];
 
   return (
     <div className="config-section" style={cardStyle}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h3 style={h3Style}><AppstoreOutlined style={{ color: '#3b82f6' }} /> {t('compile.objects')}</h3>
+        <h3 style={h3Style}>
+          <AppstoreOutlined style={{ color: '#3b82f6' }} /> {t('compile.tabObjectDef')}
+        </h3>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Button type="primary" icon={<PlusOutlined />} style={{ fontSize: 13 }} onClick={onCreate}>{t('compile.objectCreated')}</Button>
-          <Button icon={<ImportOutlined />} style={{ fontSize: 13 }} onClick={onImport}>{t('compile.importFromTemplate')}</Button>
+          <Button type="primary" icon={<PlusOutlined />} style={{ fontSize: 13 }} onClick={onCreate}>
+            {t('compile.object.createBtn')}
+          </Button>
+          <Button icon={<ImportOutlined />} style={{ fontSize: 13 }} onClick={onImport}>
+            {t('compile.object.importBtn')}
+          </Button>
         </div>
       </div>
-      <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>
-        Manage knowledge-base ontology object definitions, descriptions, attributes, and additional requirements.
-      </p>
+      <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 16 }}>{t('compile.object.sectionDesc')}</p>
       <Table
         columns={columns}
         dataSource={data}
@@ -124,8 +170,8 @@ export default function OntologyObjectSection({ data, loading, onCreate, onImpor
         pagination={false}
         size="middle"
         loading={loading}
-        locale={{ emptyText: 'No ontology objects. Add an object or initialize from a template.' }}
+        locale={{ emptyText: t('compile.object.empty') }}
       />
     </div>
-  )
+  );
 }

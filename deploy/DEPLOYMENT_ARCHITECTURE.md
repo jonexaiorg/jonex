@@ -1,11 +1,24 @@
-# Jonex平台部署架构设计
+# 悦溪平台部署架构
 
-> 本文档描述当前 docker-compose 编排下的实际部署形态，与 `deploy/docker-compose.yml` / `deploy/docker-compose.override.yml` / `jonex_core/` 保持同步。
+本文描述当前部署拓扑。系统按全新架构维护：生产环境浏览器只访问 `frontend-gateway`，前端业务请求统一通过 `/api/**` 进入 API Gateway。
 
-## 一、整体架构设计
+## 1. 总体拓扑
 
-### 1.1 流量路径
+```text
+用户浏览器
+  -> frontend-gateway:80
+     -> shell-frontend
+     -> core-business-frontend
+     -> platform-management-frontend
+     -> ecosystem-management-frontend
+     -> /api/** -> gateway:8000
+        -> sidecar:8001
+           -> platform-service:8006
+           -> business-domain-service:8005
+           -> knowledge-base-service:8003
+           -> atomic-rag:8004 -> lightrag:9621
 
+PostgreSQL / Redis / Milvus / etcd / MinIO
 ```
                 ┌──────────────────────────────────────────────────────────┐
                 │                客户端 / 第三方平台                         │
@@ -13,11 +26,12 @@
                                             │
                 ┌───────────────────────────▼──────────────────────────────┐
                 │     frontend-gateway (Nginx, 80) — 唯一对外入口           │
-                │   静态资源 / SPA 路由回退 / /api 反代 / CSP 安全头   │
+                │   静态资源 / SPA 路由回退 / /api、/ec 反代 / CSP 安全头   │
                 └───┬───────────────────────────────────────────┬──────────┘
-                    │ 内部反代到 5 个子前端                       │ /api 反代
+                    │ 内部反代到 5 个子前端                       │ /api、/ec 反代
                     ▼                                            ▼
    ┌───────────────────────────────────────────────┐    ┌────────────────────┐
+   │ shell / core-business /                        │    │  API Gateway       │
    │ 8000)   │
    │ ecosystem-management                          │    │  业务路由聚合       │
    │ (各自独立 Nginx 容器，仅内部 expose:80)        │    │  + 文件落盘        │
@@ -29,7 +43,9 @@
                                             └────┬─────────────┬──────────────┬──────────┘
                                                  │             │              │
                             ┌────────────────────▼─┐  ┌────────▼───────┐  ┌──▼─────────────────┐
-                            │  (业务能力，8000)     │  │ (业务能力,8000)│  │  (原子能力, 8000)  │
+                            │ knowledge-base       │  │ business-domain│  │  atomic-rag        │
+                            │ (业务能力，8000)     │  │ (业务能力,8000)│  │  (原子能力, 8000)  │
+                            │ business.kb          │  │ business.bd    │  │  atomic.rag.lightrag│
                             └──────────────────────┘  └────────────────┘  └────────┬───────────┘
                                                                                    │ HTTP X-API-Key
                                                                                    ▼
@@ -41,11 +57,41 @@
                 ┌──────────────────────────────────────────────────────────┐
                 │                       基础设施层                          │
                 │  PostgreSQL 15 │ Redis 7 │ Milvus 2.5 │ etcd 3.5 │ MinIO  │
+                │     PG 含 platform / knowledge_base / ontology schema │
                 └──────────────────────────────────────────────────────────┘
 ```
 
-### 1.2 RAG 链路（端到端）
+## 2. 对外暴露原则
 
+| 模式 | 对外端口 | 说明 |
+|---|---|---|
+| 生产 | `frontend-gateway:80` 或上层 HTTPS LB | 唯一浏览器入口。后端、能力服务和基础设施仅容器网络访问。 |
+| 开发 | `80`、`8000`、`8001`、`8003`、`8004`、`8005`、`8006`、`9621` | 通过 override 暴露，方便本机调试。 |
+
+生产浏览器路径：
+
+| 路径 | 目标 |
+|---|---|
+| `/` | Shell |
+| `/apps/{app-id}/**` | Shell hosted 子应用路由 |
+| `/{app-id}/**` | 子应用 standalone 路由 |
+| `/remotes/{app-id}/**` | Module Federation remote assets |
+| `/api/**` | API Gateway |
+
+## 3. 前端容器
+
+| 容器 | 职责 |
+|---|---|
+| `frontend-gateway` | 唯一入口，聚合静态资源，反代 `/api/**`，设置安全头和缓存策略。 |
+| `shell-frontend` | 壳应用，负责登录后工作台、应用加载、导航和上下文注入。 |
+| `core-business-frontend` | 核心业务前端。 |
+| `platform-management-frontend` | 平台管理前端。 |
+| `ecosystem-management-frontend` | 生态管理前端。 |
+
+应用清单生产来源：
+
+```text
+GET /api/v1/platform/frontend/apps
 ```
 浏览器 →[POST 上传文件]→ frontend-gateway →[反代]→ Gateway
    ↓
@@ -69,54 +115,59 @@ atomic-rag 轮询 GET /documents/track_status/{track_id} 拿 doc_id → 写回�
 （可选）atomic-rag → RAG_WEBHOOK_URL 回调 knowledge-base 更新文档状态
 ```
 
-### 1.3 流式查询链路
+静态 `frontends/shell/public/app-manifest.json` 只用于本地开发和显式 fallback。
 
-```
-浏览器 →[GET /api/v1/knowledge-base/documents/search/stream]→ frontend-gateway → Gateway
-   ↓
-Gateway →[Sidecar /invoke/stream/rag]→ Sidecar
-   ↓
-Sidecar.stream_rag_query →[GET atomic-rag /query/stream，附 Bearer token]→ atomic-rag
-   ↓
-atomic-rag.LightRAGAdapter.register_routes 注册的 /query/stream
-   ↓
-LightRAGServerClient.stream_query →[POST lightrag /query/stream]→ lightrag
-   ↓
-NDJSON 逐行流回（atomic-rag → Sidecar → Gateway → 浏览器）
-```
+## 4. 后端容器
 
-> 部署模式：
-> - 生产模式 (`make up-prod` / `.\jonex.ps1 up-prod`)：仅 frontend-gateway:80 对外，Gateway/Sidecar/能力服务/lightrag 全部收敛在 `jonex-network` 内网。
-> - 开发模式 (`make up`)：通过 `docker-compose.override.yml` 把 gateway:8000、sidecar:8001、lightrag:9621、atomic-rag:8004、knowledge-base:8003 同时映射到宿主机便于直连调试与 lightrag WebUI 访问。
+| 容器 | 端口 | 职责 |
+|---|---:|---|
+| `gateway` | `8000` | 外部 API 路由聚合。 |
+| `sidecar` | `8001` | 认证、租户上下文、内部 JWT、计量、限流、熔断、能力代理。 |
+| `knowledge-base` | `8003` | 知识库、文档状态机、RAG 接入。 |
+| `atomic-rag` | `8004` | RAG 原子能力。 |
+| `business-domain` | `8005` | 领域空间、领域服务、引擎、适配器。 |
+| `platform` | `8006` | 登录、RBAC、菜单、应用注册、审计、任务调度。 |
+| `lightrag` | `9621` | 索引、检索、生成和 WebUI。 |
 
-## 二、容器设计
+后端调用链：
 
-### 2.1 frontend-gateway
-
-唯一对外 80 端口入口，基于 Nginx 反代：
-- `/api` 路径反代到 Gateway:8000
-- CSP / 安全头由本层统一加挂
-
-### 2.2 API Gateway
-
-FastAPI（容器内 8000，dev 映射宿主 8000）：
-- 业务路由聚合，CORS、请求追踪、对外 API Key 校验
-- 文件上传落盘到 `jonex-rag-inputs:/app/inputs`（与 atomic-rag 共享）
-- 业务路由通过 Sidecar `/invoke` 调用能力，流式查询走 Sidecar `/invoke/stream/rag`
-
-### 2.3 Sidecar 代理
-
-FastAPI（容器内 8000，dev 映射宿主 8001）：
-- 统一能力调用入口 `/invoke`、流式入口 `/invoke/stream/rag`
-- 调用下游能力时使用 `InternalAuth.generate_token("sidecar")` 签发短时（5 min）JWT，附在 `Authorization: Bearer <token>`
-- 调用计量 / 限流熔断（接 Redis）
-
-```yaml
-resources:
-  limits:    { cpus: '2', memory: 2G }
-  requests:  { cpus: '0.5', memory: 512M }
+```text
+Gateway -> Sidecar -> Capability Service -> Repository -> PostgreSQL / Redis
 ```
 
+## 5. 基础设施
+
+| 服务 | 用途 |
+|---|---|
+| `postgres` | 平台和业务主数据。 |
+| `redis` | 服务发现、心跳、任务状态、缓存、治理状态。 |
+| `milvus` | 向量检索。 |
+| `etcd` | Milvus 元数据依赖。 |
+| `minio` | Milvus 对象存储依赖。 |
+
+## 6. Nginx 规则
+
+`deploy/nginx/frontend-gateway.conf` 维护外部入口规则：
+
+- `/api/**` 反代到 `gateway:8000`。
+- `/remotes/{app-id}/**` 反代到对应子应用容器。
+- `/{app-id}/**` 提供子应用 standalone SPA fallback。
+- Shell 路由 fallback 到 `shell-frontend`。
+- 静态 assets 使用长缓存，HTML 和 manifest 使用短缓存。
+
+每个子应用自身的 `nginx/default.conf` 只服务本应用静态文件、standalone fallback 和 remote assets。
+
+## 7. 数据迁移
+
+PostgreSQL migrations 位于 `deploy/postgres/migrations/`。新增迁移必须遵守：
+
+- 平台共享元数据不带 `tenant_id`，例如应用注册、菜单、权限、系统配置。
+- 平台运行数据和业务数据必须带合法 `tenant_id`。
+- 本地 seed 使用 `tenant_jonex_demo`。
+- 不写入默认业务租户。
+- 新业务表默认包含统一实体字段：`tenant_id`、时间戳、软删除字段，必要时包含审计字段。
+
+## 8. 运维命令
 ### 2.4 业务能力容器（knowledge-base）
 
 由 [`deploy/docker/capability.Dockerfile`](docker/capability.Dockerfile) 构建，`CAPABILITY_NAME` 由构建参数指定，启动时由 `deploy/start_capability.py` 完成：
@@ -170,6 +221,7 @@ deploy:
 
 | 服务 | 镜像 | 容器内端口 | 数据持久化 | 备注 |
 |------|------|-----------|-----------|------|
+| PostgreSQL | `postgres:15-alpine` | 5432 | `jonex-postgres-data` | LTS → 2027-11；含 platform / knowledge_base / ontology 三个 schema |
 | Redis | `redis:7-alpine` | 6379 | `jonex-redis-data` | 服务发现注册中心 / 缓存 / 分布式锁；⚠️ 4.0 已 EOL，禁止降级 |
 | etcd | `quay.io/coreos/etcd:v3.5.18` | 2379 | `jonex-etcd-data` | Milvus 元数据，硬性要求 ≥3.5.0 |
 | MinIO | `minio/minio:RELEASE.2025-04-22T22-12-26Z` | 9000 / 9001 | `jonex-minio-data` | Milvus 对象存储，需 S3 v4 签名 |
@@ -220,10 +272,11 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 │  │  5432    │ │ 6379   │ │ 2379 │ │ 9000  │ │  19530   │ │7687/7474 │           │
 │  └──────────┘ └────────┘ └──────┘ └───────┘ └──────────┘ └──────────┘        │
 │                                                                              │
-│  ┌──────────┐ ┌──────────┐ ┌────────────┐ ┌──────────────┐                  │
-│  │   8000   │ │   8000   │ │   8000     │ │     8000     │                  │
-│  │(开:8000) │ │(开:8001) │ │(开:8002)   │ │(开:8003)     │                  │
-│  └──────────┘ └──────────┘ └────────────┘ └──────────────┘                  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────────┐ ┌──────────────┐                  │
+│  │ gateway  │ │ sidecar  │ │business-dom. │ │knowledge-base│                  │
+│  │   8000   │ │   8000   │ │   8000       │ │     8000     │                  │
+│  │(开:8000) │ │(开:8001) │ │(开:8005)     │ │(开:8003)     │                  │
+│  └──────────┘ └──────────┘ └──────────────┘ └──────────────┘                  │
 │                                                                              │
 │  ┌────────────┐ ┌──────────┐                                                 │
 │  │ atomic-rag │ │ lightrag │                                                 │
@@ -232,14 +285,17 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 │  └────────────┘ └──────────┘                                                 │
 │                                                                              │
 │  ┌──────────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐           │
-│  │       80         │ │  frontend  │ │  frontend  │ │ business   │           │
+│  │ frontend-gateway │ │   shell    │ │ core-      │ │ platform-  │ ...       │
+│  │       80         │ │  frontend  │ │ business   │ │ management │           │
 │  │   (对外:80)      │ │ (内部:80)  │ │ (内部:80)  │ │ (内部:80)  │           │
 │  └──────────────────┘ └────────────┘ └────────────┘ └────────────┘           │
 │                                                                              │
 │  生产模式 (make up-prod)：仅 frontend-gateway:80 对外                         │
-│  开发模式 (make up)：通过 override.yml 额外暴露                               │
+│  开发模式 (make up)：加载 docker-compose.override.yml，额外暴露               │
 │           gateway:8000 / sidecar:8001 / atomic-rag:8004                       │
 │           knowledge-base:8003 / lightrag:9621                                 │
+│  宿主机单服务调试 (make docker-local-up)：加载 debug compose，供               │
+│           sidecar 反代宿主机业务后端或 atomic-rag                             │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -292,8 +348,9 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 | 链路 | 协议 | 端口（容器内） | 鉴权 | 说明 |
 |------|------|--------------|------|------|
-| 客户端 → frontend-gateway | HTTPS / HTTP | 80 | — | 唯一对外入口；静态资源 + /api 反代 |
+| 客户端 → frontend-gateway | HTTPS / HTTP | 80 | — | 唯一对外入口；静态资源 + /api、/ec 反代 |
 | frontend-gateway → 子前端 | HTTP | 80 | — | nginx 静态资源反代到 5 个子前端 |
+| frontend-gateway → Gateway | HTTP/REST | 8000 | — | nginx `proxy_pass http://gateway:8000`；`/ec` 通过 rewrite 改写 |
 | Gateway → Sidecar | HTTP/REST | 8000 | — | 业务路由 → `/invoke`；流式搜索 → `/invoke/stream/rag` |
 | Sidecar → knowledge-base | HTTP/REST | 8000 | 内部 JWT | `business.knowledge_base.v1` |
 | Sidecar → atomic-rag | HTTP/REST | 8000 | 内部 JWT | `atomic.rag.lightrag.v1`；流式查询直连 `/query/stream` |
@@ -306,6 +363,7 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ### 5.2 服务发现机制
 
 **Docker Compose 环境**：
+- 容器互通走 Docker 内置 DNS（服务名即 hostname：`postgres`、`redis`、`knowledge-base-service`、`atomic-rag` 等）
 - 能力服务启动时通过 `start_capability.py` 注册 `ServiceInstance` 到 Redis（key: `jonex:service:<service_name>`），30s 周期心跳
 - Sidecar 调用时优先 `service_registry.discover(service_name)`，失败回退静态配置 `_static_endpoints`
 
@@ -320,6 +378,7 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 | 类型 | 示例 | 启动方式 |
 |------|------|---------|
+| `business` | `business.knowledge_base.v1`、`business.business_domain.v1` | `capabilities/<name>/` 包，类名 PascalCase + `Capability` 后缀 |
 | `domain` | `domain.rag.text.v1` | `jonex_core/capability/domain/<name>/` |
 | `atomic` | `atomic.rag.lightrag.v1`、`atomic.audio.whisper.v1`（规划） | `jonex_core/capability/atomic/<name>/` |
 
@@ -341,6 +400,7 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 | etcd | `etcdctl endpoint health` | 默认 | — |
 | minio | `/minio/health/live` | 默认 | — |
 | milvus | `/healthz` | 90s | 启动较慢 |
+| gateway / sidecar / knowledge-base / business-domain / platform | `GET /health` | 30s | 标准能力服务模板 |
 | atomic-rag | `GET /health` | **300s** | mineru 首次启动需解压模型 |
 | lightrag | `GET /health` | 60s | LightRAG 引擎冷启动 |
 | frontend-gateway / 5 个子前端 | `GET /health` | 5-10s | nginx 自身 |
@@ -350,154 +410,33 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ### 7.1 水平扩展
 
 ```bash
-docker-compose up -d --scale knowledge-base-service=2
+make build
+make up
+make ps
+make logs
+make down
 ```
 
-注意：
-- atomic-rag 因 GPU 独占 + 模型缓存卷，**不建议直接 scale**；多实例需要为每个实例独立 named volume
-- lightrag 单进程持有图谱状态，**不能 scale**
-
-### 7.2 自动扩缩容指标（K8s HPA 规划）
-
-- CPU > 70% → 扩容
-- 内存 > 80% → 扩容
-- `RAG_WORKER_NUM` 队列积压 > 100 → 扩容
-- P99 响应 > 500ms → 扩容
-
-## 八、监控与观测
-
-### 8.1 日志架构
-
-```
-应用容器 → /app/logs (jonex-logs 卷) → Filebeat → Elasticsearch → Kibana
-         ↓
-     stdout → Docker 日志驱动 → Loki / ELK
-```
-
-### 8.2 指标收集
-
-```
-应用 Prometheus Client → Prometheus → Grafana
-```
-
-### 8.3 链路追踪
-
-```
-应用 OpenTelemetry SDK → Jaeger / Zipkin
-```
-
-## 九、部署环境区分
-
-### 9.1 开发环境
-
-`deploy/docker-compose.override.yml` 默认自动加载，把以下端口映射到宿主：
-
-```yaml
-services:
-  gateway:                { ports: ["8000:8000"] }
-  sidecar:                { ports: ["8001:8000"] }
-  lightrag:               { ports: ["9621:9621"] }
-  atomic-rag:             { ports: ["8004:8000"] }
-  knowledge-base-service: { ports: ["8003:8000"] }
-```
-
-直连调试示例：
+单服务：
 
 ```bash
-# 直连 sidecar /invoke（需要自签内部 JWT）
-curl http://localhost:8001/invoke -H "Authorization: Bearer <jwt>" \
-     -d '{"capability_id":"atomic.rag.lightrag.v1","payload":{"action":"query","query":"测试"},"tenant_id":"t1"}'
-
-# 直连 atomic-rag 流式查询（容器内匿名）
-curl -N "http://localhost:8004/query/stream?query=测试&tenant_id=t1&mode=hybrid&top_k=5"
-
-# 访问 lightrag WebUI
-open http://localhost:9621
+make rebuild-service SERVICE=platform-service
+make restart-service SERVICE=platform-service
+make logs-service SERVICE=platform-service
 ```
 
-### 9.2 生产环境
-
-显式跳过 override，仅 frontend-gateway:80 对外：
+前端：
 
 ```bash
-make up-prod
-.\jonex.ps1 up-prod
-# 等价于：docker-compose -f docker-compose.yml up -d
+make rebuild-frontend-gateway
+make rebuild-shell-frontend
+make rebuild-core-business-frontend
+make rebuild-platform-management-frontend
+make rebuild-ecosystem-management-frontend
 ```
 
-如需进一步覆盖（多副本、资源限制、SSL 终止等），单独维护 `docker-compose.prod.yml`：
+## 9. 规范入口
 
-```yaml
-services:
-  frontend-gateway:
-    deploy:
-      replicas: 3
-      resources:
-        limits: { cpus: '2', memory: 1G }
-```
-
-启动：`docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d`
-
-## 十、部署流程图
-
-```mermaid
-flowchart TD
-    A[开始] --> B[检查 .env / .env.rag 配置]
-    B --> C{配置文件是否存在?}
-    C -->|否| D[复制 .env.example / .env.rag.example]
-    C -->|是| E[修改配置参数]
-    D --> E
-    E --> F[拉取基础镜像]
-    F --> G[构建应用镜像<br/>含 atomic-rag 模型预下载]
-    G --> H[启动基础设施<br/>postgres/redis/etcd/minio/milvus]
-    H --> I[等待基础设施就绪]
-    J --> K[启动 atomic-rag + lightrag]
-    K --> L[启动 Sidecar 代理]
-    L --> M[启动 Gateway + 5 个子前端]
-    M --> N[启动 frontend-gateway]
-    N --> O[运行健康检查]
-    O --> P{所有服务健康?}
-    P -->|是| Q[部署完成]
-    P -->|否| R[查看日志排查]
-    R --> S[修复后重试]
-```
-
-## 十一、资源规划建议
-
-### 11.1 最小配置（开发/测试）
-
-| 服务 | CPU | 内存 |
-|------|-----|------|
-| PostgreSQL | 0.5 | 1G |
-| Redis | 0.25 | 256M |
-| etcd / MinIO / Milvus | 1.5 | 3G |
-| Gateway / Sidecar | 1 | 1G |
-| Knowledge Base | 0.5 | 512M |
-| atomic-rag（CPU 模式） | 2 | 4G |
-| lightrag | 1 | 2G |
-| frontend-gateway + 5 子前端 | 0.7 | 700M |
-| **总计** | **~8** | **~13G** |
-
-> 启用 GPU 时 atomic-rag 内存占用降至 ~2G，显存约 6-8G。
-
-### 11.2 推荐配置（生产）
-
-| 服务 | CPU | 内存 | 实例数 |
-|------|-----|------|--------|
-| PostgreSQL | 4 | 8G | 1 主 + 1 从 |
-| Redis | 2 | 4G | 3 (集群) |
-| Milvus + etcd + MinIO | 4 | 8G | 1（启用混合检索时） |
-| Gateway | 2 | 2G | 3 |
-| Sidecar | 2 | 4G | 3 |
-| Knowledge Base | 2 | 2G | 2 |
-| atomic-rag（GPU） | 4 | 8G + 16G 显存 | 1（GPU 受限）或多实例多卡 |
-| lightrag | 4 | 8G | 1（单进程持图） |
-| frontend-gateway | 1 | 512M | 2 |
-| 子前端（6 个） | 0.2 × 6 | 256M × 6 | 1 each |
-| **总计** | **~30** | **~58G** | |
-
-## 十二、变更记录
-
-| 日期 | 变更 |
-|------|------|
-| 2026-05-28 | atomic-rag 改用 raganything 源码集成 + 模型预下载；启动入口由 `atomic-rag-server.py` 切回 `start_capability.py` + `LightRAGAdapter`；模型缓存改 `jonex-rag-models:/root/.cache` named volume；同步更新流式查询链路、能力 ID 命名规范、内部 JWT 章节 |
+- 系统架构：[../jonex-platform-architecture.md](../jonex-platform-architecture.md)
+- 后端规范：[../backend-development-standard.md](../backend-development-standard.md)
+- 前端规范：[../frontend-development-standard.md](../frontend-development-standard.md)

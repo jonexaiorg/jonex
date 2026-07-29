@@ -1,9 +1,9 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 """
-Service heartbeat manager
+服务心跳管理器
 
-Periodically sends heartbeat to registry, maintaining service liveness status
+定期发送心跳到注册中心，维持服务的存活状态
 """
 
 import asyncio
@@ -17,10 +17,10 @@ logger = get_logger("heartbeat")
 
 class HeartbeatManager:
     """
-    Service heartbeat manager
+    服务心跳管理器
 
-    Periodically sends heartbeat to service registry, maintaining service liveness status
-    Automatically deregisters when service stops
+    定期发送心跳到服务注册中心，维持服务的存活状态
+    服务停止时自动注销
     """
 
     def __init__(
@@ -30,12 +30,12 @@ class HeartbeatManager:
         interval: int = 30,
     ):
         """
-        Initialize heartbeat manager
+        初始化心跳管理器
 
         Args:
-            registry: Service registry instance
-            instance: Service instance information
-            interval: Heartbeat interval (seconds), default 30 seconds
+            registry: 服务注册中心实例
+            instance: 服务实例信息
+            interval: 心跳间隔（秒），默认 30 秒
         """
         self.registry = registry
         self.instance = instance
@@ -45,32 +45,32 @@ class HeartbeatManager:
 
     async def start(self) -> None:
         """
-        Start heartbeat loop
+        启动心跳循环
 
-        Registers once immediately on first start, then sends heartbeat at fixed interval
+        首次启动时立即注册一次，然后按固定间隔发送心跳
         """
         if self._running:
-            logger.warning(f"Heartbeat already running: {self.instance.service_name}")
+            logger.warning(f"心跳已在运行中: {self.instance.service_name}")
             return
 
         self._running = True
 
-        # Register immediately on first start
+        # 首次立即注册
         try:
             await self.registry.register(self.instance)
-            logger.info(f"Service first registration successful: {self.instance.service_name} @ {self.instance.endpoint}")
+            logger.info(f"服务首次注册成功: {self.instance.service_name} @ {self.instance.endpoint}")
         except Exception as e:
-            logger.error(f"Service first registration failed: {e}")
+            logger.error(f"服务首次注册失败: {e}")
 
-        # Start background heartbeat task
+        # 启动后台心跳任务
         self._task = asyncio.create_task(self._heartbeat_loop())
-        logger.info(f"Heartbeat started: {self.instance.service_name}, interval {self.interval} seconds")
+        logger.info(f"心跳已启动: {self.instance.service_name}, 间隔 {self.interval} 秒")
 
     async def stop(self) -> None:
         """
-        Stop heartbeat and deregister service
+        停止心跳并注销服务
 
-        Cancel heartbeat task, and deregister this service instance from registry
+        取消心跳任务，并从注册中心注销该服务实例
         """
         self._running = False
 
@@ -81,31 +81,31 @@ class HeartbeatManager:
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                logger.exception(f"Error occurred while stopping heartbeat task: {e}")
+                logger.exception(f"停止心跳任务时发生错误: {e}")
 
-        # Deregister service
+        # 注销服务
         try:
             await self.registry.deregister(
                 service_name=self.instance.service_name,
                 endpoint=self.instance.endpoint,
             )
         except Exception as e:
-            logger.exception(f"Deregister service failed: {e}")
+            logger.exception(f"注销服务失败: {e}")
 
-        logger.info(f"Heartbeat stopped: {self.instance.service_name}")
+        logger.info(f"心跳已停止: {self.instance.service_name}")
 
     async def _heartbeat_loop(self) -> None:
-        """Heartbeat loop (internal use)"""
+        """心跳循环（内部使用）"""
         while self._running:
             try:
                 await self.registry.heartbeat(self.instance)
                 logger.debug(
-                    f"Heartbeat sent successfully: {self.instance.service_name} @ {self.instance.endpoint}"
+                    f"心跳发送成功: {self.instance.service_name} @ {self.instance.endpoint}"
                 )
             except Exception as e:
-                logger.exception(f"Heartbeat send failed: {e}")
+                logger.exception(f"心跳发送失败: {e}")
 
-            # Wait for next heartbeat
+            # 等待下一次心跳
             await asyncio.sleep(self.interval)
 
 
@@ -119,19 +119,19 @@ def create_heartbeat_manager(
     interval: int = 30,
 ) -> HeartbeatManager:
     """
-    Quickly create Heartbeat manager
+    快捷创建心跳管理器
 
     Args:
-        service_name: Service name
-        service_type: Service type (capability/sidecar/gateway)
-        endpoint: Service endpoint
-        capability_id: Capability ID (only required for Capability service)
-        version: Version
-        metadata: Additional Metadata
-        interval: Heartbeat interval (seconds)
+        service_name: 服务名
+        service_type: 服务类型 (capability/sidecar/gateway)
+        endpoint: 服务端点
+        capability_id: 能力ID（仅能力服务需要）
+        version: 版本号
+        metadata: 额外元数据
+        interval: 心跳间隔（秒）
 
     Returns:
-        HeartbeatManager instance
+        HeartbeatManager 实例
     """
     from jonex_core.discovery.registry import get_service_registry
 

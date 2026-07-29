@@ -1,4 +1,6 @@
-
+"""
+Ontology compiler and KB-side ontology editor service.
+"""
 import json
 import logging
 import os
@@ -12,6 +14,7 @@ from jonex_core.common.exceptions import (
     ResourceConflictError,
     ResourceNotFoundError,
 )
+from jonex_core.common.i18n import translate
 from jonex_core.common.tenant import require_tenant
 
 from ..repository.ontology_schema_repository import OntologySchemaRepository
@@ -73,7 +76,7 @@ def _dedupe_strings(items: list[str]) -> list[str]:
 
 
 class OntologyCompiler:
-
+    """Compile template schema to KB snapshots and manage KB-side edits."""
 
     async def bind_template(
         self,
@@ -121,7 +124,7 @@ class OntologyCompiler:
                 scenario = await provider.load_scenario(tenant_id, binding.template_scenario_id)
                 if scenario is None:
                     raise ResourceNotFoundError(
-                        message=f"Template scenario does not exist or is unavailable: {binding.template_scenario_id}",
+                        message=translate("err.template.scenario_not_available", params={"scenario_id": binding.template_scenario_id}, fallback=f"模板场景不存在或不可用: {binding.template_scenario_id}")  ,  # 原消息
                     )
                 compiled = self._compile_from_scenario(scenario, source_type=binding.source_type or "business_template")
             else:
@@ -132,6 +135,21 @@ class OntologyCompiler:
 
             compiled["tenant_id"] = tenant_id
             compiled["knowledge_base_id"] = knowledge_base_id
+
+            # [jonex] P2-H：force=False 且来源 hash 未变（且非人工编辑）→ 短路复用，
+            # 不 bump schema_version、不覆盖快照，返回 unchanged=True。
+            if not force:
+                existing = await repo.get_compiled_schema(tenant_id, knowledge_base_id)
+                if (
+                    existing is not None
+                    and existing.schema_mode != "manual_edited"
+                    and existing.source_hash
+                    and existing.source_hash == compiled.get("source_hash")
+                ):
+                    result = existing.to_dict()
+                    result["unchanged"] = True
+                    await self._set_cache(tenant_id, knowledge_base_id, existing.to_dict())
+                    return result
 
             cs = await repo.upsert_compiled_schema(
                 tenant_id=tenant_id,
@@ -153,6 +171,67 @@ class OntologyCompiler:
 
         await self._set_cache(tenant_id, knowledge_base_id, cs.to_dict())
         return cs.to_dict()
+
+    async def recompile_for_knowledge_base(
+        self,
+        tenant_id: str,
+        knowledge_base_id: str,
+        force: bool = False,
+        apply_to_documents: bool = False,
+    ) -> dict:
+        """[jonex] P2-H：从模板/yaml 重新编译 compiled schema（生产链路入口）。
+
+        - 遇 `schema_mode == manual_edited` → 409（ResourceConflictError），提示改用 reseed；
+          即 recompile 永不覆盖人工编辑，丢弃人工编辑的唯一入口是 reseed。
+        - `force=True` 仅对非人工编辑跳过 source_hash 短路、无条件重生成并覆盖快照。
+        - `apply_to_documents=True` 时，编译成功后顺带把该 KB 文档置 PENDING（对账被动重抽）。
+
+        返回分步契约：{schema_saved, schema_version, unchanged, documents_matched,
+        documents_queued, apply_error?}。编译与批量重置任一失败独立报告。
+        """
+        tenant_id = require_tenant(tenant_id)
+
+        async with get_db_session() as session:
+            repo = OntologySchemaRepository(session)
+            current = await repo.get_compiled_schema(tenant_id, knowledge_base_id)
+
+        if current is not None and current.schema_mode == "manual_edited":
+            raise ResourceConflictError(
+                message=translate("err.ontology.manual_schema_no_recompile", fallback="该知识库 schema 为人工编辑，recompile 不会覆盖；如需从模板重置请使用 reseed")  ,  # 原消息
+                details={"knowledge_base_id": knowledge_base_id, "schema_mode": "manual_edited"},
+            )
+
+        compiled = await self.compile_for_knowledge_base(tenant_id, knowledge_base_id, force=force)
+        schema_version = compiled.get("schema_version")
+
+        result = {
+            "schema_saved": True,
+            "schema_version": schema_version,
+            "unchanged": bool(compiled.get("unchanged", False)),
+            "documents_matched": 0,
+            "documents_queued": 0,
+        }
+
+        if apply_to_documents:
+            try:
+                from ..repository import KnowledgeDocumentRepository
+
+                async with get_db_session() as session:
+                    doc_repo = KnowledgeDocumentRepository(session)
+                    stats = await doc_repo.reset_ontology_for_kb(
+                        tenant_id, knowledge_base_id,
+                        target_schema_version=schema_version,
+                    )
+                    await session.commit()
+                result["documents_matched"] = stats.get("matched", 0)
+                result["documents_queued"] = stats.get("reset", 0)
+            except Exception as e:
+                logger.warning(
+                    "recompile apply_to_documents failed kb=%s: %s", knowledge_base_id, e,
+                )
+                result["apply_error"] = str(e)[:500]
+
+        return result
 
     async def get_compiled_schema(
         self,
@@ -190,6 +269,45 @@ class OntologyCompiler:
                 e,
             )
             return None
+
+    async def inject_synonyms(
+        self, tenant_id: str, knowledge_base_id: str, schema: dict
+    ) -> dict:
+        """[jonex] 运行时把 KB 级同义词组注入 compiled schema（不落库）。
+
+        写入顶层 ``synonyms`` 与 ``prompt_schema.synonyms``（[{canonical, terms}]），
+        供 atomic-rag 抽取 prompt 提示 LLM 统一使用 canonical 表述（效果 Y 的软提示层）。
+        受开关 ONTOLOGY_SYNONYM_PROMPT_ENABLED（默认 true）控制；异常降级返回原 schema。
+        """
+        if not schema:
+            return schema
+        if os.getenv("ONTOLOGY_SYNONYM_PROMPT_ENABLED", "true").lower() not in ("1", "true", "yes", "on"):
+            return schema
+        try:
+            from ..repository.ontology_synonym_repository import OntologySynonymRepository
+
+            async with get_db_session() as session:
+                groups = await OntologySynonymRepository(session).list_all_by_kb(
+                    tenant_id, knowledge_base_id
+                )
+            syn = [
+                {"canonical": (g.canonical or (g.terms or [""])[0]), "terms": g.terms or []}
+                for g in groups
+                if g.terms
+            ]
+            if not syn:
+                return schema
+            result = dict(schema)
+            result["synonyms"] = syn
+            prompt_schema = dict(result.get("prompt_schema") or {})
+            prompt_schema["synonyms"] = syn
+            result["prompt_schema"] = prompt_schema
+            return result
+        except Exception as e:
+            logger.warning(
+                "Synonym inject skipped (degraded): kb=%s err=%s", knowledge_base_id, e
+            )
+            return schema
 
     async def get_editor_state(
         self,
@@ -236,9 +354,9 @@ class OntologyCompiler:
     ) -> dict:
         tenant_id = require_tenant(tenant_id)
 
-
+        # 编辑器保存必须携带版本，做乐观锁；缺失直接 400（避免无版本请求绕过并发保护）
         if expected_schema_version is None:
-            raise InvalidParameterError(message="缺少 expected_schema_version")
+            raise InvalidParameterError(message=translate("err.ontology.missing_schema_version", fallback="缺少 expected_schema_version")  )  # 原消息)
 
         normalized_entities = self._normalize_entity_types(entity_types)
         normalized_relations = self._normalize_relation_types(relation_types, normalized_entities)
@@ -257,7 +375,7 @@ class OntologyCompiler:
             source_hash = current.source_hash if current else None
             disambiguation = current.disambiguation if current else {"case_insensitive": True, "alias_merge": True}
 
-
+            # 约束三态：None=保留现有（顺带清理历史 stub）；[]=清空；非空=替换（校验目标存在性）
             if constraints is None:
                 final_constraints = self._strip_legacy_stub(current.constraints if current else [])
             else:
@@ -307,6 +425,7 @@ class OntologyCompiler:
         template_scenario_id: str,
         template_domain_id: Optional[str] = None,
         source_type: str = "business_template",
+        apply_to_documents: bool = False,
     ) -> dict:
         tenant_id = require_tenant(tenant_id)
 
@@ -321,7 +440,31 @@ class OntologyCompiler:
             )
             await session.commit()
 
-        return await self.compile_for_knowledge_base(tenant_id, knowledge_base_id, force=True)
+        # reseed 是丢弃人工编辑的唯一入口：强制重编译（force=True）
+        compiled = await self.compile_for_knowledge_base(tenant_id, knowledge_base_id, force=True)
+
+        # [jonex] 阶段2：可选顺带把该 KB 文档置 PENDING（对账被动按新 schema 重抽）
+        if apply_to_documents:
+            try:
+                from ..repository import KnowledgeDocumentRepository
+
+                async with get_db_session() as session:
+                    doc_repo = KnowledgeDocumentRepository(session)
+                    stats = await doc_repo.reset_ontology_for_kb(
+                        tenant_id, knowledge_base_id,
+                        target_schema_version=compiled.get("schema_version"),
+                    )
+                    await session.commit()
+                compiled = {
+                    **compiled,
+                    "documents_matched": stats.get("matched", 0),
+                    "documents_queued": stats.get("reset", 0),
+                }
+            except Exception as e:
+                logger.warning("reseed apply_to_documents failed kb=%s: %s", knowledge_base_id, e)
+                compiled = {**compiled, "apply_error": str(e)[:500]}
+
+        return compiled
 
     async def list_impacted_knowledge_bases(
         self,
@@ -498,7 +641,7 @@ class OntologyCompiler:
         for index, item in enumerate(entity_types, start=1):
             name = self._require_name(item.get("name"), f"entity_types[{index}].name")
             if name in names_seen:
-                raise InvalidParameterError(message=f"实体编码重复: {name}")
+                raise InvalidParameterError(message=translate("err.ontology.entity_code_duplicate", params={"name": name}, fallback=f"实体编码重复: {name}")  )  # 原消息)
             names_seen.add(name)
 
             attr_names_seen: set[str] = set()
@@ -506,11 +649,11 @@ class OntologyCompiler:
             for attr_index, attr in enumerate(item.get("attributes") or [], start=1):
                 attr_name = self._require_name(attr.get("name"), f"entity_types[{index}].attributes[{attr_index}].name")
                 if attr_name in attr_names_seen:
-                    raise InvalidParameterError(message=f"实体 {name} 下属性编码重复: {attr_name}")
+                    raise InvalidParameterError(message=translate("err.ontology.attr_code_duplicate", params={"name": name, "attr_name": attr_name}, fallback=f"实体 {name} 下属性编码重复: {attr_name}")  )  # 原消息)
                 attr_names_seen.add(attr_name)
                 attr_type = (attr.get("type") or "string").strip().lower()
                 if attr_type not in VALID_ATTR_TYPES:
-                    raise InvalidParameterError(message=f"属性类型不合法: {name}.{attr_name}={attr_type}")
+                    raise InvalidParameterError(message=translate("err.ontology.invalid_attr_type", params={"name": name, "attr_name": attr_name, "attr_type": attr_type}, fallback=f"属性类型不合法: {name}.{attr_name}={attr_type}")  )  # 原消息)
                 attributes.append({
                     "name": attr_name,
                     "display_name": (attr.get("display_name") or attr_name).strip(),
@@ -542,19 +685,19 @@ class OntologyCompiler:
         for index, item in enumerate(relation_types, start=1):
             name = self._require_name(item.get("name"), f"relation_types[{index}].name")
             if name in names_seen:
-                raise InvalidParameterError(message=f"关系编码重复: {name}")
+                raise InvalidParameterError(message=translate("err.ontology.relation_code_duplicate", params={"name": name}, fallback=f"关系编码重复: {name}")  )  # 原消息)
             names_seen.add(name)
 
             source = self._require_name(item.get("source"), f"relation_types[{index}].source")
             target = self._require_name(item.get("target"), f"relation_types[{index}].target")
             if source not in entity_names:
-                raise InvalidParameterError(message=f"关系 {name} 的 source 不存在: {source}")
+                raise InvalidParameterError(message=translate("err.ontology.relation_source_missing", params={"name": name, "source": source}, fallback=f"关系 {name} 的 source 不存在: {source}")  )  # 原消息)
             if target not in entity_names:
-                raise InvalidParameterError(message=f"关系 {name} 的 target 不存在: {target}")
+                raise InvalidParameterError(message=translate("err.ontology.relation_target_missing", params={"name": name, "target": target}, fallback=f"关系 {name} 的 target 不存在: {target}")  )  # 原消息)
 
             cardinality = _normalize_cardinality(item.get("cardinality") or "custom")
             if cardinality not in VALID_CARDINALITY:
-                raise InvalidParameterError(message=f"关系基数不合法: {name}={cardinality}")
+                raise InvalidParameterError(message=translate("err.ontology.invalid_cardinality", params={"name": name, "cardinality": cardinality}, fallback=f"关系基数不合法: {name}={cardinality}")  )  # 原消息)
 
             normalized.append({
                 "name": name,
@@ -572,7 +715,10 @@ class OntologyCompiler:
 
     @staticmethod
     def _strip_legacy_stub(constraints: Optional[list[dict]]) -> list[dict]:
+        """过滤掉无 target_code 的历史 stub 约束（如 {"type":"entity","severity":"warning"}）。
 
+        用于 constraints=None（保留）路径，避免旧 stub 永久驻留。
+        """
         result: list[dict] = []
         for item in constraints or []:
             if isinstance(item, dict) and (item.get("target_code") or "").strip():
@@ -585,7 +731,7 @@ class OntologyCompiler:
         entity_types: list[dict],
         relation_types: list[dict],
     ) -> list[dict]:
-
+        """规整并校验约束：name 唯一、target_type 合法、target_code 必须存在于本次提交集合。"""
         entity_codes = {item["name"] for item in entity_types}
         attribute_codes = {
             f'{item["name"]}.{attr["name"]}'
@@ -600,12 +746,12 @@ class OntologyCompiler:
         for index, item in enumerate(constraints, start=1):
             name = self._require_name(item.get("name"), f"constraints[{index}].name")
             if name in names_seen:
-                raise InvalidParameterError(message=f"约束名称重复: {name}")
+                raise InvalidParameterError(message=translate("err.ontology.constraint_name_duplicate", params={"name": name}, fallback=f"约束名称重复: {name}")  )  # 原消息)
             names_seen.add(name)
 
             target_type = (item.get("target_type") or "").strip().lower()
             if target_type not in {"entity", "attribute", "relation"}:
-                raise InvalidParameterError(message=f"约束目标类型不合法: {name}={target_type}")
+                raise InvalidParameterError(message=translate("err.ontology.invalid_constraint_target", params={"name": name, "target_type": target_type}, fallback=f"约束目标类型不合法: {name}={target_type}")  )  # 原消息)
 
             target_code = self._require_name(
                 item.get("target_code"), f"constraints[{index}].target_code"
@@ -617,7 +763,7 @@ class OntologyCompiler:
             }[target_type]
             if target_code not in valid_targets:
                 raise InvalidParameterError(
-                    message=f"约束目标不存在: {target_code}",
+                    message=translate("err.ontology.constraint_target_missing", params={"target_code": target_code}, fallback=f"约束目标不存在: {target_code}")  ,  # 原消息
                     details={"name": name, "target_type": target_type},
                 )
 
@@ -704,7 +850,7 @@ class OntologyCompiler:
     def _require_name(value: Optional[str], field_name: str) -> str:
         name = (value or "").strip()
         if not name:
-            raise InvalidParameterError(message=f"{field_name} 不能为空")
+            raise InvalidParameterError(message=translate("err.ontology.field_required", params={"field_name": field_name}, fallback=f"{field_name} 不能为空")  )  # 原消息)
         return name
 
 
