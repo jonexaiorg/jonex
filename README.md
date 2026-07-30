@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./frontends/shell/public/logo.svg" alt="Jonex logo" width="320" />
+  <img src="./docs/assets/logo-en.svg" alt="Jonex logo" width="320" />
 </p>
 
 <p align="center">
