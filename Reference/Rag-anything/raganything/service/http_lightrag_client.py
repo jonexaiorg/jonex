@@ -58,6 +58,7 @@ class TrackStatus:
     doc_ids: list[str] = field(default_factory=list)
     error: str | None = None
     doc_metadata: dict | None = None  # [jonex] P0-1.2: per-document metadata for dup detection
+    empty: bool = False  # [jonex] orphan detection: true when track has 0 documents
 
 
 @dataclass
@@ -246,17 +247,31 @@ class HttpLightRagClient:
 
     async def _delete(
         self, path: str, tenant_id: str, kb_id: str, body: dict | None = None,
+        *, document_id: str = "", trace_id: str = "",
     ) -> dict:
         """DELETE to :9621 with circuit breaker, retry, and error mapping.
 
         httpx 的 post/get 不支持 DELETE，需用 request("DELETE", ...) 才能带 body。
         LightRAG 的 /documents/delete_document 要求 DELETE 方法 + doc_ids 列表 body，
         用 POST 会被拒 405（对齐 v1 LightRAGServerClient._client.request("DELETE", ...)）。
+
+        [jonex] R4：携带 X-Jonex-* 计量头（scene=lightrag_rebuild），使 LightRAG
+        中间件在删除/重建路径能正确归因 LLM 调用（不再误记为 lightrag_query）。
         """
         if not self._breaker.allow():
             raise LightRAGUnavailableError("LightRAG temporarily unavailable (circuit breaker open)")
 
         headers = self._headers(tenant_id, kb_id)
+        # [jonex] R4：delete/rebuild 计量头 —— scene=lightrag_rebuild 区分于查询/入库
+        headers["X-Jonex-Scene"] = "lightrag_rebuild"
+        if tenant_id:
+            headers["X-Jonex-Tenant-Id"] = tenant_id
+        if kb_id:
+            headers["X-Jonex-Kb-Id"] = kb_id
+        if document_id:
+            headers["X-Jonex-Doc-Id"] = document_id
+        if trace_id:
+            headers["X-Jonex-Trace-Id"] = trace_id
         url = f"{self.base_url}{path}"
 
         last_exc: Exception | None = None
@@ -407,8 +422,10 @@ class HttpLightRagClient:
         """
         documents = data.get("documents", []) or []
         if not documents:
-            # track_id not yet registered / no docs recorded → keep polling
-            return TrackStatus(state="pending")
+            # [jonex] orphan detection: track_id not yet registered / no docs
+            # recorded → keep polling, but flag as empty so batch_track_status
+            # can detect orphan tracks after consecutive empty rounds.
+            return TrackStatus(state="pending", empty=True)
 
         statuses = [
             {
@@ -456,6 +473,10 @@ class HttpLightRagClient:
             (terminal_map, pending_map)
               - terminal_map: track_id → TrackStatus (state in {completed, failed})
               - pending_map:  track_id → TrackStatus (state in {pending, processing})
+
+        [jonex] orphan detection (§4.3): tracks that return total_count=0 for
+        consecutive rounds are detected as orphans and released as benign
+        (state=completed, empty=True) instead of waiting for per-chunk timeout.
         """
         if not track_ids:
             return {}, {}
@@ -468,6 +489,10 @@ class HttpLightRagClient:
 
         # [jonex] Semaphore 限流：大文档数百 chunk 时避免同时建数百 HTTP 连接
         poll_sem = asyncio.Semaphore(self._track_poll_concurrency)
+
+        # [jonex] orphan detection: consecutive zero-doc rounds per track_id
+        orphan_rounds = int(os.getenv("RAG_ORPHAN_DETECTION_ROUNDS", "15"))
+        _zero_doc_counter: dict[str, int] = {}
 
         async def _poll_one(tid: str) -> TrackStatus:
             async with poll_sem:
@@ -489,11 +514,31 @@ class HttpLightRagClient:
             for tid, result in zip(tasks.keys(), results):
                 if isinstance(result, Exception):
                     logger.warning(f"batch_track_status: poll {tid} error: {result}")
+                    # [jonex] orphan detection: errors don't reset counter, keep tracking
                     if over_per_track:
                         pending[tid] = TrackStatus(state="timeout", error="Per-chunk polling timeout")
+                        _zero_doc_counter.pop(tid, None)
                     else:
                         still_remaining.add(tid)
                     continue
+                # ── [jonex] orphan detection: tracks with 0 documents for N
+                # consecutive rounds are orphan track_ids.  Release as benign
+                # (completed with empty doc_ids) instead of holding until timeout.
+                if getattr(result, 'empty', False):
+                    _zero_doc_counter[tid] = _zero_doc_counter.get(tid, 0) + 1
+                    if _zero_doc_counter[tid] >= orphan_rounds:
+                        logger.info(
+                            "batch_track_status: %s orphan after %d empty rounds → releasing",
+                            tid, orphan_rounds,
+                        )
+                        terminal[tid] = TrackStatus(state="completed", empty=True)
+                        pending.pop(tid, None)
+                        _zero_doc_counter.pop(tid, None)
+                        continue
+                else:
+                    _zero_doc_counter.pop(tid, None)
+                # ── [jonex] orphan detection end ────────────────────────────
+
                 if result.state in ("completed", "failed"):
                     terminal[tid] = result
                     pending.pop(tid, None)  # [jonex] 终态 track 从 pending 剔除，避免脏残留误判 timeout
@@ -555,7 +600,7 @@ class HttpLightRagClient:
             try:
                 data = await self._delete(
                     "/documents/delete_document", tenant_id, kb_id, body=body,
-                )
+                )  # [jonex] R4: single-doc delete, tenant/kb in headers for metering
             except LightRAGError as e:
                 if e.code == 404:
                     return False
@@ -595,8 +640,9 @@ class HttpLightRagClient:
 
     async def delete_docs(
         self, doc_ids: list[str], *, tenant_id: str, kb_id: str,
+        document_id: str = "", trace_id: str = "",
     ) -> dict:
-        """[jonex] 2-A：批量删除——一次 DELETE /documents/delete_document 传全部 doc_ids。
+        """[jonex] 2-A + R4：批量删除——一次 DELETE /documents/delete_document 传全部 doc_ids。
 
         LightRAG 的 background_delete_documents 本就 loop doc_ids，在**单个 busy 会话**内
         连删全部；相比逐个 id 各自抢 busy 锁被拒，大幅减少 busy 拒绝与抢锁开销。
@@ -606,6 +652,8 @@ class HttpLightRagClient:
           - 404（workspace 内查无）→ 视为已删除，accepted=全部；
           - busy 重试耗尽 → 抛 LightRAGError(503)，调用方保留 pending 待下次/兜底。
         真正的完成确认由上层 _poll_old_ids_gone 轮询残留 doc 负责（deletion_started 仅代表受理）。
+
+        [jonex] R4：透传 document_id + trace_id 到 _delete，注入 X-Jonex-* 计量头。
         """
         ids = [d for d in (doc_ids or []) if d]
         if not ids:
@@ -629,6 +677,7 @@ class HttpLightRagClient:
             try:
                 data = await self._delete(
                     "/documents/delete_document", tenant_id, kb_id, body=body,
+                    document_id=document_id, trace_id=trace_id,
                 )
             except LightRAGError as e:
                 if e.code == 404:

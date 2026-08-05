@@ -44,6 +44,7 @@ def _client():
         SecretKey=secret_key,
         Token=None,  # 永久密钥不传；临时密钥再注入
         Scheme="https",
+        Timeout=300,  # 大文件上传/下载需要更长时间（默认 30s）
     )
     return CosS3Client(cfg)
 

@@ -33,6 +33,10 @@ from raganything.callbacks import ProcessingCallback
 from raganything.config import RAGAnythingConfig
 from raganything.pipeline.base import PipelineContext as PipelineCtx
 from raganything.service.model_factory import ModelFactory
+from raganything.service.jonex_metering_ctx import (  # [jonex] Gap A contextvar
+    set_ingest_ctx,
+    reset_ingest_ctx,
+)
 from raganything.service.models import (
     CancelTaskResponse,
     CreateTaskRequest,
@@ -508,8 +512,13 @@ class ProgressTrackingCallback(ProcessingCallback):
             step_name="done", step_detail="Complete",
             elapsed_seconds=elapsed,
         )
-        self._push_stage("done", "完成", "任务处理完毕")
-        self._close_stage()
+        # [jonex] §11 缺口 A：先关当前活跃 stage（push_chunks，由 on_push_chunks_start 打开），
+        # 保证 push_chunks 有 ended_at/elapsed_seconds，再 push done（pipeline done）。
+        # 注意：管道中 parse/text_insert/multimodal 已由各自的 on_*_complete 逐一 close，
+        # 此处 _close_stage() 唯一定位的是 push_chunks 的未关闭 record。
+        self._close_stage()  # closes push_chunks（当前活跃 stage）
+        self._push_stage("pipeline_done", "完成", "pipeline 收尾")
+        self._close_stage()  # closes pipeline_done
         # Store doc_id for result summary (picked up by _execute_pipeline)
         self._task.result_summary = ResultSummary(
             doc_id=doc_id,
@@ -536,6 +545,84 @@ def _elapsed_seconds(start: datetime | None, end: datetime | None) -> float:
     if start is not None and end is not None:
         return (end - start).total_seconds()
     return 0.0
+
+
+# ── v2 ingest_timing logger ────────────────────────────────────────────
+# [jonex] §11 增补：把 v2 task.timeline 各 stage 的 elapsed_seconds 摊平成
+# {stage}_ms + worker_total_ms，打一条 event=ingest_timing 结构化日志
+#（message 内嵌 + extra 双写，对齐 §3.4 A 方案甲）。
+
+_V2_TIMING_STAGES = frozenset({
+    "created", "queued", "parse", "text_insert", "multimodal",
+    "push_chunks", "ontology_extract", "pipeline_done",
+})
+
+# [jonex] P1-1：created/queued 是排队等待，不算入 worker 端到端耗时
+_QUEUE_KEYS = frozenset({"created", "queued"})
+
+
+def _log_ingest_timing_v2(task, status: str, *, force_ontology_only: bool = False, error: str = "") -> None:
+    """Log v2 ingest_timing structured log from task.timeline stage timings.
+
+    Args:
+        task: TaskInfo with timeline populated.
+        status: ``completed`` / ``failed`` / ``cancelled``.
+        force_ontology_only: True when execution_mode==ontology_only.
+        error: failure reason for failed/cancelled paths.
+    """
+    try:
+        from jonex_core.common.timing import timing_enabled
+    except ImportError:
+        return  # graceful: jonex_core not on sys.path
+
+    if not timing_enabled():
+        return
+
+    # [jonex] §11 缺口 D：失败/cancel 路径下回调不触发的 stage 没有 ended_at，
+    # 此处兜底 close，确保"卡在哪个阶段"数据不丢失。
+    now = datetime.now(timezone.utc)
+    for s in (task.timeline or []):
+        if s.ended_at is None and s.started_at is not None:
+            s.ended_at = now
+            s.elapsed_seconds = (now - s.started_at).total_seconds()
+
+    stages: dict = {}
+    worker_total_s = 0.0
+    for s in (task.timeline or []):
+        stage_name = s.stage
+        if not stage_name or stage_name not in _V2_TIMING_STAGES:
+            continue
+        try:
+            secs = float(s.elapsed_seconds or 0)
+        except (TypeError, ValueError):
+            secs = 0.0
+        stages[f"{stage_name}_ms"] = int(secs * 1000)
+        # [jonex] P1-1：created/queued 是排队，不算入 worker 端到端
+        if stage_name not in _QUEUE_KEYS:
+            worker_total_s += secs
+    worker_total_ms = int(worker_total_s * 1000)
+
+    # message 内嵌关键数字供 stdout/grep（方案甲）
+    sorted_parts = " ".join(f"{k}={v}" for k, v in sorted(stages.items()))
+    logger.info(
+        "ingest_timing pipeline_version=v2 task=%s status=%s"
+        " force_ontology_only=%s worker_total_ms=%s error=%s %s",
+        task.task_id, status, force_ontology_only,
+        worker_total_ms or "0", error or "", sorted_parts,
+        extra={
+            "event": "ingest_timing",
+            "pipeline_version": "v2",
+            "task_id": task.task_id,
+            "tenant_id": getattr(task, "tenant_id", ""),
+            "knowledge_base_id": getattr(task, "kb_id", ""),
+            "document_id": getattr(task, "document_id", ""),
+            "status": status,
+            "force_ontology_only": force_ontology_only,
+            "worker_total_ms": worker_total_ms,
+            "error": error,
+            **stages,
+        },
+    )
 
 
 # ── TaskManager ──────────────────────────────────────────────────────
@@ -1134,17 +1221,38 @@ class TaskManager:
         ctx.prompt_overrides = self._resolve_task_prompt_overrides(task)
         ctx.started_at = time.time()
 
+        # [jonex] Gap A2: 设置入库计量 contextvar，使 driver + fallback 闭包能
+        # 读到逐任务变化的 doc_id/trace_id（tenant/kb 由 build 时静态兜底）。
+        # contextvar 在 asyncio.create_task 时复制进子 task，并发入库不串租户。
+        _ingest_token = set_ingest_ctx(
+            tenant_id=task.tenant_id,
+            kb_id=task.kb_id,
+            doc_id=task.document_id or "",
+            trace_id=task.task_id,
+        )
+
         doc_id = None
         try:
             # Check cancellation before pipeline
             if handle.cancel_event.is_set():
                 raise TaskCancelledError()
 
-            # [jonex] 阶段4：reparse_strict 解析前快照权威 old_ids（PG 传入 ∪ LightRAG 现查），
-            # 用于推新成功后按差集 old−new 收敛旧 doc；查询失败即终止 reparse。
+            # [jonex] R1-b：reparse_strict 确定性替换 —— 先删全量旧 doc，再推全量新 chunk。
+            # 旧 doc 由 document_id 精确确定（PG 传入 ∪ LightRAG 按 document_id 现查），
+            # 不再依赖内容哈希的 old−new 差集（根除非确定性全量删除风暴的源头）。
+            # 删除失败即终止 reparse（不残留新旧混合）。
             if task.execution_mode == "reparse_strict":
                 task.old_rag_doc_ids = await self._snapshot_old_doc_ids(task)
                 self._repo.save(task)
+                old_ids = set(task.old_rag_doc_ids or [])
+                if old_ids:
+                    converged = await self._reparse_delete_all_old(task)
+                    if not converged:
+                        self._fail_task(
+                            task, ErrorCode.LIGHTRAG_ERROR,
+                            "reparse 旧数据删除未收敛（LightRAG 删除未完成），请重试",
+                        )
+                        return
 
             # Run HTTP pipeline: parse → multimodal → push_chunks
             doc_id = await self._pipeline_executor.process_document_complete(
@@ -1211,22 +1319,7 @@ class TaskManager:
 
                 task.result_summary = summary
 
-                # [jonex] 阶段4：reparse_strict 推新全部成功后，按差集 old−new 收敛旧 doc
-                # （仅 LightRAG；Neo4j 清旧+写新由 KB 对账 _handle_completed 负责）。
-                # 同内容重解析 new==old → 差集空 → 不误删。删除后轮询确认旧 doc 不可见，
-                # 再进入本体抽取，避免读到新旧并集（P0-3）。
-                if task.execution_mode == "reparse_strict":
-                    task.new_rag_doc_ids = list(ctx.collected_doc_ids)
-                    converged = await self._reparse_converge_old(task)
-                    if not converged:
-                        # [jonex] review-fix：旧 doc 未确认删净 → 判失败（current_step 保持 cleanup），
-                        # 不进入本体抽取、不置 COMPLETED，避免旧数据残留却暴露 READY（P0-3）。
-                        # KB 对账 3-A 动态超时会据 cleanup_total 兜底判死、前端可见可重传。
-                        self._fail_task(
-                            task, ErrorCode.LIGHTRAG_ERROR,
-                            "reparse 严格收敛失败：旧 doc 未确认删净（LightRAG 删除未收敛），请重试",
-                        )
-                        return
+                # [jonex] R1-b：旧 doc 已在推前删除，此处无需 converge。
 
                 # ── Ontology extraction (by document_id filter) ──
                 # [jonex] #5: all-duplicated guard — skip ontology when every chunk
@@ -1253,6 +1346,9 @@ class TaskManager:
                 task.progress = 1.0
                 task.current_step = "done"
 
+                # [jonex] §11 v2 ingest_timing 结构化日志（成功路径）
+                _log_ingest_timing_v2(task, "completed", force_ontology_only=False)
+
                 logger.info(
                     f"Task {task.task_id} completed (HTTP mode): doc_id={doc_id} "
                     f"entities={summary.entities} chunks={summary.chunks} "
@@ -1270,11 +1366,14 @@ class TaskManager:
                 reason = getattr(ctx, "error", None) or (
                     "Pipeline returned no doc_id (may indicate internal error)"
                 )
-                # [jonex] 阶段4：reparse_strict 推新失败 → 补偿删除本次已产生的 new−old，
-                # 旧数据完整保留、不残留半份新数据（P0-2）。
+                # [jonex] R1-b：reparse_strict 旧数据已在推前删除，推新失败无 compensate。
+                # 旧数据不可恢复，需用户重新上传源文件触发入库。
                 if task.execution_mode == "reparse_strict":
-                    await self._reparse_compensate(task, ctx)
+                    reason = "reparse 推新失败（旧数据已删除，请重新上传文档）: " + reason
                 self._fail_task(task, ErrorCode.UNKNOWN, reason)
+                # [jonex] §11 v2 ingest_timing 结构化日志（失败路径：doc_id=None）
+                _log_ingest_timing_v2(task, "failed", force_ontology_only=False,
+                                     error=getattr(task, "error_message", ""))
         except TaskCancelledError:
             # ── Cancel: save collected doc_ids, mark cancelled ──
             task.lightrag_doc_ids = list(ctx.collected_doc_ids)
@@ -1285,13 +1384,11 @@ class TaskManager:
             # 复位提前置位的 ontology_status，避免 FAILED 任务悬空在 extracting
             if task.ontology_status == "extracting":
                 task.ontology_status = "pending"
-            # [jonex] 阶段4：reparse_strict 取消 → 同样补偿删除 new−old
-            if task.execution_mode == "reparse_strict":
-                try:
-                    await self._reparse_compensate(task, ctx)
-                except Exception:
-                    logger.warning("reparse compensate on cancel failed task=%s", task.task_id, exc_info=True)
+            # [jonex] R1-b：reparse_strict 旧数据已在推前删除，取消无 compensate。
             self._repo.save(task)
+            # [jonex] §11 v2 ingest_timing 结构化日志（取消路径）
+            _log_ingest_timing_v2(task, "cancelled", force_ontology_only=False,
+                                 error="task_cancelled")
             raise
         except Exception as e:
             # [jonex] #6: persist collected doc_ids even on failure
@@ -1304,16 +1401,16 @@ class TaskManager:
             # 复位提前置位的 ontology_status，避免 FAILED 任务悬空在 extracting
             if task.ontology_status == "extracting":
                 task.ontology_status = "pending"
-            # [jonex] 阶段4：reparse_strict 异常 → 补偿删除 new−old（best-effort）
-            if task.execution_mode == "reparse_strict":
-                try:
-                    await self._reparse_compensate(task, ctx)
-                except Exception:
-                    logger.warning("reparse compensate on error failed task=%s", task.task_id, exc_info=True)
+            # [jonex] R1-b：reparse_strict 旧数据已在推前删除，异常无 compensate。
             self._repo.save(task)
+            # [jonex] §11 v2 ingest_timing 结构化日志（异常路径：含失败前已完成阶段的耗时）
+            _log_ingest_timing_v2(task, "failed", force_ontology_only=False,
+                                 error=str(e)[:200])
             logger.error(f"Pipeline error for {task.task_id}: {e}\n{traceback.format_exc()}")
             raise
         finally:
+            # [jonex] Gap A2: 还原 contextvar，避免污染同一事件循环的下一任务
+            reset_ingest_ctx(_ingest_token)
             self._pipeline_executor.callback_manager.unregister(progress_cb)
             task.updated_at = datetime.now(timezone.utc)
             self._repo.save(task)
@@ -1361,53 +1458,44 @@ class TaskManager:
             ) from e
         return list(old_ids)
 
-    async def _reparse_converge_old(self, task: TaskInfo) -> bool:
-        """推新全部成功后按差集 old−new 收敛旧 doc，进入 cleanup 状态机；删净后轮询读一致性。
+    async def _reparse_delete_all_old(self, task: TaskInfo) -> bool:
+        """[jonex] R1-b：推新前删全文档的全部旧 LightRAG doc（按 document_id），确定性替换。
 
-        返回是否已收敛（旧 doc 确认从 LightRAG 删净）：
-        - True：无需删 / 已删净 → 调用方可继续本体抽取并置 COMPLETED；
-        - False：轮询超时仍有残留 → 保持 current_step="cleanup"、把 delete_pending 恢复为残留，
-          交调用方判失败，由 KB 对账 3-A 动态超时兜底（避免旧数据残留却暴露 READY，P0-3）。
+        删除全部 old_rag_doc_ids（而非 old−new 差集），从源头消除「内容非确定 →
+        old−new ≈ old → 全量删除风暴」。删除后轮询确认旧 doc 不可见再继续推新。
+
+        返回：
+        - True：无需删 / 已删净 → 调用方可继续 parse+push；
+        - False：轮询超时仍有残留 → 保持 current_step="cleanup"，交调用方判失败 +
+          KB 对账 3-A 动态超时兜底。
         """
         old = set(task.old_rag_doc_ids or [])
-        new = set(task.new_rag_doc_ids or [])
-        delete_set = old - new
-        if not delete_set:
+        if not old:
             return True
         task.current_step = "cleanup"
-        task.delete_pending_ids = list(delete_set)
-        task.cleanup_total = len(delete_set)  # [jonex] 3-A：记录初始待删总量
+        task.delete_pending_ids = list(old)
+        task.cleanup_total = len(old)  # [jonex] 3-A：记录初始待删总量
         self._repo.save(task)
         await self._run_cleanup(task)
-        # 读一致性（P0-3 option a）：轮询确认旧 doc 不可见，再进入本体抽取
-        residual = await self._poll_old_ids_gone(task, delete_set)
+        # 读一致性（P0-3 option a）：轮询确认旧 doc 不可见，再进入推新
+        residual = await self._poll_old_ids_gone(task, old)
         if residual:
-            # [jonex] review-fix：poll 超时残留 → 不切 done、不暴露 READY；
-            # 恢复 pending 为真实残留并保持 cleanup，让调用方判失败 + 3-A 兜底。
             task.delete_pending_ids = list(residual)
             task.current_step = "cleanup"
             self._repo.save(task)
             logger.warning(
-                "[jonex] reparse converge 未收敛 task=%s 残留=%d，保持 cleanup 交 3-A 兜底",
+                "[jonex][R1-b] reparse 删旧未收敛 task=%s 残留=%d，保持 cleanup 交 3-A 兜底",
                 task.task_id, len(residual),
             )
             return False
-        task.current_step = "done"
+        task.delete_pending_ids = []
+        task.current_step = ""
         self._repo.save(task)
+        logger.info(
+            "[jonex][R1-b] reparse 删旧完成 task=%s 已删=%d",
+            task.task_id, len(old),
+        )
         return True
-
-    async def _reparse_compensate(self, task: TaskInfo, ctx) -> None:
-        """[jonex] 阶段4 失败补偿：删除本次已产生的 new−old，使旧数据完整保留。"""
-        old = set(task.old_rag_doc_ids or [])
-        produced = set(getattr(ctx, "collected_doc_ids", []) or []) | set(task.new_rag_doc_ids or [])
-        compensate = produced - old
-        if not compensate:
-            return
-        task.current_step = "cleanup"
-        task.compensate_pending_ids = list(compensate)
-        task.cleanup_total = len(compensate)  # [jonex] 3-A：记录初始待删总量
-        self._repo.save(task)
-        await self._run_cleanup(task)
 
     async def _run_cleanup(self, task: TaskInfo) -> None:
         """删除 delete_pending_ids（差集删旧）与 compensate_pending_ids（失败补偿）。
@@ -1429,6 +1517,7 @@ class TaskManager:
             try:
                 resp = await self._http_client.delete_docs(
                     ids, tenant_id=task.tenant_id, kb_id=task.kb_id,
+                    document_id=task.document_id or "", trace_id=task.task_id,
                 )
                 status = str((resp or {}).get("status", "")).lower()
                 # deletion_started / 未知非 busy 状态 → 整批已受理，清空 pending
@@ -1485,40 +1574,40 @@ class TaskManager:
         return residual
 
     async def _resume_cleanup(self, task: TaskInfo) -> None:
-        """[jonex] 阶段4 P0-J：容器重启后只恢复 cleanup（续删剩余 doc），不重跑解析管线。
+        """[jonex] R1-b P0-J：容器重启后只恢复 cleanup（续删剩余旧 doc），不重跑解析管线。
 
-        - compensate_pending_ids 非空 → 失败补偿路径：删净后置 FAILED。
-        - 否则 → 差集删旧收敛路径：删净 + 轮询读一致性后置 COMPLETED（KB 对账落 Neo4j）。
+        R1-b 下所有待删条目均为旧 doc（推前全删），不再区分 compensate/converge。
+        删净 + 轮询读一致性后置 COMPLETED（KB 对账落 Neo4j）。
         """
         try:
-            is_compensation = bool(task.compensate_pending_ids)
             await self._run_cleanup(task)
-            if is_compensation:
-                self._fail_task(
-                    task, ErrorCode.LIGHTRAG_ERROR,
-                    "reparse 严格推送失败，已补偿清理本次新数据（旧数据保留）",
-                )
-            else:
-                delete_set = set(task.old_rag_doc_ids or []) - set(task.new_rag_doc_ids or [])
-                residual = await self._poll_old_ids_gone(task, delete_set)
-                if residual:
-                    # [jonex] review-fix：重启续删后旧 doc 仍未确认删净 → 判失败，
-                    # 保持 current_step=cleanup（_fail_task 不重置），由 KB 对账 3-A 动态超时兜底，
-                    # 不置 COMPLETED，避免旧数据残留却暴露 READY（P0-3）。
-                    task.delete_pending_ids = list(residual)
-                    self._fail_task(
-                        task, ErrorCode.LIGHTRAG_ERROR,
-                        "reparse 严格收敛失败：旧 doc 未确认删净（续删仍残留），请重试",
-                    )
-                    logger.warning(
-                        "[jonex] resume converge 未收敛 task=%s 残留=%d，判失败交 3-A 兜底",
-                        task.task_id, len(residual),
-                    )
-                    return
-                task.current_step = "done"
+            # R1-b：全部 old_rag_doc_ids 即为待删集合
+            delete_set = set(task.old_rag_doc_ids or [])
+            if not delete_set:
                 task.status = TaskStatus.COMPLETED
                 task.completed_at = datetime.now(timezone.utc)
+                task.current_step = "done"
                 self._repo.save(task)
+                return
+            residual = await self._poll_old_ids_gone(task, delete_set)
+            if residual:
+                # 重启续删后旧 doc 仍未确认删净 → 判失败，
+                # 保持 current_step=cleanup（_fail_task R5-c 检测 pending 非空不复位），
+                # 由 KB 对账 3-A 动态超时兜底。
+                task.delete_pending_ids = list(residual)
+                self._fail_task(
+                    task, ErrorCode.LIGHTRAG_ERROR,
+                    "reparse 旧数据删除未收敛（续删仍残留），请重试",
+                )
+                logger.warning(
+                    "[jonex][R1-b] resume 删旧未收敛 task=%s 残留=%d，判失败交 3-A 兜底",
+                    task.task_id, len(residual),
+                )
+                return
+            task.current_step = "done"
+            task.status = TaskStatus.COMPLETED
+            task.completed_at = datetime.now(timezone.utc)
+            self._repo.save(task)
         except Exception as e:
             logger.error(f"Resume cleanup failed for {task.task_id}: {e}")
 
@@ -1538,6 +1627,9 @@ class TaskManager:
                 task, ErrorCode.CONFIG_INVALID,
                 "ontology_only 任务缺少 compiled schema，无法归类",
             )
+            # [jonex] §11 v2 ingest_timing（ontology_only 失败路径）
+            _log_ingest_timing_v2(task, "failed", force_ontology_only=True,
+                                 error=getattr(task, "error_message", ""))
             return
 
         # 轻量 ctx：content_list 为空，_run_ontology_extraction 按 document_id 读 LightRAG
@@ -1562,6 +1654,8 @@ class TaskManager:
         task.progress = 1.0
         task.current_step = "done"
         self._repo.save(task)
+        # [jonex] §11 v2 ingest_timing（ontology_only 成功路径）
+        _log_ingest_timing_v2(task, "completed", force_ontology_only=True)
         logger.info(
             f"Task {task.task_id} completed (ontology_only): "
             f"doc={task.document_id} ontology_status={task.ontology_status}"
@@ -2014,6 +2108,18 @@ class TaskManager:
         task.updated_at = datetime.now(timezone.utc)
 
     def _fail_task(self, task: TaskInfo, error_code: ErrorCode, message: str):
+        # [jonex] R5-c：原子复位 current_step —— cleanup 完成（pending 为空）后
+        # 退出 cleanup 状态，让 KB 对账立即收尾、不干等。校验 pending 双列表
+        # 均空 + current_step=="cleanup" 才复位，避免 pending 未清时误复位。
+        if getattr(task, "current_step", "") == "cleanup":
+            dp = list(getattr(task, "delete_pending_ids", []) or [])
+            cp = list(getattr(task, "compensate_pending_ids", []) or [])
+            if not dp and not cp:
+                task.current_step = ""
+                logger.info(
+                    "[jonex][R5-c] cleanup pending 已空，复位 current_step task=%s",
+                    task.task_id,
+                )
         task.status = TaskStatus.FAILED
         task.error_code = error_code
         task.error_message = message

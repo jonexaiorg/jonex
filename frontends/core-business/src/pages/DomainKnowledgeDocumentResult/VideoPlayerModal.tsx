@@ -5,12 +5,23 @@ import { Modal } from 'antd';
 interface VideoPlayerModalProps {
   open: boolean;
   videoUrl: string;
+  timeStart?: number | null;
   onClose: () => void;
 }
 
-export default function VideoPlayerModal({ open, videoUrl, onClose }: VideoPlayerModalProps) {
+export default function VideoPlayerModal({ open, videoUrl, timeStart, onClose }: VideoPlayerModalProps) {
   const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // 视频加载后将 currentTime 定位到 timeStart，null 则从头开始
+  const handleMetadataLoaded = () => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = timeStart ?? 0;
+    }
+  };
+
+  // 用 #t= 片段让浏览器原生支持定位（CDN/proxy 兼容时最可靠）
+  const srcUrl = timeStart != null ? `${videoUrl}#t=${timeStart}` : videoUrl;
 
   return (
     <Modal
@@ -26,6 +37,7 @@ export default function VideoPlayerModal({ open, videoUrl, onClose }: VideoPlaye
         ref={videoRef}
         controls
         autoPlay
+        onLoadedMetadata={handleMetadataLoaded}
         style={{
           width: '100%',
           height: 400,
@@ -33,7 +45,7 @@ export default function VideoPlayerModal({ open, videoUrl, onClose }: VideoPlaye
           display: 'block',
         }}
       >
-        <source src={videoUrl} />
+        <source src={srcUrl} />
       </video>
     </Modal>
   );

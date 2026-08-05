@@ -179,6 +179,26 @@ class MongoKVStorage(BaseKVStorage):
         existing_ids = {str(x["_id"]) async for x in cursor}
         return keys - existing_ids
 
+    # ── [jonex] 按 doc= 锚点列出 chunks ──────────────────────────
+    async def get_chunks_by_doc_id(
+        self, doc_id: str, *, limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """List chunks whose file_path contains ``doc=<doc_id>`` anchor."""
+        if not doc_id:
+            return []
+        pattern = f"doc={doc_id}"
+        cursor = self._data.find({"file_path": {"$regex": pattern}})
+        out: list[dict[str, Any]] = []
+        async for doc in cursor:
+            doc.setdefault("create_time", 0)
+            doc.setdefault("update_time", 0)
+            doc["chunk_id"] = str(doc["_id"])
+            out.append(doc)
+            if len(out) >= limit:
+                break
+        out.sort(key=lambda c: c.get("chunk_order_index") or 0)
+        return out
+
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         logger.debug(f"[{self.workspace}] Inserting {len(data)} to {self.namespace}")
         if not data:

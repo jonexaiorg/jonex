@@ -1,6 +1,6 @@
-import React, { useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Input, Modal, Select, message } from 'antd';
+import { Checkbox, Form, Input, Modal, Select, Switch, message } from 'antd';
 import { EditOutlined, PlusCircleOutlined } from '@ant-design/icons';
 import { createService, updateService } from '../../api/domainService';
 import type { DomainServiceItem, DomainServiceFormData, KnowledgeBaseOption } from '../../types/domainService';
@@ -25,56 +25,44 @@ const ServiceFormModal = forwardRef<ServiceFormModalHandle, ServiceFormModalProp
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<DomainServiceItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  const [formName, setFormName] = useState('');
-  const [formDomainType, setFormDomainType] = useState('');
-  const [formStatus, setFormStatus] = useState(true);
-  const [formKbIds, setFormKbIds] = useState<string[]>([]);
+  const [form] = Form.useForm();
 
   useImperativeHandle(
     ref,
     () => ({
       openCreate: () => {
         setEditing(null);
-        setFormName('');
-        setFormDomainType('');
-        setFormStatus(true);
-        setFormKbIds([]);
+        form.setFieldsValue({ name: '', domain_type: undefined, status: true, kb_ids: [] });
         setFormOpen(true);
       },
       openEdit: (item: DomainServiceItem) => {
         setEditing(item);
-        setFormName(item.name);
-        setFormDomainType(item.domain_type || '');
-        setFormStatus(item.status === 'active');
-        setFormKbIds(item.kb_ids || []);
+        form.setFieldsValue({
+          name: item.name,
+          domain_type: item.domain_type || undefined,
+          status: item.status === 'active',
+          kb_ids: item.kb_ids || [],
+        });
         setFormOpen(true);
       },
     }),
-    [],
+    [form],
   );
 
-  const toggleKb = useCallback((kbId: string) => {
-    setFormKbIds((prev) => (prev.includes(kbId) ? prev.filter((id) => id !== kbId) : [...prev, kbId]));
-  }, []);
-
-  const handleSave = useCallback(async () => {
-    if (!formName.trim()) {
-      message.warning(t('domainManagement.nameRequired'));
-      return;
-    }
-    if (!spaceId) {
-      message.warning(t('domainManagement.spaceRequired'));
-      return;
-    }
-    setSubmitting(true);
+  const handleSave = async () => {
     try {
+      const values = await form.validateFields();
+      if (!spaceId) {
+        message.warning(t('domainManagement.spaceRequired'));
+        return;
+      }
+      setSubmitting(true);
       const data: DomainServiceFormData = {
-        name: formName.trim(),
+        name: values.name.trim(),
         space_id: spaceId!,
-        domain_type: formDomainType || undefined,
-        status: formStatus ? 'active' : 'inactive',
-        kb_ids: formKbIds,
+        domain_type: values.domain_type || undefined,
+        status: values.status ? 'active' : 'inactive',
+        kb_ids: values.kb_ids || [],
       };
       if (editing) {
         await updateService(editing.id, data);
@@ -85,11 +73,12 @@ const ServiceFormModal = forwardRef<ServiceFormModalHandle, ServiceFormModalProp
       setFormOpen(false);
       onSaved();
     } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return;
       message.error(err instanceof Error ? err.message : t('common.saveFailed'));
     } finally {
       setSubmitting(false);
     }
-  }, [formName, spaceId, formDomainType, formStatus, formKbIds, editing, onSaved, t]);
+  };
 
   const typeOptions = [
     { value: 'retrieval', label: t('domainManagementServices.typeRetrieval') },
@@ -120,49 +109,41 @@ const ServiceFormModal = forwardRef<ServiceFormModalHandle, ServiceFormModalProp
       width={600}
       destroyOnHidden
     >
-      <div className="yx-form-row">
-        <label>
-          {t('domainManagement.name')} <span style={{ color: '#ef4444' }}>*</span>
-        </label>
-        <Input placeholder={t('rules.placeholder')} value={formName} onChange={(e) => setFormName(e.target.value)} />
-      </div>
-      <div className="yx-form-row">
-        <label>{t('domainManagementServices.columnType')}</label>
-        <Select
-          value={formDomainType || undefined}
-          onChange={(v) => setFormDomainType(v || '')}
-          style={{ width: '100%' }}
-          placeholder={t('domainManagementServices.typePlaceholder')}
-          allowClear
-          options={typeOptions}
-        />
-      </div>
-      <div className="yx-form-row">
-        <label>{t('domainManagement.kb')}</label>
-        <div className="yx-kb-check-list">
-          {availableKbs.length === 0 ? (
-            <span className="yx-kb-tag">{t('domainManagement.noKbAvailable')}</span>
-          ) : (
-            availableKbs.map((kb) => (
-              <label key={kb.id} className="yx-kb-check-item">
-                <input type="checkbox" checked={formKbIds.includes(kb.id)} onChange={() => toggleKb(kb.id)} />
-                {kb.name}
-              </label>
-            ))
-          )}
-        </div>
-        <div className="yx-form-hint">{t('domainManagement.kbHint')}</div>
-      </div>
-      <div className="yx-form-row">
-        <label>{t('domainManagement.status')}</label>
-        <div className="yx-switch-wrap">
-          <label className="yx-switch-label">
-            <input type="checkbox" checked={formStatus} onChange={(e) => setFormStatus(e.target.checked)} />
-            <span className="yx-switch-slider" />
-          </label>
-          <span className="yx-switch-text">{formStatus ? t('status.active') : t('status.inactive')}</span>
-        </div>
-      </div>
+      <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
+        <Form.Item
+          name="name"
+          label={t('domainManagement.name')}
+          rules={[{ required: true, message: t('domainManagement.nameRequired') }]}
+        >
+          <Input placeholder={t('rules.placeholder')} />
+        </Form.Item>
+        <Form.Item name="domain_type" label={t('domainManagementServices.columnType')}>
+          <Select
+            style={{ width: '100%' }}
+            placeholder={t('domainManagementServices.typePlaceholder')}
+            allowClear
+            options={typeOptions}
+          />
+        </Form.Item>
+        <Form.Item name="kb_ids" label={t('domainManagement.kb')}>
+          <Checkbox.Group>
+            <div className="yx-kb-check-list">
+              {availableKbs.length === 0 ? (
+                <span className="yx-kb-tag">{t('domainManagement.noKbAvailable')}</span>
+              ) : (
+                availableKbs.map((kb) => (
+                  <Checkbox key={kb.id} value={kb.id}>
+                    {kb.name}
+                  </Checkbox>
+                ))
+              )}
+            </div>
+          </Checkbox.Group>
+        </Form.Item>
+        <Form.Item name="status" label={t('domainManagement.status')} valuePropName="checked">
+          <Switch checkedChildren={t('status.active')} unCheckedChildren={t('status.inactive')} />
+        </Form.Item>
+      </Form>
     </Modal>
   );
 });

@@ -232,6 +232,11 @@ class CapabilityProxy:
         # LIGHTRAG-WORKSPACE 实现按知识库隔离检索，避免跨库串库。
         if knowledge_base_id:
             params["knowledge_base_id"] = knowledge_base_id
+        # [jonex] Gap B: 透传 trace_id + user_id，使流式查询也带计量维度
+        if request_id:
+            params["trace_id"] = request_id
+        if user_id:
+            params["user_id"] = user_id
 
         # 急切捕获 locale：流式生成器在中间件 reset 后迭代，惰性读会拿到 None
         _locale = LocaleContext.get()

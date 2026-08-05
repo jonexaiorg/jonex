@@ -134,6 +134,39 @@ class JsonKVStorage(BaseKVStorage):
                     results.append(None)
             return results
 
+    # ── [jonex] 按 doc= 锚点列出 chunks ──────────────────────────
+    async def get_chunks_by_doc_id(
+        self, doc_id: str, *, limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """List chunks whose file_path contains ``doc=<doc_id>`` anchor.
+
+        Scans all text_chunks entries in the JSON store and filters by the
+        doc= anchor embedded in each chunk's file_source string.  Each
+        matching chunk carries the full file_source (with tstart=/tend=
+        time-axis metadata for video/audio).
+        """
+        if not doc_id:
+            return []
+        pattern = f"doc={doc_id}"
+        out: list[dict[str, Any]] = []
+        async with self._storage_lock:
+            for chunk_id, raw in self._data.items():
+                if not isinstance(raw, dict):
+                    continue
+                fp = raw.get("file_path", "")
+                if pattern not in fp:
+                    continue
+                chunk = dict(raw)
+                chunk["chunk_id"] = chunk_id
+                chunk.setdefault("create_time", 0)
+                chunk.setdefault("update_time", 0)
+                out.append(chunk)
+                if len(out) >= limit:
+                    break
+        # 按 chunk_order_index 排序
+        out.sort(key=lambda c: c.get("chunk_order_index") or 0)
+        return out
+
     async def filter_keys(self, keys: set[str]) -> set[str]:
         async with self._storage_lock:
             return set(keys) - set(self._data.keys())

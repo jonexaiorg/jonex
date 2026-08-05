@@ -418,6 +418,284 @@ class OntologyCompiler:
         await self._set_cache(tenant_id, knowledge_base_id, compiled.to_dict())
         return compiled.to_dict()
 
+    async def export_compiled_schema_yaml(
+        self,
+        knowledge_base_id: str,
+        tenant_id: str,
+    ) -> dict:
+        """[jonex] Export compiled schema as YAML text.
+
+        Reads the current compiled schema from DB, maps entity_types/relation_types/constraints
+        to ontology_yaml data structures, strips internal tracking fields
+        (source_object_id, source_attribute_id, source_relation_id), and serializes to YAML.
+
+        Returns:
+            dict with keys: filename, yaml_text, warnings
+        """
+        from jonex_core.common.ontology_yaml import (
+            dump_yaml, OntologyYamlDocument, YamlAttribute,
+            YamlConstraint, YamlEntity, YamlRelation, to_yaml_attr_type,
+        )
+
+        tenant_id = require_tenant(tenant_id)
+
+        schema = await self.get_compiled_schema(tenant_id, knowledge_base_id, auto_compile=False)
+        if not schema:
+            raise ResourceNotFoundError(
+                message=translate(
+                    "err.ontology.compiled_schema_not_found",
+                    fallback=f"知识库 {knowledge_base_id} 的编译 schema 不存在，请先绑定模板或初始化 schema",
+                ),
+            )
+
+        warnings: list[str] = []
+
+        # [jonex] Map entity_types → YamlEntity, strip source_object_id and source_attribute_id
+        entities: list[YamlEntity] = []
+        for et in schema.get("entity_types", []):
+            attrs = []
+            for attr in et.get("attributes", []):
+                db_type = (attr.get("type") or "string").strip()
+                yaml_type = to_yaml_attr_type(db_type)
+                if yaml_type != db_type:
+                    warnings.append(
+                        f"entity {et['name']}.{attr['name']}: "
+                        f"attr_type={db_type} → YAML type={yaml_type}"
+                    )
+                attrs.append(YamlAttribute(
+                    name=attr["name"],
+                    display_name=attr.get("display_name"),
+                    description=attr.get("description"),
+                    type=yaml_type,
+                    required=bool(attr.get("required", False)),
+                    is_primary_key=bool(attr.get("is_primary_key", False)),
+                ))
+            entities.append(YamlEntity(
+                name=et["name"],
+                display_name=et.get("display_name"),
+                description=et.get("description"),
+                aliases=et.get("aliases", []),
+                attributes=attrs,
+            ))
+
+        # [jonex] Map relation_types → YamlRelation, strip source_relation_id
+        relations: list[YamlRelation] = []
+        for rt in schema.get("relation_types", []):
+            relations.append(YamlRelation(
+                name=rt["name"],
+                source=rt["source"],
+                target=rt["target"],
+                display_name=rt.get("display_name"),
+                description=rt.get("description"),
+                aliases=rt.get("aliases", []),
+                cardinality=rt.get("cardinality", "custom"),
+            ))
+
+        # [jonex] Map constraints → YamlConstraint, decompose target_code.
+        # 跳过无法分解出 entity/attribute/relation 的约束（纯元数据，无 YAML 语义）。
+        constraints: list[YamlConstraint] = []
+        for ct in schema.get("constraints", []):
+            target_type = ct.get("target_type", "")
+            target_code = ct.get("target_code", "")
+            if not target_type or not target_code:
+                continue
+            entity = None
+            attribute = None
+            relation = None
+            if target_type == "entity":
+                entity = target_code
+            elif target_type == "attribute":
+                parts = target_code.split(".", 1)
+                entity = parts[0] if parts else None
+                attribute = parts[1] if len(parts) > 1 else None
+            elif target_type == "relation":
+                relation = target_code
+            else:
+                continue  # unknown target_type, skip
+
+            constraints.append(YamlConstraint(
+                type=ct.get("constraint_type", "custom"),
+                entity=entity,
+                attribute=attribute,
+                relation=relation,
+                expression=ct.get("expression"),
+                suggestion=ct.get("suggestion"),
+            ))
+
+        disambiguation = schema.get("disambiguation") or {"case_insensitive": True, "alias_merge": True}
+        domain = schema.get("template_domain_id") or schema.get("source_type") or "default"
+
+        doc = OntologyYamlDocument(
+            version=schema.get("schema_version", 1),
+            domain=domain,
+            entity_types=entities,
+            relation_types=relations,
+            constraints=constraints,
+            disambiguation=disambiguation,
+        )
+
+        yaml_text = dump_yaml(doc)
+        filename = f"{knowledge_base_id}_ontology_schema.yaml"
+
+        return {
+            "filename": filename,
+            "yaml_text": yaml_text,
+            "warnings": warnings,
+        }
+
+    async def import_compiled_schema_yaml(
+        self,
+        knowledge_base_id: str,
+        tenant_id: str,
+        yaml_text: str,
+        expected_schema_version: int,
+        dry_run: bool = True,
+    ) -> dict:
+        """[jonex] Import compiled schema from YAML text.
+
+        Parses YAML, converts to compiled schema DTOs, and either returns a summary
+        (dry_run=True) or persists via save_compiled_schema (dry_run=False).
+
+        Returns:
+            dict with keys: dry_run, summary, warnings, errors
+        """
+        from jonex_core.common.ontology_yaml import parse_yaml
+
+        tenant_id = require_tenant(tenant_id)
+
+        # 1. Parse YAML
+        doc, validation = parse_yaml(yaml_text)
+        if doc is None:
+            return {
+                "dry_run": dry_run,
+                "summary": None,
+                "warnings": validation.warnings,
+                "errors": validation.errors,
+            }
+
+        warnings = list(validation.warnings)
+        errors = list(validation.errors)
+
+        # [jonex] Check raw YAML for constraints key presence (distinguishes
+        # "no constraints section" → keep existing vs "empty constraints" → clear)
+        import yaml as _yaml_parser
+        raw_yaml = _yaml_parser.safe_load(yaml_text)
+        has_constraints_key = isinstance(raw_yaml, dict) and "constraints" in raw_yaml
+
+        # [jonex] Build entity index for constraint target_label resolution
+        entity_index: dict[str, dict] = {}
+        for ye in doc.entity_types:
+            entity_index[ye.name] = {
+                "display_name": ye.display_name,
+                "attributes": {a.name: a.display_name for a in ye.attributes},
+            }
+
+        # 2. Convert entities
+        entity_types: list[dict] = []
+        for ye in doc.entity_types:
+            attrs = []
+            for ya in ye.attributes:
+                attrs.append({
+                    "name": ya.name,
+                    "display_name": ya.display_name or ya.name,
+                    "description": ya.description or "",
+                    "type": ya.type,
+                    "required": ya.required,
+                    "is_primary_key": ya.is_primary_key,
+                    "source_attribute_id": None,  # [jonex] strip tracking field
+                })
+            entity_types.append({
+                "name": ye.name,
+                "display_name": ye.display_name or ye.name,
+                "description": ye.description or "",
+                "requirement": "",  # [jonex] default
+                "status": "active",  # [jonex] default
+                "aliases": ye.aliases,
+                "source_object_id": None,  # [jonex] strip tracking field
+                "attributes": attrs,
+            })
+
+        # 3. Convert relations
+        relation_types: list[dict] = []
+        for yr in doc.relation_types:
+            relation_types.append({
+                "name": yr.name,
+                "display_name": yr.display_name or yr.name,
+                "description": yr.description or "",
+                "status": "active",  # [jonex] default
+                "aliases": yr.aliases,
+                "source": yr.source,
+                "target": yr.target,
+                "source_relation_id": None,  # [jonex] strip tracking field
+                "cardinality": yr.cardinality,
+            })
+
+        # 4. Convert constraints
+        constraints: list[dict] = []
+        for yc in doc.constraints:
+            target_type, target_code = _yaml_constraint_target(yc)
+            if not target_type or not target_code:
+                warnings.append(f"跳过无法解析 target 的约束: type={yc.type}")
+                continue
+            target_label = _resolve_constraint_label(yc, entity_index, target_type, target_code)
+            constraint_name = _derive_constraint_name(yc, target_code)
+            constraints.append({
+                "name": constraint_name,
+                "target_type": target_type,
+                "target_code": target_code,
+                "target_label": target_label,
+                "constraint_type": yc.type,
+                "expression": yc.expression or "",
+                "suggestion": yc.suggestion or "",
+            })
+
+        # [jonex] Constraint handling: no section → keep existing; section present → replace
+        final_constraints: Optional[list[dict]] = constraints if has_constraints_key else None
+
+        # Build summary
+        if final_constraints is None:
+            constraint_mode = "keep_existing"
+        elif not constraints:
+            constraint_mode = "clear"
+        else:
+            constraint_mode = "replace"
+
+        summary = {
+            "entity_types_count": len(entity_types),
+            "relation_types_count": len(relation_types),
+            "constraints_count": len(constraints),
+            "constraints_mode": constraint_mode,
+            "schema_version": doc.version,
+            "domain": doc.domain,
+        }
+
+        if dry_run:
+            return {
+                "dry_run": True,
+                "summary": summary,
+                "warnings": warnings,
+                "errors": errors,
+            }
+
+        # 5. Persist via existing save_compiled_schema
+        result = await self.save_compiled_schema(
+            tenant_id=tenant_id,
+            knowledge_base_id=knowledge_base_id,
+            entity_types=entity_types,
+            relation_types=relation_types,
+            constraints=final_constraints,
+            expected_schema_version=expected_schema_version,
+            edited_by=None,
+        )
+
+        return {
+            "dry_run": False,
+            "summary": summary,
+            "warnings": warnings,
+            "errors": errors,
+            "schema_version": result.get("schema_version"),
+        }
+
     async def reseed_from_template(
         self,
         tenant_id: str,
@@ -854,4 +1132,52 @@ class OntologyCompiler:
         return name
 
 
-__all__ = ["OntologyCompiler"]
+# ── YAML import helpers ──────────────────────────────────────────────────
+# [jonex] Convert YamlConstraint → (target_type, target_code) for DB storage
+
+
+def _yaml_constraint_target(yc) -> tuple[str, str]:
+    """[jonex] Derive DB constraint (target_type, target_code) from YamlConstraint."""
+    from jonex_core.common.ontology_yaml import YamlConstraint as _YamlConstraint
+
+    if yc.relation:
+        return ("relation", yc.relation)
+    if yc.entity and yc.attribute:
+        return ("attribute", f"{yc.entity}.{yc.attribute}")
+    if yc.entity:
+        return ("entity", yc.entity)
+    # 无 entity/attribute/relation → 约束缺少 target，不能映射
+    return ("", "")
+
+
+def _resolve_constraint_label(
+    yc, entity_index: dict[str, dict], target_type: str, target_code: str,
+) -> Optional[str]:
+    """[jonex] Resolve a human-readable label for a constraint target."""
+    if target_type == "entity":
+        info = entity_index.get(target_code)
+        return info["display_name"] if info else None
+    if target_type == "attribute":
+        parts = target_code.split(".", 1)
+        if len(parts) == 2:
+            entity_info = entity_index.get(parts[0])
+            if entity_info:
+                return entity_info.get("attributes", {}).get(parts[1]) or parts[1]
+        return None
+    if target_type == "relation":
+        return target_code
+    return None
+
+
+def _derive_constraint_name(yc, target_code: str) -> str:
+    """[jonex] Derive a unique DB constraint name from type and target."""
+    safe_code = target_code.replace(".", "_")
+    return f"{yc.type}_{safe_code}"
+
+
+__all__ = [
+    "OntologyCompiler",
+    "_yaml_constraint_target",
+    "_resolve_constraint_label",
+    "_derive_constraint_name",
+]

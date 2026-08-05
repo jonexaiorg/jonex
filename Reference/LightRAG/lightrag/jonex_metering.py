@@ -98,12 +98,15 @@ def parse_file_source(file_source: Optional[str]) -> dict:
 def build_metering_headers(
     file_source: Optional[str] = None,
     default_scene: str = "lightrag",
+    force_scene: Optional[str] = None,
 ) -> Optional[dict]:
     """构造注入下游（llm-gateway）的 X-Jonex-* 头。
 
     优先级：入库 file_source（若提供）> 在线查询 contextvar。
     - file_source 命中：scene=lightrag_extract（入库抽取）。
     - contextvar 命中：scene 取请求头透传值，缺省用 default_scene。
+    - force_scene 非空时：无视以上所有规则，强制使用 force_scene
+      （用于 rerank 等与查询 LLM 同 task 树但需要独立 scene 分类的场景）。
     - 都没有：返回 None（不注入，gateway 走 auto 兜底）。
     """
     dims = {}
@@ -118,6 +121,9 @@ def build_metering_headers(
         if ctx:
             dims = ctx
             scene = ctx.get("scene") or default_scene
+
+    if force_scene:
+        scene = force_scene
 
     if not dims:
         return None

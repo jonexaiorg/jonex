@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from lightrag.kg.shared_storage import get_namespace_data, get_pipeline_status_lock
 from lightrag.operate import extract_entities, merge_nodes_and_edges
-from lightrag.utils import compute_mdhash_id
+from lightrag.utils import compute_mdhash_id, sanitize_text_for_encoding
 
 from raganything.chunk_utils import apply_chunk_template, sample_frames
 from raganything.event_bus import PipelineEvent
@@ -1020,6 +1020,15 @@ def _inject_ns_token(
     return text + f"\n<!--yx:{ns_hash}-->"
 
 
+def _first_present(primary: dict, fallback: dict, *keys: str):
+    for key in keys:
+        if key in primary and primary[key] is not None:
+            return primary[key]
+        if key in fallback and fallback[key] is not None:
+            return fallback[key]
+    return None
+
+
 def _build_file_source(
     tenant_id: str,
     kb_id: str,
@@ -1129,6 +1138,19 @@ async def _query_doc_status(
     return str(raw).lower()
 
 
+def _expected_doc_id(chunk: dict) -> str:
+    """[jonex] ② push 超时确认：复算 LightRAG 对该 chunk 文本分配的 doc_id。
+
+    口径必须与 LightRAG ``apipeline_enqueue_documents`` 完全一致——
+    ``compute_mdhash_id(sanitize_text_for_encoding(text), prefix="doc-")``
+    （见 Reference/LightRAG/lightrag/lightrag.py），否则查不到对应 doc。
+    用于超时确认阶段直接查该 doc 真实状态，规避 track_id 重推变 dup 后
+    "内容已 processed 却因 track 未确认而假超时（RAG_PUSH_TIMEOUT）" 的问题。
+    """
+    text = chunk.get("text", "") or ""
+    return compute_mdhash_id(sanitize_text_for_encoding(text), prefix="doc-")
+
+
 class PushChunksStage(Stage):
     """HTTP mode: collect all text + multimodal chunks → push to :9621/documents/text.
 
@@ -1148,6 +1170,11 @@ class PushChunksStage(Stage):
         self._track_timeout = float(os.getenv("RAG_TRACK_TIMEOUT_SECONDS", "1800"))   # 全局安全网
         self._per_chunk_timeout = float(os.getenv("RAG_TRACK_PER_CHUNK_TIMEOUT_SECONDS", "900"))
         self._per_chunk_max_retries = int(os.getenv("RAG_TRACK_PER_CHUNK_MAX_RETRIES", "2"))
+        # [jonex] §13.4 item1：超时窗口按 chunk 数动态下限（floor，仅放大不缩小）。
+        # 超大文档（数千 chunk）抽取长尾远超固定 900/1800s → 被误判超时→重推变 dup。
+        # 有效窗口 = clamp(base, SCALE×chunk数, CEIL)；SCALE=0 关闭（回退固定值）。
+        self._track_scale_per_chunk = float(os.getenv("RAG_TRACK_SCALE_PER_CHUNK_SEC", "2"))
+        self._track_scale_ceil = float(os.getenv("RAG_TRACK_SCALE_CEIL_SEC", "10800"))
         self._retry_max = 3
         self._retry_base = 2.0  # seconds
         # [jonex] 1-A：track 终态 failed 的 chunk 也纳入有界重推（复用 per-chunk 重试预算），
@@ -1202,9 +1229,51 @@ class PushChunksStage(Stage):
                 services.logger.warning("PushChunksStage: no chunks to push")
             return StageResult()
 
+        # ── 1.5 Content-based dedup (avoid TOCTOU orphan track_ids) ─
+        # Two chunks with identical text produce the same content_doc_id in
+        # LightRAG.  If pushed concurrently, the TOCTOU race in
+        # apipeline_enqueue_documents (filter_keys vs upsert) can leave orphan
+        # track_ids that poll forever.  Dedup here: only POST once per unique
+        # content, then share the track_id/doc_id across duplicates.
+        content_hash_to_first_idx: dict[str, int] = {}
+        for idx, chunk in enumerate(chunks):
+            text = chunk.get("text", "") or ""
+            if not text:
+                continue
+            content_doc_id = compute_mdhash_id(
+                sanitize_text_for_encoding(text), prefix="doc-"
+            )
+            if content_doc_id not in content_hash_to_first_idx:
+                content_hash_to_first_idx[content_doc_id] = idx
+
+        dedup_skipped = total_chunks - len(content_hash_to_first_idx)
+        dedup_map: dict[int, int] = {}  # duplicate_idx → first_occurrence_idx
+        for idx, chunk in enumerate(chunks):
+            text = chunk.get("text", "") or ""
+            if not text:
+                continue
+            content_doc_id = compute_mdhash_id(
+                sanitize_text_for_encoding(text), prefix="doc-"
+            )
+            first_idx = content_hash_to_first_idx.get(content_doc_id)
+            if first_idx is not None and first_idx != idx:
+                dedup_map[idx] = first_idx
+
+        if dedup_skipped > 0 and services.logger:
+            services.logger.info(
+                "PushChunksStage: content dedup skipped %d/%d chunks "
+                "(only %d unique content hashes)",
+                dedup_skipped, total_chunks, len(content_hash_to_first_idx),
+            )
+
+        # Only POST unique chunks (by content hash)
+        unique_indices = sorted(content_hash_to_first_idx.values())
+
         if services.logger:
             services.logger.info(
-                f"PushChunksStage: pushing {total_chunks} chunks to :9621"
+                "PushChunksStage: pushing %d unique chunks to :9621 "
+                "(total %d, dedup %d)",
+                len(unique_indices), total_chunks, dedup_skipped,
             )
 
         # ── 2. Concurrent POST with cancellation check ──────────────
@@ -1236,8 +1305,8 @@ class PushChunksStage(Stage):
                         )
                     failed_indices.add(idx)
 
-        # Push in index order (single document, sequential chunk indices)
-        tasks = [_push_one(i, chunk) for i, chunk in enumerate(chunks)]
+        # Push unique chunks only (dedup by content hash)
+        tasks = [_push_one(i, chunks[i]) for i in unique_indices]
         await asyncio.gather(*tasks, return_exceptions=True)
 
         # ── 3. Check cancellation after push phase ──────────────────
@@ -1254,6 +1323,25 @@ class PushChunksStage(Stage):
 
         # ── 4. Per-chunk timeout + retry loop ─────────────────────
         terminal_hard_failed: set[int] = set()  # [jonex] #6: terminal state=="failed"
+
+        # [jonex] §13.4 item1：按 chunk 数动态放大轮询窗口（floor，仅放大不缩小），
+        # 保持 per-chunk < global（沿用 0.8 倍防误配口径）。SCALE=0 → 用固定值。
+        # 方法级定义，供轮询循环与 §5 严格判定文案共用。
+        eff_track_timeout = self._track_timeout
+        eff_per_chunk_timeout = self._per_chunk_timeout
+        if self._track_scale_per_chunk > 0 and total_chunks > 0:
+            dyn = self._track_scale_per_chunk * total_chunks
+            eff_track_timeout = min(self._track_scale_ceil, max(self._track_timeout, dyn))
+            eff_per_chunk_timeout = min(
+                eff_track_timeout * 0.8, max(self._per_chunk_timeout, dyn)
+            )
+            if services.logger and eff_track_timeout > self._track_timeout:
+                services.logger.info(
+                    "PushChunksStage: §13.4 动态超时窗口 chunks=%d track=%.0fs per_chunk=%.0fs "
+                    "(base track=%.0f/per_chunk=%.0f)",
+                    total_chunks, eff_track_timeout, eff_per_chunk_timeout,
+                    self._track_timeout, self._per_chunk_timeout,
+                )
 
         if track_ids:
             # 反查：track_id → chunk_index（重推后需更新）
@@ -1278,8 +1366,8 @@ class PushChunksStage(Stage):
                         pending_ids,
                         tenant_id=tenant_id,
                         kb_id=kb_id,
-                        max_wait_seconds=self._track_timeout,
-                        per_track_timeout_seconds=self._per_chunk_timeout,
+                        max_wait_seconds=eff_track_timeout,
+                        per_track_timeout_seconds=eff_per_chunk_timeout,
                     )
                 except Exception as e:
                     if services.logger:
@@ -1384,11 +1472,40 @@ class PushChunksStage(Stage):
                 # 去重合并：超时 chunk 下标 + 终态失败 chunk 下标
                 repush_idx: list[int] = []
                 _seen_idx: set[int] = set()
+                # [jonex] §13.4 item2：超时 chunk 重推前先查真实 doc 状态，避免把"慢但健康"
+                # 的 chunk 重推成 dup（新 track 永不 completed）。
+                #   - processed        → 判为已确认（收集 doc_id，不重推）；
+                #   - pending/processing → 继续轮询原 track（重新入 pending，不重推、不造 dup）；
+                #   - failed/查不到     → 才重推（真失败/内容确实没进）。
+                _t2_confirmed = 0
+                _t2_wait = 0
                 for _t in timeout_tids:
                     _i = tid_to_idx.get(_t)
-                    if _i is not None and _i not in _seen_idx:
-                        _seen_idx.add(_i)
+                    if _i is None or _i in _seen_idx:
+                        continue
+                    _st = None
+                    try:
+                        _did = _expected_doc_id(chunks[_i])
+                        _st = await _query_doc_status(
+                            http_client, _did, tenant_id=tenant_id, kb_id=kb_id,
+                        )
+                    except Exception:
+                        _st = None
+                    _seen_idx.add(_i)
+                    if _st == "processed":
+                        ctx.collected_doc_ids.append(_did)
+                        _t2_confirmed += 1
+                    elif _st in ("pending", "processing", "preprocessed"):
+                        new_pending_ids.append(_t)
+                        _t2_wait += 1
+                    else:
                         repush_idx.append(_i)
+                if (_t2_confirmed or _t2_wait) and services.logger:
+                    services.logger.info(
+                        "PushChunksStage: §13.4 item2 超时复查——已确认 %d、继续轮询 %d、"
+                        "待重推 %d（避免重推在途 chunk 造 dup）",
+                        _t2_confirmed, _t2_wait, len(repush_idx),
+                    )
                 for _i in round_terminal_failed_idx:
                     if _i not in _seen_idx:
                         _seen_idx.add(_i)
@@ -1420,6 +1537,24 @@ class PushChunksStage(Stage):
                     )
                 pending_ids = new_pending_ids
 
+        # ── 4.5 Propagate dedup results ────────────────────────────
+        # Content-identical chunks shared the first occurrence's track_id.
+        # After polling, propagate track_ids and mark duplicates so they
+        # count correctly in step 5.
+        if dedup_map:
+            for dup_idx, first_idx in dedup_map.items():
+                if first_idx in track_ids:
+                    track_ids[dup_idx] = track_ids[first_idx]
+                    duplicated_indices.add(dup_idx)
+                elif first_idx in failed_indices:
+                    # First occurrence failed to push → duplicate also counts as failed
+                    failed_indices.add(dup_idx)
+            if services.logger:
+                services.logger.info(
+                    "PushChunksStage: dedup propagated %d duplicate chunk(s)",
+                    len(dedup_map),
+                )
+
         # ── 5. Determine result (classified) ─────────────────────────
         # [jonex] 阶段4：reparse_strict 走任务级严格推送（全量成功才算成功），
         # 不依赖全局 RAG_REQUIRE_DOC_IDS 环境开关。
@@ -1436,6 +1571,34 @@ class PushChunksStage(Stage):
         for idx, tid in track_ids.items():
             if tid in ctx.pending_track_ids and idx not in hard_failed:
                 timed_out.add(idx)
+
+        # [jonex] ②（治本）：strict 下超时确认前，按内容 doc_id 复查真实状态。
+        # 超大文档长尾 chunk 常被 per-chunk 窗口误判超时、重推变 dup 又不返回
+        # completed，但其内容其实已在 LightRAG processed（后台抽取完成，仅 track
+        # 确认滞后）。直接复算 doc_id 查该 doc：已 processed → 判为已确认（收集
+        # doc_id、移出 timed_out），消除假 RAG_PUSH_TIMEOUT 触发的整单回滚。
+        if require_doc_ids and timed_out:
+            verified: set[int] = set()
+            for idx in list(timed_out):
+                try:
+                    did = _expected_doc_id(chunks[idx])
+                    st = await _query_doc_status(
+                        http_client, did, tenant_id=tenant_id, kb_id=kb_id,
+                    )
+                except Exception:
+                    st = None
+                if st == "processed":
+                    ctx.collected_doc_ids.append(did)
+                    verified.add(idx)
+            if verified:
+                timed_out -= verified
+                if services.logger:
+                    services.logger.info(
+                        "PushChunksStage: ② 超时确认复查——%d 个超时 chunk 实际已 "
+                        "processed 判为已确认（内容已入库，仅 track 确认滞后）；"
+                        "剩余未确认 %d",
+                        len(verified), len(timed_out),
+                    )
 
         confirmed_count = total_chunks - len(hard_failed) - len(timed_out)
 
@@ -1464,7 +1627,7 @@ class PushChunksStage(Stage):
                 return StageResult(
                     error=(
                         f"RAG_PUSH_TIMEOUT: {len(timed_out)}/{total_chunks} chunks "
-                        f"轮询超时未确认（{self._track_timeout}s）"
+                        f"轮询超时未确认（{eff_track_timeout:.0f}s）"
                     )
                 )
 
@@ -1548,13 +1711,21 @@ class PushChunksStage(Stage):
             item_info = item.get("item_info", {})
             original = item.get("original", {}) or {}
             page = item_info.get("page_idx")
+            if page is None:
+                page = original.get("page_idx")   # [jonex] §12 MinerU 顶层 page_idx 兜底
             image_idx = item.get("index")
 
             # ── 1. Main summary chunk (MapReduce output) ──────────
             description = item.get("description", "")
             if description and description.strip():
-                start_time = item.get("start_time") or item_info.get("start_time")
-                end_time = item.get("end_time") or item_info.get("end_time")
+                start_time = _first_present(item, item_info, "start_time")
+                end_time = _first_present(item, item_info, "end_time")
+                # 若 item 层无时间数据，从 _audio_segments 推导整个视频的时间范围
+                if start_time is None and end_time is None:
+                    segs = original.get("_audio_segments") or []
+                    if segs:
+                        start_time = _first_present(segs[0], {}, "start_time", "start")
+                        end_time = _first_present(segs[-1], {}, "end_time", "end")
                 file_source = _build_file_source(
                     tenant_id, kb_id, document_id, file_name,
                     chunk_index=len(chunks),
@@ -1597,8 +1768,15 @@ class PushChunksStage(Stage):
                 seg_text = seg.get("text", "")
                 if not seg_text or not seg_text.strip():
                     continue
-                s_start = seg.get("start_time", 0.0)
-                s_end = seg.get("end_time", 0.0)
+                # 兼容 start/end 和 start_time/end_time 两种字段名
+                s_start = _first_present(seg, {}, "start_time", "start")
+                s_end = _first_present(seg, {}, "end_time", "end")
+                if s_start is None:
+                    s_start = 0.0
+                if s_end is None:
+                    s_end = 0.0
+                s_start = float(s_start) if s_start is not None else 0.0
+                s_end = float(s_end) if s_end is not None else 0.0
                 fs = _build_file_source(
                     tenant_id, kb_id, document_id, file_name,
                     chunk_index=len(chunks),

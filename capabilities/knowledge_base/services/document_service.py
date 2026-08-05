@@ -1,5 +1,7 @@
 """Document application service for Knowledge Base."""
 
+import asyncio
+import hashlib
 import logging
 import os
 from typing import Any, Optional
@@ -136,7 +138,8 @@ class DocumentService:
             )
         return ds.id
 
-    async def _resolve_parser_preset(self, tenant_id: str, kb_id: str, file_name: str) -> tuple[str, Optional[str]]:
+    @staticmethod
+    async def _resolve_parser_preset(tenant_id: str, kb_id: str, file_name: str) -> tuple[str, Optional[str]]:
         """按文件后缀在该 KB 已配置的解析器中定位，返回 active 的 parser_config_id
         （= raganything preset name）。
 
@@ -192,6 +195,89 @@ class DocumentService:
         raise InvalidParameterError(
             message=translate("err.kb.no_parser_for_ext", params={"ext": ext}, fallback=f"该知识库未配置支持「.{ext}」文件的解析器，请先在解析设置中配置后再上传")  ,  # 原消息
             details={"knowledge_base_id": kb_id, "file_ext": ext, "file_name": file_name},
+        )
+
+    @staticmethod
+    async def _compute_source_hash(storage_backend: str, storage_key: str) -> str:
+        """[jonex] R1-c：计算源文件内容 md5，用于 reparse 跳过未变化文档。
+
+        下载完整文件字节并计算 md5 哈希。hash 取不到（临时错误）→ 调用方应 fail-open
+        继续走 reparse，不因 hash 计算失败阻塞正常业务。
+        """
+        storage = get_object_storage()
+        try:
+            data = await storage.get_bytes(storage_key)
+        except Exception as exc:
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "R1-c get_bytes failed for key=%s backend=%s: %s",
+                storage_key, storage_backend, exc,
+            )
+            return ""
+        return hashlib.md5(data).hexdigest()
+
+    @staticmethod
+    async def _compute_config_fingerprint(
+        tenant_id: str, kb_id: str, file_name: str,
+    ) -> tuple[str, str, Optional[str], int]:
+        """[jonex] R1-c：计算解析配置指纹，用于 reparse 检测配置变更。
+
+        指纹包含 preset + parser updated_at + prompt id + prompt updated_at
+        + compiled schema version。任意一项变化 → 指纹不同 → 自动放行重解析。
+
+        返回 (fingerprint_hash, preset_name, prompt_config_id, schema_version)。
+        后三项可缓存复用，避免后续 RAG 调用阶段重复解析。
+        """
+        from sqlalchemy import text as _sql_text
+
+        preset, prompt_config_id = await DocumentService._resolve_parser_preset(
+            tenant_id, kb_id, file_name,
+        )
+
+        # 获取 parser_config 和 prompt 的 updated_at（一次 DB 往返）
+        parser_ts = ""
+        prompt_ts = ""
+        async with get_db_session() as session:
+            if preset:
+                row = (await session.execute(
+                    _sql_text(
+                        "SELECT updated_at FROM business_domain.parser_configs "
+                        "WHERE id = :id AND tenant_id = :tid"
+                    ),
+                    {"id": preset, "tid": tenant_id},
+                )).fetchone()
+                if row and row.updated_at:
+                    parser_ts = row.updated_at.isoformat()
+            if prompt_config_id:
+                row = (await session.execute(
+                    _sql_text(
+                        "SELECT updated_at FROM business_domain.prompt_templates "
+                        "WHERE id = :id AND (tenant_id = :tid OR tenant_id IS NULL)"
+                    ),
+                    {"id": prompt_config_id, "tid": tenant_id},
+                )).fetchone()
+                if row and row.updated_at:
+                    prompt_ts = row.updated_at.isoformat()
+
+        # schema_version：与主流程一致使用 auto_compile=True，避免首次编译导致
+        # 指纹版本（0）≠ 主流程版本（1）而"多跑一次"。
+        schema_ver = 0
+        try:
+            from .ontology_compiler import OntologyCompiler  # noqa: F811
+            schema = await OntologyCompiler().get_compiled_schema(
+                tenant_id, kb_id, auto_compile=True,
+            )
+            if schema:
+                schema_ver = int(schema.get("schema_version", 0) or 0)
+        except Exception:
+            pass
+
+        fingerprint = (
+            f"{preset}|{parser_ts}|{prompt_config_id or ''}|{prompt_ts}|{schema_ver}"
+        )
+        return (
+            hashlib.md5(fingerprint.encode()).hexdigest(),
+            preset, prompt_config_id, schema_ver,
         )
 
     async def upload_document(self, tenant_id: str, request: DocumentUploadRequest | dict, *, user_id: Optional[str] = None, username: Optional[str] = None, ip: Optional[str] = None) -> dict:
@@ -543,12 +629,16 @@ class DocumentService:
     async def reparse_document(
         self, tenant_id: str, document_id: str, *,
         user_id: Optional[str] = None, username: Optional[str] = None, ip: Optional[str] = None,
+        force: bool = False,
     ) -> dict:
-        """按文档 id 重新解析（force_reparse）。
+        """按文档 id 重新解析。
 
         复用文档已存的 storage_key / storage_backend / 所属 KB，重新走"按文件类型选 preset
         + 推送 compiled ontology schema"链路，经 atomic-rag `retry` action 强制重解析。
         与上传一致：preset 解析不到 → 文档标记解析失败、保留记录、不推送。
+
+        [jonex] R1-c：默认跳过源文件未变化的 reparse（比对内容 md5）。
+        传 force=True 可绕过 hash 检查、强制重跑（适应解析配置变更、本体规则调整等场景）。
         """
         tenant_id = require_tenant(tenant_id)
         async with get_db_session() as session:
@@ -567,6 +657,58 @@ class DocumentService:
             file_name = doc.file_name
             # reparse 走严格全量替换：快照旧 rag_doc_ids（权威 old_ids 之一，另一半由 atomic-rag 现查）
             old_rag_doc_ids = list(doc.rag_doc_ids or [])
+            # [jonex] R1-c：比对源文件内容 md5 + 解析配置指纹，两者都未变化才跳过。
+            # 源文件或配置（preset/prompt/schema）任一变更 → 自动放行重解析，无需手动 force。
+            # hash 取不到（临时错误）→ fail-open，打 warning 继续走 reparse。
+            stored_hash = (doc.extra_metadata or {}).get("source_content_hash", "")
+            stored_cfg_hash = (doc.extra_metadata or {}).get("config_fingerprint", "")
+            current_hash = ""
+            if not force:
+                try:
+                    current_hash = await self._compute_source_hash(storage_backend, storage_key)
+                except Exception as exc:
+                    logger.warning(
+                        "R1-c source hash compute failed for doc=%s, proceed with reparse: %s",
+                        document_id, exc,
+                    )
+
+            # 解析配置指纹：仅在源文件 hash 匹配时才计算（避免无谓开销）
+            cfg_hash = ""
+            _cached_preset = ""
+            _cached_prompt_id = None
+            _cached_schema_ver = 0
+            if not force and current_hash and stored_hash and current_hash == stored_hash:
+                try:
+                    cfg_hash, _cached_preset, _cached_prompt_id, _cached_schema_ver = \
+                        await self._compute_config_fingerprint(tenant_id, kb_id, file_name)
+                except Exception as exc:
+                    logger.warning(
+                        "Config fingerprint compute failed for doc=%s, proceed with reparse: %s",
+                        document_id, exc,
+                    )
+
+            # R1-c 跳过条件：源文件 AND 解析配置均未变化
+            if (current_hash and stored_hash and current_hash == stored_hash
+                    and cfg_hash and stored_cfg_hash and cfg_hash == stored_cfg_hash):
+                logger.info(
+                    "R1-c skip reparse (source+config unchanged): doc=%s hash=%s",
+                    document_id, current_hash[:16],
+                )
+                schedule_emit({
+                    "tenant_id": tenant_id,
+                    "user_id": _audit_user_id(user_id),
+                    "username": username,
+                    "ip": ip,
+                    "log_type": "TASK",
+                    "action": "document.reparse_skipped",
+                    "outcome": "SUCCESS",
+                    "service_name": "knowledge_base",
+                    "resource": ResourceType.DOCUMENT.value,
+                    "resource_id": str(document_id),
+                    "request_params": {"reason": "source_and_config_unchanged", "source_hash": current_hash[:16]},
+                })
+                return doc.to_dict()
+
             # [jonex] P0-I：原子递增 reparse 代次；重置状态（reparse 期间 ontology 置 PENDING，
             # 代次变化会 fencing 掉在途 ontology-only 结果，实现 reparse↔ontology-only 互斥）
             new_generation = (doc.content_generation or 0) + 1
@@ -574,6 +716,13 @@ class DocumentService:
             doc.status = DocStatus.PARSING.value
             doc.ontology_status = OntologyStatus.PENDING.value
             doc.error_message = None
+            # [jonex] R1-c：持久化源文件 hash + 配置指纹到 extra_metadata
+            extra = dict(doc.extra_metadata or {})
+            if current_hash:
+                extra["source_content_hash"] = current_hash
+            if cfg_hash:
+                extra["config_fingerprint"] = cfg_hash
+            doc.extra_metadata = extra
             await session.flush()
             doc_dict = doc.to_dict()
 
@@ -601,8 +750,9 @@ class DocumentService:
                 )
 
         # 确保 KB 编译 schema 存在（非阻塞）
+        # 若已在指纹计算阶段解析过，优先复用缓存值
         schema = None
-        schema_version = 0
+        schema_version = _cached_schema_ver if _cached_schema_ver else 0
         try:
             from .ontology_compiler import OntologyCompiler
             schema = await OntologyCompiler().get_compiled_schema(tenant_id, kb_id, auto_compile=True)
@@ -612,7 +762,10 @@ class DocumentService:
             logger.warning("Failed to ensure compiled schema for KB %s: %s", kb_id, exc)
 
         try:
-            preset, prompt_config_id = await self._resolve_parser_preset(tenant_id, kb_id, file_name)
+            preset = _cached_preset if _cached_preset else None
+            prompt_config_id = _cached_prompt_id
+            if not preset:
+                preset, prompt_config_id = await self._resolve_parser_preset(tenant_id, kb_id, file_name)
             # [jonex] 主解析提示词下发：重解析同样带上当前配置
             prompt_ids = [prompt_config_id] if prompt_config_id else []
             rag_result = await get_rag_client().retry(

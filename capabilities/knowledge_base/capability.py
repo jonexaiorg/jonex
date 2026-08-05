@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
+from uuid import uuid4
 
 from jonex_core.capability import BaseCapability
 from jonex_core.capability.models import (
@@ -140,14 +141,14 @@ class KnowledgeBaseCapability(BaseCapability):
             "get_raw_location": lambda r, d: docs.get_raw_location(r.tenant_id, d["document_id"]),
             "get_document_chunks": lambda r, d: docs.get_document_chunks(r.tenant_id, d["document_id"]),
             "get_chunk": lambda r, d: docs.get_chunk(r.tenant_id, d["document_id"], d["chunk_id"]),
-            "reparse_document": lambda r, d: docs.reparse_document(r.tenant_id, d["document_id"], user_id=r.user_id, username=r.username, ip=r.ip),
+            "reparse_document": lambda r, d: docs.reparse_document(r.tenant_id, d["document_id"], user_id=r.user_id, username=r.username, ip=r.ip, force=d.get("force", False)),
             "set_document_folder": lambda r, d: docs.set_document_folder(
                 r.tenant_id, d["document_id"], d
             ),
             # ── 检索 ──
-            "search": lambda r, d: search.search(r.tenant_id, _user_id(r), d, trace_id=r.request_id),
-            "search_enhanced": lambda r, d: search.enhanced_search(r.tenant_id, _user_id(r), d, trace_id=r.request_id),
-            "query_with_ontology": lambda r, d: search.query_with_ontology(r.tenant_id, _user_id(r), d, trace_id=r.request_id),
+            "search": lambda r, d: search.search(r.tenant_id, _user_id(r), d, trace_id=r.request_id or str(uuid4())),
+            "search_enhanced": lambda r, d: search.enhanced_search(r.tenant_id, _user_id(r), d, trace_id=r.request_id or str(uuid4())),
+            "query_with_ontology": lambda r, d: search.query_with_ontology(r.tenant_id, _user_id(r), d, trace_id=r.request_id or str(uuid4())),
             "get_search_overview": lambda r, d: history.get_overview(r.tenant_id, _user_id(r), d),
             "list_search_history": lambda r, d: history.list_history(r.tenant_id, _user_id(r), d),
             "save_search_history": lambda r, d: history.save_history(r.tenant_id, _user_id(r), d),
@@ -200,6 +201,15 @@ class KnowledgeBaseCapability(BaseCapability):
                 r.tenant_id, d["knowledge_base_id"],
                 force=d.get("force", False),
                 apply_to_documents=d.get("apply_to_documents", False),
+            ),
+            # ── [jonex] compiled schema YAML 导入导出 ──
+            "export_compiled_schema_yaml": lambda r, d: compiler.export_compiled_schema_yaml(
+                d["knowledge_base_id"], r.tenant_id,
+            ),
+            "import_compiled_schema_yaml": lambda r, d: compiler.import_compiled_schema_yaml(
+                d["knowledge_base_id"], r.tenant_id,
+                d["yaml_text"], d["expected_schema_version"],
+                dry_run=d.get("dry_run", True),
             ),
             # ── KB 级按新 schema 批量重抽本体（C→B 联动，走对账被动）──
             "reextract_kb_documents": lambda r, d: ontology.reextract_kb_documents(
@@ -414,6 +424,8 @@ class KnowledgeBaseCapability(BaseCapability):
             "save_compiled_schema": ("knowledge_base_id",),
             "reseed_compiled_schema": ("knowledge_base_id", "template_scenario_id"),
             "recompile_schema": ("knowledge_base_id",),
+            "export_compiled_schema_yaml": ("knowledge_base_id",),  # [jonex]
+            "import_compiled_schema_yaml": ("knowledge_base_id", "yaml_text", "expected_schema_version"),  # [jonex]
             "reextract_kb_documents": ("knowledge_base_id",),
             # ── 文件夹 ──
             "list_folders": ("knowledge_base_id",),

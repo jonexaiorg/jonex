@@ -32,6 +32,8 @@ class AttributeDef:
     attr_type: str  # 统一到标准类型: string/text/number/date/enum/boolean
     is_required: bool
     id: str
+    description: str = ""
+    is_primary_key: bool = False
 
 
 @dataclass
@@ -41,6 +43,8 @@ class ObjectDef:
     ontology_code: Optional[str]
     aliases: list[str]
     attributes: list[AttributeDef] = field(default_factory=list)
+    description: str = ""
+    status: str = "draft"
 
 
 @dataclass
@@ -52,6 +56,8 @@ class RelationDef:
     source_object_id: str
     target_object_id: str
     relation_type: str  # 一对多/多对多/一对一/自定义
+    description: str = ""
+    status: str = "draft"
 
 
 @dataclass
@@ -157,7 +163,7 @@ class TemplateSchemaProvider:
         objects_raw = (await self.session.execute(
             text(
                 """
-                SELECT id, name, ontology_code, aliases
+                SELECT id, name, ontology_code, aliases, description, status
                 FROM business_domain.template_objects
                 WHERE scenario_id = :sid AND tenant_id = :t AND is_deleted = 0
                 """
@@ -171,7 +177,7 @@ class TemplateSchemaProvider:
         if object_ids:
             attr_stmt = text(
                 """
-                SELECT id, template_object_id, attr_name, attr_type, ontology_code, is_required
+                SELECT id, template_object_id, attr_name, attr_type, ontology_code, is_required, description, is_primary_key
                 FROM business_domain.template_attributes
                 WHERE template_object_id IN :oids AND tenant_id = :t AND is_deleted = 0
                 """
@@ -187,6 +193,8 @@ class TemplateSchemaProvider:
                         attr_type=_normalize_attr_type(a["attr_type"] or "string"),
                         is_required=bool(a["is_required"]),
                         id=a["id"],
+                        description=(a.get("description") or ""),
+                        is_primary_key=bool(a.get("is_primary_key")),
                     )
                 )
 
@@ -194,7 +202,7 @@ class TemplateSchemaProvider:
         relations_raw = (await self.session.execute(
             text(
                 """
-                SELECT id, name, ontology_code, aliases, source_object_id, target_object_id, relation_type
+                SELECT id, name, ontology_code, aliases, source_object_id, target_object_id, relation_type, description, status
                 FROM business_domain.template_relations
                 WHERE scenario_id = :sid AND tenant_id = :t AND is_deleted = 0
                 """
@@ -210,6 +218,8 @@ class TemplateSchemaProvider:
                 ontology_code=o["ontology_code"],
                 aliases=_as_list(o["aliases"]),
                 attributes=attr_map.get(o["id"], []),
+                description=(o.get("description") or ""),
+                status=(o.get("status") or "draft"),
             )
             for o in objects_raw
         ]
@@ -232,6 +242,8 @@ class TemplateSchemaProvider:
                     source_object_id=r["source_object_id"],
                     target_object_id=r["target_object_id"],
                     relation_type=r["relation_type"],
+                    description=(r.get("description") or ""),
+                    status=(r.get("status") or "draft"),
                 )
             )
 

@@ -109,7 +109,7 @@ function App() {
   }, [i18n]);
 
   return (
-    <ConfigProvider locale={antdLocale} theme={{ ...antdTheme, cssVar: false }}>
+    <ConfigProvider locale={antdLocale} theme={{ ...antdTheme }}>
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />

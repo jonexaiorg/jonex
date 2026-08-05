@@ -12,7 +12,7 @@ from jonex_core.capability.atomic.rag.client import get_rag_client
 from jonex_core.common.database import get_db_session
 from jonex_core.common.exceptions import InvalidParameterError, ResourceNotFoundError
 from jonex_core.common.i18n import translate
-from jonex_core.common.file_source_util import classify_media, to_location
+from jonex_core.common.file_source_util import classify_media, parse_file_source, to_location
 from jonex_core.common.neo4j_client import get_neo4j_driver
 from jonex_core.common.object_storage import get_object_storage
 from jonex_core.common.ontology_embedding import embed
@@ -26,6 +26,7 @@ from ..dtos.reasoning import (
     STAGE_LLM_ANSWER,
     STAGE_ONTOLOGY_MATCH,
     STAGE_RAG_FALLBACK,
+    STAGE_REF_RETRIEVE,
     STAGE_RERANK,
     STAGE_RETRIEVAL_RERANK,
     STAGE_ROUTE_DECISION,
@@ -98,6 +99,17 @@ ONTOLOGY_NEIGHBOR_DEPTH = max(1, min(
 ONTOLOGY_NEIGHBOR_LIMIT = max(1, int(os.getenv("ONTOLOGY_NEIGHBOR_LIMIT", "20")))
 ONTOLOGY_NEIGHBOR_PER_HOP_LIMIT = max(1, int(os.getenv("ONTOLOGY_NEIGHBOR_PER_HOP_LIMIT", "50")))
 ONTOLOGY_NEIGHBOR_TIMEOUT = max(1, int(os.getenv("ONTOLOGY_NEIGHBOR_TIMEOUT", "15")))
+
+# ── 方案④：本体作答超时（INSUFFICIENT 快速短路）──
+ONTOLOGY_ANSWER_TIMEOUT = max(5, int(os.getenv("ONTOLOGY_ANSWER_TIMEOUT", "30")))
+# 方案④b：事实量预判阈值 — facts 数量低于此值时直接跳过本体作答进入 RAG
+ONTOLOGY_MIN_FACTS = max(0, int(os.getenv("ONTOLOGY_MIN_FACTS", "0")))
+
+# ── 方案②：融合降本 — 融合宽度上限（2a）──
+ONTOLOGY_RAG_FUSION_TOPN = max(1, int(os.getenv("ONTOLOGY_RAG_FUSION_TOPN", "3")))
+
+# ── 方案③：并发限流 — 多 KB 并行查询信号量上限（3a）──
+ONTOLOGY_RAG_MAX_CONCURRENCY = max(1, int(os.getenv("ONTOLOGY_RAG_MAX_CONCURRENCY", "7")))
 
 
 def _evict_stale_entries() -> None:
@@ -176,6 +188,7 @@ class SearchService:
             top_k=req.top_k,
             knowledge_base_id=req.knowledge_base_id,
             trace_id=trace_id,          # [jonex] 计量链路追踪
+            user_id=user_id,            # [jonex] Gap B3: 透传 user 维度
         )
         answer = detailed.get("answer", "")
         raw_refs = detailed.get("references", [])
@@ -497,47 +510,112 @@ class SearchService:
             },
         )
 
-    async def _rag_retrieve_refs(
+    async def _ontology_refs(
         self,
         tenant_id: str,
-        req: OntologySearchRequest,
         kb_ids: list[str],
-        trace_id: str | None,
+        ontology_instances: list[dict],
+        facts: list[dict] | None,
+        collector: ReasoningCollector | None = None,
     ) -> list[dict]:
-        """RAG 多库检索 → chunk 级引用富化（仅 references，不生成回答）。
+        """方案⑦：从本体 source_chunks 直接构建 chunk 级引用，不回 LightRAG。
 
-        本体路径成功时调用此方法获取 chunk 级位置信息：
-        - 视频/音频文件的 time_start/time_end（定位播放）
-        - 文档的 page_no（跳转页码）
-        - chunk 文本片段（关键词高亮上下文）
+        收集命中实体 + facts 各 target_entity 的 source_chunks[].file_path，
+        经 parse_file_source → _build_references 产出完整 references（含 COS 预签名/文件名）。
+        source_chunks 为空的实体退化为文档级引用（_build_references_by_doc_ids）。
         """
-        if len((req.query or "").strip()) < RAG_MIN_QUERY_LEN:
-            return []
+        t = time.perf_counter()
 
-        rag = get_rag_client()
-        tasks = [
-            rag.query_detailed(
-                query=req.query, tenant_id=tenant_id, mode=req.mode,
-                top_k=req.top_k, knowledge_base_id=kid, trace_id=trace_id or "",
-            )
-            for kid in kb_ids
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # ── 收集 source_chunks ──
+        all_sc: list[dict] = []   # {source_id, file_path}
+        chunk_doc_ids: list[str] = []
+        fallback_doc_ids: list[str] = []
 
-        all_raw_refs: list[dict] = []
-        for kid, res in zip(kb_ids, results):
-            if isinstance(res, Exception):
-                logger.warning("[ontology] RAG 检索引用失败 kb=%s: %s", kid, res)
+        for ent in (ontology_instances or []):
+            sc = ent.get("source_chunks")
+            if isinstance(sc, list) and sc:
+                all_sc.extend(sc)
+            else:
+                for did in (ent.get("doc_ids") or []):
+                    if did:
+                        fallback_doc_ids.append(did)
+
+        for f in (facts or []):
+            te = f.get("target_entity") if isinstance(f, dict) else None
+            if isinstance(te, dict):
+                sc = te.get("source_chunks")
+                if isinstance(sc, list) and sc:
+                    all_sc.extend(sc)
+                else:
+                    for did in (te.get("doc_ids") or []):
+                        if did:
+                            fallback_doc_ids.append(did)
+            # [jonex] 方案⑧：关系边的 source_chunks（覆盖 stub 端点/别名 miss 场景）
+            rsc = f.get("relation_source_chunks")
+            if isinstance(rsc, list) and rsc:
+                all_sc.extend(rsc)
+
+        # ── 解析 source_chunks file_path → raw_refs ──
+        raw_refs: list[dict] = []
+        seen = set()
+        for sc in all_sc:
+            fp = sc.get("file_path") if isinstance(sc, dict) else None
+            if not fp:
                 continue
-            if isinstance(res, dict):
-                all_raw_refs.extend(res.get("references", []))
+            # 单条 file_path 可能是 <SEP> 连接的多值（同一实体跨多 chunk）
+            for seg in fp.split("<SEP>"):
+                seg = seg.strip()
+                if not seg:
+                    continue
+                parsed = parse_file_source(seg)
+                if not (parsed and parsed.get("doc_id")):
+                    continue
+                # 去重键=语义键（doc+chunk+位置），避免同一 chunk 的 file_path 串变体导致重复
+                key = (
+                    parsed["doc_id"],
+                    parsed.get("chunk_index"),
+                    parsed.get("page_no"),
+                    parsed.get("time_start"),
+                    parsed.get("time_end"),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                raw_refs.append(parsed)
+                chunk_doc_ids.append(parsed["doc_id"])
 
-        if not all_raw_refs:
-            return []
+        # ── chunk 级引用（source_chunks 命中）──
+        refs = await self._build_references(
+            tenant_id, raw_refs, allowed_kb_ids=kb_ids,
+        ) if raw_refs else []
 
-        return await self._build_references(
-            tenant_id, all_raw_refs, allowed_kb_ids=kb_ids,
-        )
+        # ── 文档级兜底（source_chunks 为空或 stub 实体）──
+        fallback = await self._build_references_by_doc_ids(
+            tenant_id,
+            list(dict.fromkeys(d for d in fallback_doc_ids if d not in chunk_doc_ids)),
+            allowed_kb_ids=kb_ids,
+        ) if fallback_doc_ids else []
+
+        # ── 埋点：⑤ 的 STAGE_REF_RETRIEVE 改为记本体引用构建 ──
+        if collector:
+            collector.step(
+                STAGE_REF_RETRIEVE, "本体引用构建",
+                summary=(
+                    f"source_chunks 命中 {len(raw_refs)} 个 → {len(refs)} 条 chunk 级引用"
+                    + (f"；{len(fallback)} 条文档级兜底" if fallback else "")
+                ),
+                detail={
+                    "source_chunks_total": len(all_sc),
+                    "unique_file_paths": len(raw_refs),
+                    "chunk_ref_count": len(refs),
+                    "fallback_ref_count": len(fallback),
+                    "chunk_doc_ids": chunk_doc_ids,
+                    "fallback_doc_ids": fallback_doc_ids,
+                },
+                t_start=t,
+            )
+
+        return refs + fallback
 
     async def _rag_fallback_multi(
         self, tenant_id: str, user_id: str, req: OntologySearchRequest,
@@ -564,14 +642,24 @@ class SearchService:
         rag = get_rag_client()
         t_rag = time.perf_counter()
         t_fallback_epoch = time.time()   # 用于回读「检索期 rerank 命中」标记的时间基线
-        tasks = [
-            rag.query_detailed(
-                query=req.query, tenant_id=tenant_id, mode=req.mode,
-                top_k=req.top_k, knowledge_base_id=kid, trace_id=trace_id or "",
-            )
-            for kid in kb_ids
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 方案③a：并发信号量限流
+        _sem = asyncio.Semaphore(ONTOLOGY_RAG_MAX_CONCURRENCY)
+
+        async def _query_one(kid: str) -> dict | Exception:
+            async with _sem:
+                try:
+                    return await rag.query_detailed(
+                        query=req.query, tenant_id=tenant_id, mode=req.mode,
+                        top_k=req.top_k, knowledge_base_id=kid,
+                        trace_id=trace_id or "",
+                        user_id=user_id,
+                    )
+                except Exception as e:
+                    return e
+
+        tasks = [_query_one(kid) for kid in kb_ids]
+        results = await asyncio.gather(*tasks)
 
         per_kb: list[dict] = []
         kb_failed: list[str] = []
@@ -691,15 +779,23 @@ class SearchService:
                 collector.step(STAGE_FUSION, "多答案融合", status="skipped",
                                summary="仅 1 个有效答案，无需融合")
         else:
+            # 方案②a：限制融合宽度 — 只对前 N 个答案做融合（保留 kb_ids 原始顺序）
+            per_kb_fused = per_kb[:ONTOLOGY_RAG_FUSION_TOPN]
+            fusion_note = ""
+            if len(per_kb_fused) < len(per_kb):
+                fusion_note = (
+                    f"（共 {len(per_kb)} 个，取前 {ONTOLOGY_RAG_FUSION_TOPN} 融合，"
+                    f"其余 {len(per_kb) - len(per_kb_fused)} 个仅作引用来源）"
+                )
             t_fuse = time.perf_counter()
             answer = await fuse_rag_answers(
-                req.query, per_kb,
+                req.query, per_kb_fused,
                 tenant_id=tenant_id, user_id=user_id, trace_id=trace_id,
             )
             fusion_ms = int((time.perf_counter() - t_fuse) * 1000)
             if collector:
                 collector.step(STAGE_FUSION, "多答案融合",
-                               summary=f"融合 {len(per_kb)} 个知识库的答案",
+                               summary=f"融合 {len(per_kb_fused)} 个知识库的答案{fusion_note}",
                                t_start=t_fuse)
         self._log_rag_timing(tenant_id, rag_multi_ms, fusion_ms, len(per_kb), len(kb_ids), kb_failed)
 
@@ -718,6 +814,7 @@ class SearchService:
             if RAG_FALLBACK_RERANK_ENABLED:
                 ranked = await self._rerank_references(
                     req.query, references, tenant_id=tenant_id, trace_id=trace_id,
+                    kb_id=kb_ids[0] if kb_ids else "", user_id=user_id,
                 )
             if ranked is not None:
                 references = ranked[:RAG_FALLBACK_MAX_REFS]
@@ -802,6 +899,7 @@ class SearchService:
     async def _rerank_references(
         self, query: str, references: list[dict], *,
         tenant_id: str, trace_id: str | None,
+        kb_id: str = "", user_id: str = "",
     ) -> list[dict] | None:
         """用 reranker 对 references 按相关性排序；返回排序后的新列表，失败返回 None。"""
         from jonex_core.common.rerank import rerank
@@ -819,7 +917,8 @@ class SearchService:
             docs_text.append((loc.get("text") or r.get("file_name") or "")[:1024])
 
         results = await rerank(
-            query, docs_text, tenant_id=tenant_id, kb_id=None, trace_id=trace_id,
+            query, docs_text, tenant_id=tenant_id,
+            kb_id=kb_id or None, trace_id=trace_id, user_id=user_id,
         )
         if not results:
             return None
@@ -895,6 +994,7 @@ class SearchService:
         source = "rag"
         rag_used = True
         matched: dict | None = None
+        facts: list[dict] | None = None    # [jonex] 方案⑦ _ontology_refs 需要
 
         if ontology_instances:
             # 路由判定：top-5 内任一命中即走本体（避免高 vscore 候选因全文 rank 落后被埋没）
@@ -981,6 +1081,16 @@ class SearchService:
 
                 # ── 阶段 4：本体作答（采集点④，独立 try）──
                 if facts is not None:
+                    # 方案④b：事实量预判 — 低于阈值直接跳过本体作答
+                    if ONTOLOGY_MIN_FACTS > 0 and len(facts) < ONTOLOGY_MIN_FACTS:
+                        collector.step(STAGE_LLM_ANSWER, "本体事实作答", status="skipped",
+                                       summary=f"事实不足（{len(facts)} < {ONTOLOGY_MIN_FACTS}），降级 RAG")
+                        logger.info(
+                            "[ontology] 事实量预判跳过作答 facts=%d min=%d query=%r",
+                            len(facts), ONTOLOGY_MIN_FACTS, req.query,
+                        )
+                        facts = None   # 触发 RAG 降级
+                if facts is not None:
                     t = time.perf_counter()
                     try:
                         llm_answer = await asyncio.wait_for(
@@ -991,7 +1101,7 @@ class SearchService:
                                 user_id=user_id,
                                 trace_id=trace_id,
                             ),
-                            timeout=30,
+                            timeout=ONTOLOGY_ANSWER_TIMEOUT,   # [jonex] 方案④ 可调超时
                         )
                         if llm_answer and llm_answer != "INSUFFICIENT":
                             answer = llm_answer
@@ -1004,8 +1114,8 @@ class SearchService:
                                            summary="事实不足（INSUFFICIENT），降级 RAG", t_start=t)
                     except asyncio.TimeoutError:
                         collector.step(STAGE_LLM_ANSWER, "本体事实作答", status="failed",
-                                       summary="本体 LLM 超时（30s），降级 RAG", t_start=t)
-                        logger.warning("[ontology] 本体 LLM 回答超时（30s），降级 RAG")
+                                       summary=f"本体 LLM 超时（{ONTOLOGY_ANSWER_TIMEOUT}s），降级 RAG", t_start=t)
+                        logger.warning("[ontology] 本体 LLM 回答超时（%ds），降级 RAG", ONTOLOGY_ANSWER_TIMEOUT)
                     except Exception as e:
                         collector.step(STAGE_LLM_ANSWER, "本体事实作答", status="failed",
                                        summary="本体作答失败，降级 RAG", t_start=t)
@@ -1025,9 +1135,11 @@ class SearchService:
             references = fallback["references"]
             source = "rag"
         else:
-            # 本体路径成功：执行 RAG 检索获取 chunk 级引用（含视频/音频时间段等位置信息）
-            references = await self._rag_retrieve_refs(
-                tenant_id, req, kb_ids, trace_id,
+            # 方案⑦：本体路径成功，从 source_chunks 直接构建 chunk 级引用
+            references = await self._ontology_refs(
+                tenant_id=tenant_id, kb_ids=kb_ids,
+                ontology_instances=ontology_instances, facts=facts,
+                collector=collector,
             )
 
         return {

@@ -78,6 +78,7 @@ class RAGClient(ABC):
         *,
         knowledge_base_id: str,
         trace_id: str = "",          # [jonex] 计量链路追踪
+        user_id: str = "",           # [jonex] 计量上下文
     ) -> str:
         """RAG 查询，返回回答字符串（不含引用信息）
 
@@ -95,6 +96,7 @@ class RAGClient(ABC):
         *,
         knowledge_base_id: str,
         trace_id: str = "",
+        user_id: str = "",           # [jonex] 计量上下文
     ) -> dict:
         """RAG 查询，返回 {"answer": str, "references": list[dict]} 详细结果。
 
@@ -330,6 +332,7 @@ class LocalRAGClient(RAGClient):
         *,
         knowledge_base_id: str,
         trace_id: str = "",          # [jonex] 计量链路追踪
+        user_id: str = "",           # [jonex] 计量上下文
     ) -> str:
         tenant_id = require_tenant(tenant_id)
         knowledge_base_id = require_knowledge_base(knowledge_base_id)
@@ -341,6 +344,7 @@ class LocalRAGClient(RAGClient):
             top_k,
             knowledge_base_id=knowledge_base_id,
             trace_id=trace_id,          # [jonex] 计量链路追踪
+            user_id=user_id,            # [jonex] 计量上下文
         )
 
     async def query_detailed(
@@ -352,6 +356,7 @@ class LocalRAGClient(RAGClient):
         *,
         knowledge_base_id: str,
         trace_id: str = "",
+        user_id: str = "",           # [jonex] 计量上下文
     ) -> dict:
         tenant_id = require_tenant(tenant_id)
         knowledge_base_id = require_knowledge_base(knowledge_base_id)
@@ -363,6 +368,7 @@ class LocalRAGClient(RAGClient):
             top_k,
             knowledge_base_id=knowledge_base_id,
             trace_id=trace_id,
+            user_id=user_id,            # [jonex] 计量上下文
         )
 
     async def delete(
@@ -670,10 +676,12 @@ class RemoteRAGClient(RAGClient):
         *,
         knowledge_base_id: str,
         trace_id: str = "",          # [jonex] 计量链路追踪
+        user_id: str = "",           # [jonex] 计量上下文
     ) -> str:
         result = await self.query_detailed(
             query=query, tenant_id=tenant_id, mode=mode, top_k=top_k,
             knowledge_base_id=knowledge_base_id, trace_id=trace_id,
+            user_id=user_id,
         )
         return result["answer"]
 
@@ -686,6 +694,7 @@ class RemoteRAGClient(RAGClient):
         *,
         knowledge_base_id: str,
         trace_id: str = "",
+        user_id: str = "",           # [jonex] 计量上下文
     ) -> dict:
         knowledge_base_id = require_knowledge_base(knowledge_base_id)
         payload: dict = {
@@ -695,6 +704,7 @@ class RemoteRAGClient(RAGClient):
             "top_k": top_k,
             "knowledge_base_id": knowledge_base_id,
             "trace_id": trace_id,
+            "user_id": user_id,
         }
         resp = await self._invoke(payload, tenant_id)
         data = resp["data"]
@@ -1120,6 +1130,7 @@ class MockRAGClient(RAGClient):
         *,
         knowledge_base_id: str,
         trace_id: str = "",          # [jonex] 计量链路追踪（Mock 忽略）
+        user_id: str = "",           # [jonex] 计量上下文（Mock 忽略）
     ) -> str:
         require_tenant(tenant_id)
         require_knowledge_base(knowledge_base_id)
@@ -1134,6 +1145,7 @@ class MockRAGClient(RAGClient):
         *,
         knowledge_base_id: str,
         trace_id: str = "",
+        user_id: str = "",           # [jonex] 计量上下文（Mock 忽略）
     ) -> dict:
         require_tenant(tenant_id)
         require_knowledge_base(knowledge_base_id)

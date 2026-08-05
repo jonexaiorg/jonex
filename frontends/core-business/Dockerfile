@@ -25,6 +25,9 @@ COPY frontends/shared/shell-sdk/ ./shared/shell-sdk/
 COPY frontends/shared/platform-theme/ ./shared/platform-theme/
 COPY frontends/shared/i18n-resources/ ./shared/i18n-resources/
 COPY frontends/core-business/ ./core-business/
+# 工程化基础配置（tsconfig.base / vite.base 位于 frontends 根）
+COPY frontends/tsconfig.base.json ./
+COPY frontends/vite.base.config.ts ./
 
 RUN pnpm --filter @jonex/core-business build
 

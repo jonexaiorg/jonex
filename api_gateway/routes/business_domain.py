@@ -11,7 +11,7 @@ import os
 from typing import Optional
 
 import jwt
-from fastapi import APIRouter, Body, Depends, Query, Request
+from fastapi import APIRouter, Body, Depends, File, Query, Request, UploadFile
 
 from jonex_core.common import (
     CapabilityInvokeError,
@@ -418,6 +418,55 @@ async def update_template_constraint(request: Request, constraint_id: str, paylo
 @ecosystem_router.delete("/templates/constraints/{constraint_id}", summary="删除模板约束")
 async def delete_template_constraint(request: Request, constraint_id: str):
     result = await _call_bd_capability(request, "delete_template_constraint", {"constraint_id": constraint_id})
+    return success_response(data=result)
+
+
+# ── 本体 YAML 导入导出 ──────────────────────────────────────  # [jonex]
+
+@ecosystem_router.get(
+    "/templates/scenarios/{scenario_id}/ontology-yaml/export",
+    summary="导出场景本体 YAML",
+)
+async def export_template_ontology_yaml(request: Request, scenario_id: str):
+    """导出模板场景的实体、属性、关系、约束为本体 YAML 格式。"""
+    result = await _call_bd_capability(
+        request, "export_template_ontology_yaml",
+        {"scenario_id": scenario_id},
+    )
+    return success_response(data=result)
+
+
+@ecosystem_router.post(
+    "/templates/scenarios/{scenario_id}/ontology-yaml/import",
+    summary="导入场景本体 YAML",
+)
+async def import_template_ontology_yaml(
+    request: Request,
+    scenario_id: str,
+    file: UploadFile = File(...),
+    dry_run: bool = Query(True, description="为 true 时仅返回变更摘要，不写入数据"),
+    mode: str = Query("merge", description="导入模式：merge"),
+):
+    """从上传的 YAML 文件导入实体、属性、关系、约束到模板场景。
+
+    dry_run=true 时仅校验并返回变更摘要，不实际写入。
+    """
+    # [jonex] 在 Gateway 读取文件内容，作为字符串传入 invoke payload，不传递文件对象
+    raw = await file.read()
+    try:
+        yaml_text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        yaml_text = raw.decode("utf-8-sig", errors="replace")
+
+    result = await _call_bd_capability(
+        request, "import_template_ontology_yaml",
+        {
+            "scenario_id": scenario_id,
+            "yaml_text": yaml_text,
+            "dry_run": dry_run,
+            "mode": mode,
+        },
+    )
     return success_response(data=result)
 
 

@@ -17,6 +17,7 @@ export interface AuditLogItem {
   resource: string | null;
   resource_label: string | null;
   resource_id: string | null;
+  resource_name: string | null;
   status_code: number | null;
   duration_ms: number | null;
   detail: string | null;

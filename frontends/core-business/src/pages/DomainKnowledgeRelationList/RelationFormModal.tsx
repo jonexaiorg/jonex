@@ -1,6 +1,6 @@
 import React, { useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { useTranslation } from 'react-i18next';
-import { message, Modal, Select } from 'antd';
+import { Form, message, Modal, Select } from 'antd';
 import { createOntologyRelation, updateOntologyRelation, searchOntologyInstances } from '@/api/domainKnowledge';
 import type { RelationInstanceRow } from '@/types/domainKnowledge';
 
@@ -27,12 +27,7 @@ const RelationFormModal = forwardRef<RelationFormModalHandle, RelationFormModalP
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [saving, setSaving] = useState(false);
-
-  const [formSourceType, setFormSourceType] = useState('');
-  const [formSourceName, setFormSourceName] = useState('');
-  const [formRelType, setFormRelType] = useState('');
-  const [formTargetType, setFormTargetType] = useState('');
-  const [formTargetName, setFormTargetName] = useState('');
+  const [form] = Form.useForm();
 
   const [sourceOptions, setSourceOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [targetOptions, setTargetOptions] = useState<Array<{ value: string; label: string }>>([]);
@@ -51,24 +46,14 @@ const RelationFormModal = forwardRef<RelationFormModalHandle, RelationFormModalP
     () => ({
       openCreate: () => {
         setModalMode('create');
-        setFormSourceType('');
-        setFormSourceName('');
         setSourceOptions([]);
-        setFormRelType('');
-        setFormTargetType('');
-        setFormTargetName('');
         setTargetOptions([]);
         setEditIdentity(null);
+        form.setFieldsValue({ source: undefined, rel_type: undefined, target: undefined });
         setModalOpen(true);
       },
       openEdit: (row: RelationInstanceRow) => {
         setModalMode('edit');
-        setFormSourceType(row.source_type);
-        setFormSourceName(row.source);
-        setFormRelType(row.relation_type);
-        setFormTargetType(row.target_type);
-        setFormTargetName(row.target);
-
         setSourceOptions([
           {
             value: `${row.source_type}${ENTITY_SEP}${row.source}`,
@@ -81,7 +66,6 @@ const RelationFormModal = forwardRef<RelationFormModalHandle, RelationFormModalP
             label: `${row.target} (${row.target_type})`,
           },
         ]);
-
         setEditIdentity({
           sourceType: row.source_type,
           sourceName: row.source,
@@ -89,10 +73,15 @@ const RelationFormModal = forwardRef<RelationFormModalHandle, RelationFormModalP
           targetType: row.target_type,
           targetName: row.target,
         });
+        form.setFieldsValue({
+          source: `${row.source_type}${ENTITY_SEP}${row.source}`,
+          rel_type: row.relation_type,
+          target: `${row.target_type}${ENTITY_SEP}${row.target}`,
+        });
         setModalOpen(true);
       },
     }),
-    [],
+    [form],
   );
 
   // ── 实体搜索 ──
@@ -133,44 +122,19 @@ const RelationFormModal = forwardRef<RelationFormModalHandle, RelationFormModalP
     [searchEntities, debounceTimer],
   );
 
-  // ── Select 选择 ──
-  const handleSourceSelect = useCallback((value: string) => {
-    const [type, ...rest] = value.split(ENTITY_SEP);
-    const name = rest.join(ENTITY_SEP);
-    setFormSourceType(type);
-    setFormSourceName(name);
-    setSourceOptions((prev) => {
-      if (prev.some((o) => o.value === value)) return prev;
-      return [{ value, label: `${name} (${type})` }, ...prev];
-    });
-  }, []);
-
-  const handleTargetSelect = useCallback((value: string) => {
-    const [type, ...rest] = value.split(ENTITY_SEP);
-    const name = rest.join(ENTITY_SEP);
-    setFormTargetType(type);
-    setFormTargetName(name);
-    setTargetOptions((prev) => {
-      if (prev.some((o) => o.value === value)) return prev;
-      return [{ value, label: `${name} (${type})` }, ...prev];
-    });
-  }, []);
-
   // ── 保存 ──
-  const handleSave = useCallback(async () => {
-    if (!formSourceName.trim() || !formRelType || !formTargetName.trim()) return;
-
-    setSaving(true);
+  const handleSave = async () => {
     try {
+      const values = await form.validateFields();
+      const [sourceType, ...sourceRest] = values.source.split(ENTITY_SEP);
+      const [targetType, ...targetRest] = values.target.split(ENTITY_SEP);
+      const sourceName = sourceRest.join(ENTITY_SEP).trim();
+      const targetName = targetRest.join(ENTITY_SEP).trim();
+      if (!sourceName || !values.rel_type || !targetName) return;
+
+      setSaving(true);
       if (modalMode === 'create') {
-        await createOntologyRelation(
-          id,
-          formSourceType,
-          formSourceName.trim(),
-          formRelType,
-          formTargetType,
-          formTargetName.trim(),
-        );
+        await createOntologyRelation(id, sourceType, sourceName, values.rel_type, targetType, targetName);
       } else if (editIdentity) {
         await updateOntologyRelation(
           id,
@@ -179,28 +143,18 @@ const RelationFormModal = forwardRef<RelationFormModalHandle, RelationFormModalP
           editIdentity.relType,
           editIdentity.targetType,
           editIdentity.targetName,
-          { relation_type: formRelType },
+          { relation_type: values.rel_type },
         );
       }
       setModalOpen(false);
       onSaved();
     } catch (err: any) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return;
       message.error(err?.message || t('common.saveFailed'));
     } finally {
       setSaving(false);
     }
-  }, [
-    id,
-    formSourceType,
-    formSourceName,
-    formRelType,
-    formTargetType,
-    formTargetName,
-    modalMode,
-    editIdentity,
-    onSaved,
-    t,
-  ]);
+  };
 
   return (
     <Modal
@@ -219,88 +173,110 @@ const RelationFormModal = forwardRef<RelationFormModalHandle, RelationFormModalP
       onOk={handleSave}
       destroyOnClose
     >
-      {/* 源实体 */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#0b2b5c', marginBottom: 8 }}>
-          {t('compile.relation.sourceObject')} <span style={{ color: '#ef4444' }}>*</span>
-        </div>
-        {modalMode === 'edit' ? (
-          <div
-            style={{
-              padding: '6px 12px',
-              background: '#f8fafc',
-              borderRadius: 6,
-              border: '1px solid #e2e8f0',
-              color: '#64748b',
-              fontSize: 13,
-            }}
-          >
-            {formSourceName} ({typeNameMap[formSourceType] || formSourceType})
-          </div>
-        ) : (
-          <Select
-            value={formSourceName ? `${formSourceType}${ENTITY_SEP}${formSourceName}` : undefined}
-            onSearch={debouncedSourceSearch}
-            onChange={handleSourceSelect}
-            options={sourceOptions}
-            placeholder={t('compile.relation.sourceEntityPlaceholder')}
-            style={{ width: '100%' }}
-            size="middle"
-            showSearch
-            filterOption={false}
-            notFoundContent={null}
-          />
-        )}
-      </div>
+      <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
+        {/* 源实体 */}
+        <Form.Item
+          name="source"
+          label={t('compile.relation.sourceObject')}
+          rules={[{ required: true, message: t('common.required') }]}
+        >
+          {modalMode === 'edit' ? (
+            <div
+              style={{
+                padding: '6px 12px',
+                background: '#f8fafc',
+                borderRadius: 6,
+                border: '1px solid #e2e8f0',
+                color: '#64748b',
+                fontSize: 13,
+                minHeight: 34,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              {(() => {
+                const [st, ...sr] = (form.getFieldValue('source') || '').split(ENTITY_SEP);
+                return `${sr.join(ENTITY_SEP)} (${typeNameMap[st] || st})`;
+              })()}
+            </div>
+          ) : (
+            <Select
+              onSearch={debouncedSourceSearch}
+              onChange={(v) => {
+                const [type, ...rest] = v.split(ENTITY_SEP);
+                const name = rest.join(ENTITY_SEP);
+                setSourceOptions((prev) => {
+                  if (prev.some((o) => o.value === v)) return prev;
+                  return [{ value: v, label: `${name} (${type})` }, ...prev];
+                });
+              }}
+              options={sourceOptions}
+              placeholder={t('compile.relation.sourceEntityPlaceholder')}
+              style={{ width: '100%' }}
+              size="middle"
+              showSearch
+              filterOption={false}
+              notFoundContent={null}
+            />
+          )}
+        </Form.Item>
 
-      {/* 关系类型 */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#0b2b5c', marginBottom: 8 }}>
-          {t('compile.relation.name')} <span style={{ color: '#ef4444' }}>*</span>
-        </div>
-        <Select
-          value={formRelType || undefined}
-          onChange={setFormRelType}
-          options={relTypeOptions}
-          placeholder={t('compile.relation.namePlaceholder')}
-          style={{ width: '100%' }}
-          size="middle"
-        />
-      </div>
+        {/* 关系类型 */}
+        <Form.Item
+          name="rel_type"
+          label={t('compile.relation.name')}
+          rules={[{ required: true, message: t('common.required') }]}
+        >
+          <Select options={relTypeOptions} placeholder={t('compile.relation.namePlaceholder')} size="middle" />
+        </Form.Item>
 
-      {/* 目标实体 */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#0b2b5c', marginBottom: 8 }}>
-          {t('compile.relation.targetObject')} <span style={{ color: '#ef4444' }}>*</span>
-        </div>
-        {modalMode === 'edit' ? (
-          <div
-            style={{
-              padding: '6px 12px',
-              background: '#f8fafc',
-              borderRadius: 6,
-              border: '1px solid #e2e8f0',
-              color: '#64748b',
-              fontSize: 13,
-            }}
-          >
-            {formTargetName} ({typeNameMap[formTargetType] || formTargetType})
-          </div>
-        ) : (
-          <Select
-            value={formTargetName ? `${formTargetType}${ENTITY_SEP}${formTargetName}` : undefined}
-            onSearch={debouncedTargetSearch}
-            onChange={handleTargetSelect}
-            options={targetOptions}
-            placeholder={t('compile.relation.targetEntityPlaceholder')}
-            style={{ width: '100%' }}
-            size="middle"
-            showSearch
-            filterOption={false}
-            notFoundContent={null}
-          />
-        )}
-      </div>
+        {/* 目标实体 */}
+        <Form.Item
+          name="target"
+          label={t('compile.relation.targetObject')}
+          rules={[{ required: true, message: t('common.required') }]}
+        >
+          {modalMode === 'edit' ? (
+            <div
+              style={{
+                padding: '6px 12px',
+                background: '#f8fafc',
+                borderRadius: 6,
+                border: '1px solid #e2e8f0',
+                color: '#64748b',
+                fontSize: 13,
+                minHeight: 34,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              {(() => {
+                const [tt, ...tr] = (form.getFieldValue('target') || '').split(ENTITY_SEP);
+                return `${tr.join(ENTITY_SEP)} (${typeNameMap[tt] || tt})`;
+              })()}
+            </div>
+          ) : (
+            <Select
+              onSearch={debouncedTargetSearch}
+              onChange={(v) => {
+                const [type, ...rest] = v.split(ENTITY_SEP);
+                const name = rest.join(ENTITY_SEP);
+                setTargetOptions((prev) => {
+                  if (prev.some((o) => o.value === v)) return prev;
+                  return [{ value: v, label: `${name} (${type})` }, ...prev];
+                });
+              }}
+              options={targetOptions}
+              placeholder={t('compile.relation.targetEntityPlaceholder')}
+              style={{ width: '100%' }}
+              size="middle"
+              showSearch
+              filterOption={false}
+              notFoundContent={null}
+            />
+          )}
+        </Form.Item>
+      </Form>
     </Modal>
   );
 });

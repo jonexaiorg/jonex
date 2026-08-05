@@ -905,3 +905,18 @@ export interface SynonymImportResult {
   skipped: number;
   failed: { index: number; reason: string }[];
 }
+
+export interface YamlImportCounts {
+  entities: number;
+  attributes: number;
+  relations: number;
+  constraints: number;
+}
+
+export interface YamlImportResult {
+  dry_run?: boolean;
+  counts?: YamlImportCounts;
+  errors?: string[];
+  schema_version?: number;
+  status?: string;
+}

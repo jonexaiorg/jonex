@@ -15,7 +15,6 @@ import {
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { observer } from 'mobx-react-lite';
 import { useStore } from '@/store';
 import { SPACE_URL_PARAM } from '@jonex/shell-sdk';
 import type { ColumnsType } from 'antd/es/table';
@@ -42,7 +41,7 @@ import { getDomainKnowledgeList } from '../../api/domainKnowledge';
 import ServiceFormModal from './ServiceFormModal';
 import type { ServiceFormModalHandle } from './ServiceFormModal';
 
-const DomainManagementServices = observer(function DomainManagementServices() {
+const DomainManagementServices = function DomainManagementServices() {
   const { t } = useTranslation();
   const { global } = useStore();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -837,7 +836,6 @@ const DomainManagementServices = observer(function DomainManagementServices() {
       </Modal>
     </div>
   );
-});
+};
 
-DomainManagementServices.displayName = 'DomainManagementServices';
 export default DomainManagementServices;

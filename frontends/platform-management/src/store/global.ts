@@ -1,23 +1,24 @@
-import { makeAutoObservable } from 'mobx';
+import { create } from 'zustand';
 import { getItem, setItem } from '@/utils/storage';
 
-class GlobalStore {
-  locale: string = getItem<string>('locale') || 'zh';
-  userInfo: Record<string, unknown> | null = getItem<Record<string, unknown>>('userInfo') || null;
-
-  constructor() {
-    makeAutoObservable(this);
-  }
-
-  setLocale = (lang: string) => {
-    this.locale = lang;
-    setItem('locale', lang);
-  };
-
-  setUserInfo = (data: Record<string, unknown> | null) => {
-    this.userInfo = data;
-    setItem('userInfo', data);
-  };
+interface GlobalState {
+  locale: string;
+  userInfo: Record<string, unknown> | null;
+  setLocale: (lang: string) => void;
+  setUserInfo: (data: Record<string, unknown> | null) => void;
 }
 
-export default new GlobalStore();
+export const useGlobalStore = create<GlobalState>((set) => ({
+  locale: getItem<string>('locale') || 'zh',
+  userInfo: getItem<Record<string, unknown>>('userInfo') || null,
+
+  setLocale: (lang) => {
+    set({ locale: lang });
+    setItem('locale', lang);
+  },
+
+  setUserInfo: (data) => {
+    set({ userInfo: data });
+    setItem('userInfo', data);
+  },
+}));

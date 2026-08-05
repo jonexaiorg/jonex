@@ -13,15 +13,10 @@ import {
   type AuditActionOption,
   type AuditResourceType,
 } from '../../api/auditLogs';
-
 const { RangePicker } = DatePicker;
 
-/** 将原始 action 值转为可读短名（降级显示用）。
- *  - auth.login → login
- *  - http.post → POST
- *  - delete_prompt_template → Delete Prompt Template
- *  - 无分隔符 → 返回原值 */
-function actionToLabel(action: string): string {
+/** 将原始 action 值转为可读短名（降级显示用）。 */
+export function actionToLabel(action: string): string {
   if (!action) return action;
   const parts = action.split('.');
   const lastPart = parts[parts.length - 1];
@@ -35,21 +30,46 @@ function actionToLabel(action: string): string {
   return action;
 }
 
-/** 从 AuditActionOption 中获取当前语言下的显示名。
- *  降级：后端无映射时用 actionToLabel 生成可读名。 */
-function getOptionLabel(opt: AuditActionOption, locale: string): string {
+/** 从 AuditActionOption 中获取当前语言下的显示名。 */
+export function getOptionLabel(opt: AuditActionOption, locale: string): string {
   const label = locale.startsWith('zh') ? opt.label_zh : opt.label_en;
   if (label === opt.action) return actionToLabel(opt.action);
   return label;
 }
 
-/** 获取操作类型的显示名。
- *  1. 优先从 actionOptions 中查找 → 中/英文标签
- *  2. 降级：用 actionToLabel 生成可读名 */
-function getActionLabel(locale: string, options: AuditActionOption[], action: string): string {
+/** 获取操作类型的显示名。 */
+export function getActionLabel(locale: string, options: AuditActionOption[], action: string): string {
   const found = options.find((o) => o.action === action);
   if (found) return getOptionLabel(found, locale);
   return actionToLabel(action);
+}
+
+/** 操作类型的标签颜色。 */
+export function actionTagColor(action: string): string {
+  if (action.includes('delete')) return 'red';
+  if (action.includes('create') || action.includes('upload')) return 'green';
+  if (action.includes('login')) return 'cyan';
+  return 'default';
+}
+
+/** 获取资源类型的显示名。 */
+export function getResourceLabel(
+  resource: string | null,
+  resource_name: string | null,
+  resource_id: string | null,
+  resourceOptions: AuditResourceType[],
+  locale: string,
+): string {
+  const matched = resourceOptions.find((o) => o.resource === resource);
+  if (matched) return locale.startsWith('zh') ? matched.label_zh : matched.label_en;
+  return resource_name || resource_id || resource || '--';
+}
+
+/** 格式化耗时：>= 1 秒按秒展示，< 1 秒按毫秒展示。 */
+export function formatDuration(durationMs: number | null | undefined): string {
+  if (!durationMs) return '--';
+  if (durationMs >= 1000) return `${(durationMs / 1000).toFixed(1)}s`;
+  return `${durationMs}ms`;
 }
 
 export default function OperationLog() {
@@ -171,14 +191,7 @@ export default function OperationLog() {
       width: 90,
       render: (v: string) => {
         const label = getActionLabel(locale, actionOptions, v);
-        const color = v.includes('delete')
-          ? 'red'
-          : v.includes('create') || v.includes('upload')
-            ? 'green'
-            : v.includes('login')
-              ? 'cyan'
-              : 'default';
-        return <Tag color={color}>{label}</Tag>;
+        return <Tag color={actionTagColor(v)}>{label}</Tag>;
       },
     },
     {
@@ -187,9 +200,15 @@ export default function OperationLog() {
       key: 'resource',
       width: 100,
       render: (_: unknown, r: AuditLogItem) => {
-        const matched = resourceOptions.find((o) => o.resource === r.resource);
-        if (matched) return locale.startsWith('zh') ? matched.label_zh : matched.label_en;
-        return r.resource_label || r.resource || '--';
+        const label = getResourceLabel(r.resource, r.resource_name, r.resource_id, resourceOptions, locale);
+        return (
+          <span>
+            {label}
+            {r.resource_name && (
+              <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4 }}>{r.resource_name}</div>
+            )}
+          </span>
+        );
       },
     },
     { title: t('operationLog.ip'), dataIndex: 'ip', key: 'ip', width: 120 },
@@ -198,7 +217,7 @@ export default function OperationLog() {
       dataIndex: 'duration_ms',
       key: 'duration_ms',
       width: 70,
-      render: (v: number | null) => (v ? `${v}ms` : '--'),
+      render: (v: number | null) => formatDuration(v),
     },
     {
       title: t('common.actions'),
@@ -239,7 +258,8 @@ export default function OperationLog() {
             style={{ width: 180 }}
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            onSearch={(v) => load(1, v)}
+            onSearch={(v) => load(1, undefined, v)}
+            onClear={() => load(1, undefined, '')}
             allowClear
           />
           <Select
@@ -285,7 +305,7 @@ export default function OperationLog() {
           dataSource={logs}
           rowKey="id"
           loading={loading}
-          scroll={{ y: 'calc(100vh - 260px)' }}
+          scroll={{ y: 'calc(100vh - 340px)' }}
           pagination={{
             current: page,
             total,
@@ -300,7 +320,14 @@ export default function OperationLog() {
         />
       </div>
 
-      <LogDetailModal open={!!detailItem} detailItem={detailItem} onClose={() => setDetailItem(null)} />
+      <LogDetailModal
+        open={!!detailItem}
+        detailItem={detailItem}
+        actionOptions={actionOptions}
+        resourceOptions={resourceOptions}
+        locale={locale}
+        onClose={() => setDetailItem(null)}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { IconMap, menuConfig, type MenuItem } from '@/router/menu.config';
+import { IconMap, type MenuItem } from '@/router/menu';
 
 interface RenderedMenuItem {
   key: string;

@@ -16,7 +16,7 @@ function AntdGate({ children }: { children: React.ReactNode }) {
   // 导致变量丢失 → z-index 解析为 auto、弹层被内容盖住。关掉后 antd 把
   // z-index 等 token 直接编成静态值，永不丢失（各 popup 层叠仍由 antd 算对）。
   return (
-    <ConfigProvider locale={antdLocale} theme={{ ...antdTheme, cssVar: false }}>
+    <ConfigProvider locale={antdLocale} theme={{ ...antdTheme }}>
       {children}
     </ConfigProvider>
   );

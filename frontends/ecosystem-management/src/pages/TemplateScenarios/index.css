@@ -47,38 +47,42 @@
 }
 
 .template-scenarios-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
   max-height: 420px;
   margin: 0 0 16px;
-  padding: 0;
   overflow-y: auto;
-  list-style: none;
 }
 
-.template-scenarios-list li {
-  position: relative;
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 4px;
-  padding: 10px 14px;
+.template-scenarios-list.ant-menu {
+  background: transparent;
+  border-inline-end: none;
+}
+
+.template-scenarios-list .ant-menu-item {
+  height: auto !important;
+  margin-bottom: 4px !important;
+  margin-inline: 0 !important;
+  padding: 10px 14px !important;
   border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
+  width: 100% !important;
+  line-height: normal !important;
 }
 
-.template-scenarios-list li:hover {
-  border-color: #e2e8f0;
-  background: #f8fafc;
+.template-scenarios-list .ant-menu-item:hover {
+  border-color: #e2e8f0 !important;
+  background: #f8fafc !important;
 }
 
-.template-scenarios-list li.active {
-  border-color: #3b82f6;
-  background: #eff6ff;
+.template-scenarios-list .ant-menu-item-selected {
+  border-color: #3b82f6 !important;
+  background: #eff6ff !important;
+}
+
+.template-scenarios-list .ant-menu-item-selected:hover {
+  border-color: #3b82f6 !important;
+  background: #eff6ff !important;
 }
 
 .template-scenarios-item-main {
@@ -130,7 +134,9 @@
 }
 
 .template-scenarios-list li:hover .template-scenarios-item-actions,
-.template-scenarios-list li.active .template-scenarios-item-actions {
+.template-scenarios-list li.active .template-scenarios-item-actions,
+.ant-menu-item:hover .template-scenarios-item-actions,
+.ant-menu-item-selected .template-scenarios-item-actions {
   opacity: 1;
 }
 

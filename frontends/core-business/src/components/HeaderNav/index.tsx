@@ -9,7 +9,8 @@ import { getAvatarText } from '@/utils/utils';
 import { buildLoginRedirectUrl, clearAuthStorage } from '@jonex/shell-sdk';
 import { safeMessage } from '@/utils/safeMessage';
 import useIsMobile from '@/hooks/useIsMobile';
-import { getMenuConfig } from '@/router/menu.config';
+import { getMenuFromRoutes } from '@/router/menu';
+import { getRoutes } from '@/router/routes.config';
 import styles from './index.module.scss';
 
 const { Text, Title } = Typography;
@@ -42,7 +43,7 @@ export default function HeaderNav({ type = null, previous = '', title = '', prev
   const userRoles: string = Array.isArray(userInfo?.roles)
     ? (userInfo?.roles as string[]).join(',')
     : (userInfo?.roles as string) || '';
-  const menuItems = useMemo(() => getMenuItemsByRole(getMenuConfig(t), userRoles), [t]);
+  const menuItems = useMemo(() => getMenuItemsByRole(getMenuFromRoutes(getRoutes(), t), userRoles), [t]);
 
   const rolesOptions = {
     admin: t('auth.admin'),
@@ -65,7 +66,7 @@ export default function HeaderNav({ type = null, previous = '', title = '', prev
 
   useEffect(() => {
     const pathname = location.pathname;
-    const { selectedKey } = findMenuPathKeys(getMenuConfig(t), pathname);
+    const { selectedKey } = findMenuPathKeys(getMenuFromRoutes(getRoutes(), t), pathname);
     setSelectedKeys(selectedKey ? [selectedKey] : []);
   }, [location.pathname]);
 

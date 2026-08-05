@@ -185,12 +185,13 @@ def _jonex_query_headers(
     tenant_id: str = "",
     kb_id: str = "",
     trace_id: str = "",
+    user_id: str = "",
     scene: str = "lightrag_query",
 ) -> dict:
     """[jonex] 构造调用 LightRAG 在线查询时透传给 llm-gateway 的计量头。
 
     LightRAG server 的中间件会把这些头存入 contextvar，其内部的 LLM/embedding
-    调用据此向 llm-gateway 注入 X-Jonex-* 维度（tenant/kb/scene/trace）。
+    调用据此向 llm-gateway 注入 X-Jonex-* 维度（tenant/kb/user/scene/trace）。
 
     同时注入 LIGHTRAG-WORKSPACE 头实现按「租户 + 知识库」的硬隔离：LightRAG server
     据此把 KV / 向量 / 图存储整体切到对应 workspace，查询只在本 KB 命名空间内召回，
@@ -203,6 +204,8 @@ def _jonex_query_headers(
         headers["X-Jonex-Kb-Id"] = kb_id
     if trace_id:
         headers["X-Jonex-Trace-Id"] = trace_id
+    if user_id:
+        headers["X-Jonex-User-Id"] = user_id
     workspace = lightrag_workspace(tenant_id, kb_id)
     if workspace:
         headers["LIGHTRAG-WORKSPACE"] = workspace
@@ -537,14 +540,9 @@ class LightRAGServerClient:
         knowledge_base_id: str,
         tenant_id: str = "",          # [jonex] 计量上下文
         trace_id: str = "",           # [jonex] 计量上下文
+        user_id: str = "",            # [jonex] 计量上下文
     ) -> dict:
-        """查询 LightRAG，返回 {"answer": str, "references": list[dict]}。
-
-        设计决策 D1/D2：
-        - LightRAG /query 已返回 references[].file_path（即入库的 file_source 字符串）。
-        - 这里不再丢弃 references，改为结构化返回。
-        - query()（返回 str）的调用方无影响；需引用信息的使用方调 query_detailed() 或本方法。
-        """
+        """查询 LightRAG，返回 {"answer": str, "references": list[dict]}。"""
         # LightRAG /query 的 QueryRequest.query 有 min_length=3 硬校验，
         # 短于 3 个字符必然返回 HTTP 422。这里前置拦截，转为语义明确的参数
         # 错误（4xxx），避免无谓的网络往返与误导性的上游 5xxx 错误。
@@ -573,6 +571,7 @@ class LightRAGServerClient:
                     tenant_id=tenant_id,
                     kb_id=knowledge_base_id,
                     trace_id=trace_id,
+                    user_id=user_id,
                     scene="lightrag_query",
                 ),
             )
@@ -626,6 +625,7 @@ class LightRAGServerClient:
         knowledge_base_id: str = "",   # [jonex] 计量上下文
         tenant_id: str = "",           # [jonex] 计量上下文
         trace_id: str = "",            # [jonex] 计量上下文
+        user_id: str = "",             # [jonex] 计量上下文
     ) -> AsyncGenerator[str, None]:
         """流式查询 LightRAG，逐行 yield 原始 JSON（外层包装为 SSE）"""
         async with httpx.AsyncClient(
@@ -641,6 +641,7 @@ class LightRAGServerClient:
                     tenant_id=tenant_id,
                     kb_id=knowledge_base_id,
                     trace_id=trace_id,
+                    user_id=user_id,
                     scene="lightrag_query",
                 ),
             ) as resp:
@@ -1344,6 +1345,8 @@ class LightRAGAdapter(BaseRAGCapability):
                 ),
                 # [jonex] 计量链路追踪：优先用上游透传的 trace_id，回落本次 request_id
                 trace_id=request.payload.get("trace_id") or request.request_id or "",
+                # [jonex] Gap B: 从 request 提取 user_id，透传给 LightRAG 计量
+                user_id=request.user_id or request.payload.get("user_id") or "",
             )
             return CapabilityResponse.ok(
                 request_id=request.request_id, data=detailed
@@ -1514,6 +1517,7 @@ class LightRAGAdapter(BaseRAGCapability):
         *,
         knowledge_base_id: str,
         trace_id: str = "",          # [jonex] 计量链路追踪
+        user_id: str = "",           # [jonex] 计量上下文
     ) -> str:
         require_tenant(tenant_id)
         knowledge_base_id = _require_knowledge_base_id(knowledge_base_id)
@@ -1524,6 +1528,7 @@ class LightRAGAdapter(BaseRAGCapability):
             knowledge_base_id=knowledge_base_id,
             tenant_id=tenant_id,          # [jonex] 计量上下文
             trace_id=trace_id,            # [jonex] 计量链路追踪
+            user_id=user_id,
         )
         return result["answer"] if isinstance(result, dict) else result
 
@@ -1536,6 +1541,7 @@ class LightRAGAdapter(BaseRAGCapability):
         *,
         knowledge_base_id: str,
         trace_id: str = "",
+        user_id: str = "",
     ) -> dict:
         """返回 {"answer": str, "references": list[dict]} 详细结果。"""
         require_tenant(tenant_id)
@@ -1547,6 +1553,7 @@ class LightRAGAdapter(BaseRAGCapability):
             knowledge_base_id=knowledge_base_id,
             tenant_id=tenant_id,
             trace_id=trace_id,
+            user_id=user_id,
         )
 
     async def delete(self, doc_id: str, tenant_id: str, *, knowledge_base_id: str = "") -> bool:
@@ -1565,6 +1572,8 @@ class LightRAGAdapter(BaseRAGCapability):
         top_k: int = 5,
         *,
         knowledge_base_id: str = "",
+        trace_id: str = "",           # [jonex] 计量链路追踪
+        user_id: str = "",            # [jonex] 计量上下文
     ) -> AsyncGenerator[str, None]:
         """流式 RAG 查询"""
         tenant_id = require_tenant(tenant_id)
@@ -1572,6 +1581,8 @@ class LightRAGAdapter(BaseRAGCapability):
             query=query, mode=mode, top_k=top_k,
             knowledge_base_id=knowledge_base_id,   # [jonex] 按知识库 workspace 隔离
             tenant_id=tenant_id,          # [jonex] 计量上下文
+            trace_id=trace_id,            # [jonex] 计量链路追踪
+            user_id=user_id,              # [jonex] 计量上下文
         ):
             yield line
 
@@ -2239,6 +2250,7 @@ class LightRAGAdapter(BaseRAGCapability):
                                         "target_type": r.target_type,
                                         "relation_type": r.relation_type,
                                         "confidence": r.confidence,
+                                        "source_chunks": r.source_chunks,   # [jonex] 方案⑧
                                     }
                                     for r in result.relations
                                 ],
@@ -2373,11 +2385,15 @@ class LightRAGAdapter(BaseRAGCapability):
             top_k: int = 5,
             tenant_id: str = "",
             knowledge_base_id: str = "",
+            trace_id: str = "",          # [jonex] 计量链路追踪
+            user_id: str = "",           # [jonex] 计量上下文
         ):
             async def _generate():
                 async for line in self.stream_query(
                     query=query, tenant_id=tenant_id, mode=mode, top_k=top_k,
                     knowledge_base_id=knowledge_base_id,
+                    trace_id=trace_id,
+                    user_id=user_id,
                 ):
                     yield line + "\n"
 

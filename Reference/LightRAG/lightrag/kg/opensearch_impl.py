@@ -444,6 +444,41 @@ class OpenSearchKVStorage(BaseKVStorage):
             logger.error(f"[{self.workspace}] Error filtering keys: {e}")
             return keys
 
+    # ── [jonex] 按 doc= 锚点列出 chunks ──────────────────────────
+    async def get_chunks_by_doc_id(
+        self, doc_id: str, *, limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """List chunks whose file_path contains ``doc=<doc_id>`` anchor."""
+        if not doc_id or not self._index_ready:
+            return []
+        pattern = f"doc={doc_id}"
+        try:
+            response = await self.client.search(
+                index=self._index_name,
+                body={
+                    "query": {"match_phrase": {"file_path": pattern}},
+                    "size": limit,
+                    "sort": [{"chunk_order_index": "asc"}],
+                },
+            )
+            out: list[dict[str, Any]] = []
+            for hit in response["hits"]["hits"]:
+                doc = hit["_source"]
+                doc["_id"] = hit["_id"]
+                doc["chunk_id"] = str(hit["_id"])
+                doc.setdefault("create_time", 0)
+                doc.setdefault("update_time", 0)
+                out.append(doc)
+            return out
+        except OpenSearchException as e:
+            if _is_missing_index_error(e):
+                self._mark_index_missing()
+                return []
+            logger.error(
+                f"[{self.workspace}] Error get_chunks_by_doc_id: {e}"
+            )
+            return []
+
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         """Insert or update documents with automatic timestamping."""
         if not data:

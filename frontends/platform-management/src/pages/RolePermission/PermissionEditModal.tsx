@@ -72,18 +72,34 @@ const PermissionEditModal = forwardRef<PermissionEditModalRef, Props>(({ perms, 
           <Spin />
         </div>
       ) : (
-        <Checkbox.Group value={checked} onChange={(v) => setChecked(v as number[])} style={{ width: '100%' }}>
-          {perms.map((p) => (
-            <div key={p.id} style={{ marginBottom: 8 }}>
-              <Checkbox value={p.id}>
+        <>
+          <div style={{ marginBottom: 12 }}>
+            <Checkbox
+              indeterminate={checked.length > 0 && checked.length < perms.length}
+              checked={checked.length === perms.length}
+              onChange={(e) => {
+                setChecked(e.target.checked ? perms.map((p) => p.id) : []);
+              }}
+            >
+              <strong>{t('common.selectAll')}</strong>
+            </Checkbox>
+          </div>
+          <Checkbox.Group
+            value={checked}
+            onChange={(v) => setChecked(v as number[])}
+            style={{ width: '100%', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}
+          >
+            {perms.map((p) => (
+              <Checkbox key={p.id} value={p.id}>
                 <strong>{permissionName(p, t)}</strong>
-                <span style={{ color: '#94a3b8', marginLeft: 8, fontSize: 12 }}>
+                <br />
+                <span style={{ color: '#94a3b8', fontSize: 11 }}>
                   {p.resource}:{p.action}
                 </span>
               </Checkbox>
-            </div>
-          ))}
-        </Checkbox.Group>
+            ))}
+          </Checkbox.Group>
+        </>
       )}
     </Modal>
   );

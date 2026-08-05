@@ -220,6 +220,21 @@ async def generic_rerank_api(
     if api_key is not None:
         headers["Authorization"] = f"Bearer {api_key}"
 
+    # [jonex] Gap E1: 注入计量维度头，复用查询路径 contextvar
+    # （LightRAG server 中间件 set_jonex_context_from_headers 已在请求入口写入）。
+    # best-effort: 计量头注入失败不阻断 rerank 主功能。
+    try:
+        from .jonex_metering import build_metering_headers
+
+        _metering = build_metering_headers(
+            default_scene="lightrag_rerank",
+            force_scene="lightrag_rerank",
+        )
+        if _metering:
+            headers.update(_metering)
+    except Exception:
+        pass
+
     # Handle document chunking if enabled
     original_documents = documents
     doc_indices = None

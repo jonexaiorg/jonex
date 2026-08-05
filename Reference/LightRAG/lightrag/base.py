@@ -368,6 +368,30 @@ class BaseKVStorage(StorageNameSpace, ABC):
     async def filter_keys(self, keys: set[str]) -> set[str]:
         """Return un-exist keys"""
 
+    async def insert_if_absent(self, data: dict[str, dict[str, Any]]) -> set[str]:
+        """Atomic insert-if-absent — only inserts new keys, never overwrites.
+
+        Returns the set of actually-inserted keys (those that were NOT already
+        present before this call).
+
+        Default implementation: filter_keys + upsert (correct for single-worker
+        event loops but NOT atomic across concurrent asyncio tasks — the TOCTOU
+        gap between filter_keys and upsert can produce orphan track_ids).
+
+        Storage backends that support native INSERT … ON CONFLICT DO NOTHING
+        (e.g. PostgreSQL) MUST override this method for true cross-task atomicity.
+
+        [jonex] §4.1 Fix A: eliminates the TOCTOU race in
+        apipeline_enqueue_documents that leaves zero-doc orphan track_ids.
+        """
+        if not data:
+            return set()
+        new_keys = await self.filter_keys(set(data.keys()))
+        if new_keys:
+            filtered = {k: v for k, v in data.items() if k in new_keys}
+            await self.upsert(filtered)
+        return new_keys
+
     @abstractmethod
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         """Upsert data
@@ -898,6 +922,11 @@ class DeletionResult:
     message: str
     status_code: int = 200
     file_path: str | None = None
+    # [jonex] R2: batch-deferred rebuild — populated when adelete_by_doc_id is called
+    # with defer_rebuild=True.  Caller accumulates these across the batch and issues
+    # a single rebuild_knowledge_from_chunks at the end.
+    affected_entity_names: set[str] = field(default_factory=set)
+    affected_relation_keys: set[tuple] = field(default_factory=set)
 
 
 # Unified Query Result Data Structures for Reference List Support

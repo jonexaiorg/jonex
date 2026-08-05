@@ -85,7 +85,20 @@ kb={knowledge_base_id}|doc={document_id}|tenant={tenant_id}|file={file_path}|chu
 
 > scene 取值枚举：`lightrag_extract`（入库抽取）、`lightrag_query`（在线查询 LLM）、
 > `lightrag_embed`（入库 embedding）、`lightrag_embed_query`（查询 embedding）、
+> `lightrag_rerank`（检索期 rerank，与 query 同 task 树但独立 scene 分类）、
 > `ontology_extract` / `ontology_qa`（平台侧本体调用，非 LightRAG）。
+
+#### (D) rerank 计量注入 —— 覆盖【检索期 rerank】（同步 HTTP）
+
+| 文件 | 位置 | 说明 |
+|------|------|------|
+| `lightrag/rerank.py` | `generic_rerank_api` HTTP 请求头 | `# [jonex] Gap E1`：调用 `build_metering_headers(default_scene="lightrag_rerank", force_scene="lightrag_rerank")` 注入 X-Jonex-* 头。force_scene 覆盖 contextvar 里的 `lightrag_query`，使 rerank token 能按独立 scene 分类，不被合并到查询 LLM 的 `lightrag_query` |
+| `lightrag/jonex_metering.py` | `build_metering_headers` 新增 `force_scene` 参数 | `force_scene` 非空时无视 file_source / contextvar，强制使用指定 scene（优先级 force > file_source > contextvar > default_scene） |
+
+> **设计要点**：检索期 rerank 与查询 LLM 在同一 HTTP 请求 task 树内执行，contextvar 已由
+> server 中间件写入 `scene=lightrag_query`。若不强制覆盖，rerank 行的 scene 会落为
+> `lightrag_query`，无法从 LLM token 中拆出 rerank 用量。`force_scene` 保证 `lightrag_rerank`
+> 行可独立统计，同时 query LLM 仍正确归为 `lightrag_query`。
 
 ---
 
@@ -143,6 +156,12 @@ kb={knowledge_base_id}|doc={document_id}|tenant={tenant_id}|file={file_path}|chu
         `trace_id` → atomic-rag `execute`（`payload.trace_id` 回落 `request.request_id`）
         → `adapter.query(trace_id=)` → `_jonex_query_headers` → LightRAG `X-Jonex-Trace-Id`。
       - 入库抽取：`file_source` 追加 `trace={task_id}` 字段，`parse_file_source` 解析后注入。
+- [x] **user_id 端到端**：`_jonex_query_headers` 新增 `user_id` 参数 → `X-Jonex-User-Id`；
+      capability → search_service → adapter → LightRAGServerClient 全链路透传；
+      LightRAG 中间件 `set_jonex_context_from_headers` 已读 `X-Jonex-User-Id`（本已完成）。
+- [x] **rerank 计量注入（E1）**：`generic_rerank_api` 调用 `build_metering_headers` 注入
+      `X-Jonex-*`；`force_scene="lightrag_rerank"` 覆盖 contextvar 中的 `lightrag_query`，
+      使检索期 rerank 按独立 scene 分类。依赖 (B) 链路 contextvar 已写入。
 
 已知约束（按需求暂不实现）：
 - ~~**入库 embedding 不精确到 kb/doc**~~ **【已解决，见 (A2)+(A3)】**：在 `process_document`
@@ -407,3 +426,57 @@ vendored 改动，须**重建 lightrag 镜像**：`docker compose build lightrag
 用途：pipeline 轮询层（`stages.py` PushChunksStage）dup-failed 三态判定，按原件当前状态区分良性成功/可恢复等待/硬失败。无此端点时，所有 dup 因查不到原件状态而静默落入 hard_failed → strict 整体失败 → reparse 全量回滚。
 
 > ⚠ 路由次序：`/{doc_id}` 注册在所有具名 GET 路由（`/pipeline_status`、`/track_status/{track_id}`、`/status_counts`、`/chunks/{chunk_id}`）**之后**，FastAPI 按注册序匹配，不抢具名路径。LightRAG 内部 doc-hash id 格式为 `doc-<md5>` 或 `dup-<md5>`，不会与现有具名路径冲突。
+
+
+---
+
+## content_summary varchar(4096) 溢出修复（bugfix）
+
+**现象**：大 chunk（内容 > 4096 字符）入库时 LightRAG 报
+`asyncpg.exceptions.StringDataRightTruncationError: value too long for type character varying(4096)`，
+该 chunk 入库失败、被 `Preserving N failed document entries for manual review` 保留，反复重跑修不好
+（内容 dedup 挡住重推）。
+
+**根因**：`get_content_summary(content, max_length=4096)` 超长时返回 `content[:4096] + "..."` =
+**4099 字符**，而 `LIGHTRAG_DOC_STATUS.content_summary` 列是 `varchar(4096)` → 溢出（off-by-3）。
+
+**改动**（`# [jonex]` 标记）：
+
+| 文件 | 位置 | 改动 |
+|------|------|------|
+| `lightrag/lightrag.py` | `apipeline_enqueue_documents` new_docs | `get_content_summary(..., max_length=4096)` → `4093`（留 3 字符给 "..."，双保险，兼容仍是 varchar 的旧列） |
+
+**部署**：改的是 vendored LightRAG，需 `docker compose build lightrag && up -d lightrag`；
+启动时自动迁移把既有 `content_summary` 列放宽为 TEXT。
+
+**存量**：已失败的 chunk/doc 不会自动恢复（dedup + preserve-failed）；需删除对应 failed doc 后让文档重跑，
+或走 LightRAG reprocess-failed。
+
+---
+
+## 十一、get_doc_by_file_path 去歧义修复 —— 优先返回 processed（非确定性重解析阻塞）
+
+**现象**：重解析（reparse）某些已部分入库的文档时，`insert_text` 先查 `get_doc_by_file_path(file_source)`
+判断是否存在。同一 `file_path` 下有 `processed` 原始记录 + 历史 `FAILED` dup 记录时，PostgreSQL
+无 `ORDER BY` 取 `result[0]`，返回哪条由 PG 任意决定：
+- 命中 `processed` → track_id 指向 processed track → track 查为 completed → 重解析成功。
+- 命中 `FAILED` dup → track_id 指向 FAILED track → 严格模式 hard_failed → 整个 reparse 失败。
+
+存量 dup-FAILED 越多，命中失败的概率越大 → **重解析非确定性被挡**。
+
+**根因**：`get_doc_by_file_path`（`kg/postgres_impl.py`）查 `SELECT * ... WHERE file_path=$2`，
+无排序。dup-FAILED 记录和 processed 原始共用同一个 `file_path`（chunk 的 `file_source`），
+同 file_path 多条时 `result[0]` 非确定性。
+
+**改动**（`# [jonex]` 标记）：
+
+| 文件 | 位置 | 改动 |
+|------|------|------|
+| `lightrag/kg/postgres_impl.py` | `get_doc_by_file_path` SQL | `ORDER BY CASE WHEN status = 'processed' THEN 0 ELSE 1 END, created_at DESC`：processed 优先，同优先级取最新 |
+
+**效果**：
+- 同 file_path 有 processed + FAILED 多条时，**确定返回 processed**（重解析不再被历史 dup 随机挡）。
+- 无 processed 只有 FAILED 时，行为同现状（返回 FAILED，后续按 FAILED 走 trigge-failed 逻辑）。
+- JSON 和 MongoDB 实现暂未修复（项目仅用 PostgreSQL），升级 LightRAG 时一并补。
+
+**部署**：vendored 改动，须 `docker compose build lightrag && up -d lightrag`。无 schema 变更。

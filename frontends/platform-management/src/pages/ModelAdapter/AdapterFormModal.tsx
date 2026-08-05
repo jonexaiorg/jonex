@@ -1,6 +1,6 @@
-import React, { useState, forwardRef, useImperativeHandle, useCallback } from 'react';
+import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Input, Modal, message } from 'antd';
+import { Form, Input, Modal, message } from 'antd';
 import {
   createProvider,
   updateProvider,
@@ -22,21 +22,17 @@ const AdapterFormModal = forwardRef<AdapterFormModalHandle, Props>(({ onSuccess 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ModelProviderItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ name: '', provider_type: 'llm', endpoint: '', model_name: '' });
-
-  const resetForm = () => {
-    setEditing(null);
-    setForm({ name: '', provider_type: 'llm', endpoint: '', model_name: '' });
-  };
+  const [form] = Form.useForm();
 
   useImperativeHandle(ref, () => ({
     open() {
-      resetForm();
+      setEditing(null);
+      form.setFieldsValue({ name: '', provider_type: 'llm', endpoint: '', model_name: '' });
       setOpen(true);
     },
     openEdit(data: ModelProviderItem) {
       setEditing(data);
-      setForm({
+      form.setFieldsValue({
         name: data.name,
         provider_type: data.provider_type,
         endpoint: data.endpoint || '',
@@ -46,18 +42,15 @@ const AdapterFormModal = forwardRef<AdapterFormModalHandle, Props>(({ onSuccess 
     },
   }));
 
-  const handleSave = useCallback(async () => {
-    if (!form.name) {
-      message.warning(t('modelAdapter.nameRequired'));
-      return;
-    }
-    setSubmitting(true);
+  const handleSave = async () => {
     try {
+      const values = await form.validateFields();
+      setSubmitting(true);
       const payload: SaveProviderPayload = {
-        name: form.name,
-        provider_type: form.provider_type,
-        endpoint: form.endpoint || undefined,
-        model_name: form.model_name || undefined,
+        name: values.name,
+        provider_type: values.provider_type,
+        endpoint: values.endpoint || undefined,
+        model_name: values.model_name || undefined,
       };
       if (editing) {
         await updateProvider(editing.id, payload);
@@ -69,11 +62,12 @@ const AdapterFormModal = forwardRef<AdapterFormModalHandle, Props>(({ onSuccess 
       setOpen(false);
       onSuccess();
     } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'errorFields' in err) return;
       message.error(err instanceof Error ? err.message : t('modelAdapter.saveFailed'));
     } finally {
       setSubmitting(false);
     }
-  }, [form, editing, t, onSuccess]);
+  };
 
   return (
     <Modal
@@ -85,33 +79,26 @@ const AdapterFormModal = forwardRef<AdapterFormModalHandle, Props>(({ onSuccess 
       cancelText={t('common.cancel')}
       confirmLoading={submitting}
       width={480}
+      destroyOnClose
     >
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>
-          {t('modelAdapter.name')} <span style={{ color: '#dc2626' }}>*</span>
-        </label>
-        <Input
-          placeholder={t('modelAdapter.namePlaceholder')}
-          value={form.name}
-          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-        />
-      </div>
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>{t('modelAdapter.modelName')}</label>
-        <Input
-          placeholder={t('modelAdapter.modelNamePlaceholder')}
-          value={form.model_name}
-          onChange={(e) => setForm((f) => ({ ...f, model_name: e.target.value }))}
-        />
-      </div>
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>{t('modelAdapter.endpoint')}</label>
-        <Input
-          placeholder={t('modelAdapter.endpointPlaceholder')}
-          value={form.endpoint}
-          onChange={(e) => setForm((f) => ({ ...f, endpoint: e.target.value }))}
-        />
-      </div>
+      <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
+        <Form.Item name="provider_type" hidden initialValue="llm">
+          <Input type="hidden" />
+        </Form.Item>
+        <Form.Item
+          name="name"
+          label={t('modelAdapter.name')}
+          rules={[{ required: true, message: t('modelAdapter.nameRequired') }]}
+        >
+          <Input placeholder={t('modelAdapter.namePlaceholder')} />
+        </Form.Item>
+        <Form.Item name="model_name" label={t('modelAdapter.modelName')}>
+          <Input placeholder={t('modelAdapter.modelNamePlaceholder')} />
+        </Form.Item>
+        <Form.Item name="endpoint" label={t('modelAdapter.endpoint')}>
+          <Input placeholder={t('modelAdapter.endpointPlaceholder')} />
+        </Form.Item>
+      </Form>
     </Modal>
   );
 });

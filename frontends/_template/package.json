@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.3",
+    "@jonex/platform-theme": "workspace:*",
+    "@jonex/shell-sdk": "workspace:*",
     "@loadable/component": "^5.15.3",
     "antd": "^6.4.3",
     "axios": "^1.10.0",
@@ -23,15 +25,12 @@
     "dompurify": "^3.3.1",
     "i18next": "^25.3.1",
     "lodash": "^4.17.21",
-    "mobx": "^6.13.7",
-    "mobx-react-lite": "^4.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-i18next": "^15.6.0",
     "react-router-dom": "^6.22.3",
-    "@jonex/platform-theme": "workspace:*",
-    "@jonex/shell-sdk": "workspace:*",
-    "sass": "^1.89.2"
+    "sass": "^1.89.2",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@originjs/vite-plugin-federation": "^1.4.1",

@@ -80,12 +80,6 @@ importers:
       lodash:
         specifier: ^4.17.21
         version: 4.18.1
-      mobx:
-        specifier: ^6.13.7
-        version: 6.15.3
-      mobx-react-lite:
-        specifier: ^4.1.0
-        version: 4.1.1(mobx@6.15.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -101,6 +95,9 @@ importers:
       sass:
         specifier: ^1.89.2
         version: 1.100.0
+      zustand:
+        specifier: ^5.0.14
+        version: 5.0.14(@types/react@18.3.29)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
     devDependencies:
       '@originjs/vite-plugin-federation':
         specifier: ^1.4.1
@@ -165,12 +162,6 @@ importers:
       lodash:
         specifier: ^4.17.21
         version: 4.18.1
-      mobx:
-        specifier: ^6.13.7
-        version: 6.15.3
-      mobx-react-lite:
-        specifier: ^4.1.0
-        version: 4.1.1(mobx@6.15.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -189,6 +180,9 @@ importers:
       sass:
         specifier: ^1.89.2
         version: 1.100.0
+      zustand:
+        specifier: ^5.0.14
+        version: 5.0.14(@types/react@18.3.29)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
     devDependencies:
       '@originjs/vite-plugin-federation':
         specifier: ^1.4.1
@@ -262,12 +256,6 @@ importers:
       lodash:
         specifier: ^4.17.21
         version: 4.18.1
-      mobx:
-        specifier: ^6.13.7
-        version: 6.15.3
-      mobx-react-lite:
-        specifier: ^4.1.0
-        version: 4.1.1(mobx@6.15.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -283,6 +271,9 @@ importers:
       sass:
         specifier: ^1.89.2
         version: 1.100.0
+      zustand:
+        specifier: ^5.0.14
+        version: 5.0.14(@types/react@18.3.29)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
     devDependencies:
       '@originjs/vite-plugin-federation':
         specifier: ^1.4.1
@@ -341,12 +332,6 @@ importers:
       lodash:
         specifier: ^4.17.21
         version: 4.18.1
-      mobx:
-        specifier: ^6.13.7
-        version: 6.15.3
-      mobx-react-lite:
-        specifier: ^4.1.0
-        version: 4.1.1(mobx@6.15.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -362,6 +347,9 @@ importers:
       sass:
         specifier: ^1.89.2
         version: 1.100.0
+      zustand:
+        specifier: ^5.0.14
+        version: 5.0.14(@types/react@18.3.29)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
     devDependencies:
       '@originjs/vite-plugin-federation':
         specifier: ^1.4.1
@@ -3054,22 +3042,6 @@ packages:
   mlly@1.8.2:
     resolution: {integrity: sha512-d+ObxMQFmbt10sretNDytwt85VrbkhhUA/JBGm1MPaWJ65Cl4wOgLaB1NYvJSZ0Ef03MMEU/0xpPMXUIQ29UfA==}
 
-  mobx-react-lite@4.1.1:
-    resolution: {integrity: sha512-iUxiMpsvNraCKXU+yPotsOncNNmyeS2B5DKL+TL6Tar/xm+wwNJAubJmtRSeAoYawdZqwv8Z/+5nPRHeQxTiXg==}
-    peerDependencies:
-      mobx: ^6.9.0
-      react: ^16.8.0 || ^17 || ^18 || ^19
-      react-dom: '*'
-      react-native: '*'
-    peerDependenciesMeta:
-      react-dom:
-        optional: true
-      react-native:
-        optional: true
-
-  mobx@6.15.3:
-    resolution: {integrity: sha512-6+ZSYDs5zgH5CdGfEU2q2Lsa5PztVryL1ys7kAImTU25n2A9LAMj/yneVsQpd03MfwMLDQF+7kakJR9Z+cQxSw==}
-
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
@@ -3811,6 +3783,24 @@ packages:
 
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+
+  zustand@5.0.14:
+    resolution: {integrity: sha512-/8tAspM5LMPr28b3fwLYrtdj77ECpfZviaP75CMTnwO8ISyaE4GDIG/9rDDYq/cH9D2Xw2A2RXglLInmVBQB/g==}
+    engines: {node: '>=12.20.0'}
+    peerDependencies:
+      '@types/react': '>=18.0.0'
+      immer: '>=9.0.6'
+      react: '>=18.0.0'
+      use-sync-external-store: '>=1.2.0'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      immer:
+        optional: true
+      react:
+        optional: true
+      use-sync-external-store:
+        optional: true
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -6823,16 +6813,6 @@ snapshots:
       pkg-types: 1.3.1
       ufo: 1.6.4
 
-  mobx-react-lite@4.1.1(mobx@6.15.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
-    dependencies:
-      mobx: 6.15.3
-      react: 18.3.1
-      use-sync-external-store: 1.6.0(react@18.3.1)
-    optionalDependencies:
-      react-dom: 18.3.1(react@18.3.1)
-
-  mobx@6.15.3: {}
-
   ms@2.1.3: {}
 
   nanoid@3.3.12: {}
@@ -7508,6 +7488,7 @@ snapshots:
   use-sync-external-store@1.6.0(react@18.3.1):
     dependencies:
       react: 18.3.1
+    optional: true
 
   utrie@1.0.2:
     dependencies:
@@ -7682,5 +7663,11 @@ snapshots:
       zod: 4.4.3
 
   zod@4.4.3: {}
+
+  zustand@5.0.14(@types/react@18.3.29)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1)):
+    optionalDependencies:
+      '@types/react': 18.3.29
+      react: 18.3.1
+      use-sync-external-store: 1.6.0(react@18.3.1)
 
   zwitch@2.0.4: {}

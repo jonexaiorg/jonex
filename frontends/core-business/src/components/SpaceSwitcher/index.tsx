@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Dropdown, Spin } from 'antd';
 import { DownOutlined, SettingOutlined, PlusOutlined } from '@ant-design/icons';
-import { observer } from 'mobx-react-lite';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '@/store';
 import styles from './index.module.scss';
@@ -11,7 +10,7 @@ interface SpaceSwitcherProps {
   collapsed?: boolean;
 }
 
-const SpaceSwitcher = observer(({ collapsed }: SpaceSwitcherProps) => {
+const SpaceSwitcher = ({ collapsed }: SpaceSwitcherProps) => {
   const { global } = useStore();
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -91,6 +90,6 @@ const SpaceSwitcher = observer(({ collapsed }: SpaceSwitcherProps) => {
       </span>
     </div>
   );
-});
+};
 
 export default SpaceSwitcher;

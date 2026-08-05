@@ -28,6 +28,8 @@ async def rerank(
     tenant_id: Optional[str] = None,
     kb_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    doc_id: Optional[str] = None,
 ) -> Optional[list[dict]]:
     """对文档按与 query 的相关性打分。
 
@@ -45,6 +47,10 @@ async def rerank(
         headers["X-Jonex-Kb-Id"] = kb_id
     if trace_id:
         headers["X-Jonex-Trace-Id"] = trace_id
+    if user_id:
+        headers["X-Jonex-User-Id"] = user_id
+    if doc_id:
+        headers["X-Jonex-Doc-Id"] = doc_id
     payload: dict = {"model": _MODEL, "query": query, "documents": documents}
     if top_n is not None:
         payload["top_n"] = top_n

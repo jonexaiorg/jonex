@@ -23,7 +23,7 @@ function AntdLocaleGate({ children }: { children: React.ReactNode }) {
   const antdLocale = appI18n.language === 'en' ? enUS : zhCN;
   // cssVar 关闭：见 App.tsx 说明（MF 共享单例下所有应用需一致关闭）。
   return (
-    <ConfigProvider locale={antdLocale} theme={{ ...antdTheme, cssVar: false }}>
+    <ConfigProvider locale={antdLocale} theme={{ ...antdTheme }}>
       {children}
     </ConfigProvider>
   );

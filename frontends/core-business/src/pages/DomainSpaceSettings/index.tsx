@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
-import { observer } from 'mobx-react-lite';
 import { Input, Button, Spin, Result, message } from 'antd';
 import {
   SaveOutlined,
@@ -22,7 +21,7 @@ import { useStore } from '../../store';
 import DeleteSpaceModal from './DeleteSpaceModal';
 import type { DeleteSpaceModalHandle } from './DeleteSpaceModal';
 
-const DomainSpaceSettings = observer(function DomainSpaceSettings() {
+const DomainSpaceSettings = function DomainSpaceSettings() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -500,7 +499,6 @@ const DomainSpaceSettings = observer(function DomainSpaceSettings() {
       <DeleteSpaceModal ref={deleteRef} spaceId={id || ''} onDeleted={handleDeleted} />
     </div>
   );
-});
+};
 
-DomainSpaceSettings.displayName = 'DomainSpaceSettings';
 export default DomainSpaceSettings;

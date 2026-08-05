@@ -2,13 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Layout, Dropdown, Button } from 'antd';
 import { LogoutOutlined, HomeOutlined, GlobalOutlined, CaretDownOutlined } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation, Link, useMatches, matchRoutes } from 'react-router-dom';
-import { observer } from 'mobx-react-lite';
 import { useTranslation } from 'react-i18next';
 import { LANGUAGE_OPTIONS, LANGUAGE_STORAGE_KEY } from '@jonex/i18n-resources';
 import { useStore } from '@/store';
-import { getMenuConfig, IconMap } from '@/router/menu.config';
+import { getMenuFromRoutes, IconMap } from '@/router/menu';
 import { getRoutes } from '@/router/routes.config';
-import type { MenuItem } from '@/router/menu.config';
+import type { MenuItem } from '@/router/menu';
 import { buildLoginRedirectUrl, clearAuthStorage } from '@jonex/shell-sdk';
 import SpaceSwitcher from '@/components/SpaceSwitcher';
 import RouteSync from '@/components/RouteSync';
@@ -16,7 +15,7 @@ import styles from './index.module.scss';
 
 const { Content } = Layout;
 
-const BasicLayout = observer(() => {
+const BasicLayout = () => {
   const { global } = useStore();
   const userInfo = global?.userInfo as Record<string, any> | null | undefined;
   const { t, i18n } = useTranslation();
@@ -37,13 +36,16 @@ const BasicLayout = observer(() => {
       .filter(Boolean);
   }, [userInfo?.roles]);
 
+  // 方案二：菜单从路由配置生成（routes.config.ts 的 menu 元数据）
+  const allMenuItems = useMemo(() => getMenuFromRoutes(getRoutes(), t), [t]);
+
   const visibleMenuItems = useMemo(() => {
-    return getMenuConfig(t).filter((item) => {
+    return allMenuItems.filter((item) => {
       if (!item.roles || item.roles.length === 0) return true;
       if (roleList.length === 0) return true;
       return item.roles.some((role) => roleList.includes(role));
     });
-  }, [roleList, t]);
+  }, [allMenuItems, roleList]);
 
   const currentTitle = useMemo(() => {
     const routeMatches = matchRoutes(getRoutes() as any[], location);
@@ -197,6 +199,6 @@ const BasicLayout = observer(() => {
       </div>
     </div>
   );
-});
+};
 
 export default BasicLayout;

@@ -315,6 +315,48 @@ class RedisKVStorage(BaseKVStorage):
             existing_ids = {keys_list[i] for i, exists in enumerate(results) if exists}
             return set(keys) - existing_ids
 
+    # ── [jonex] 按 doc= 锚点列出 chunks ──────────────────────────
+    async def get_chunks_by_doc_id(
+        self, doc_id: str, *, limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """List chunks whose file_path contains ``doc=<doc_id>`` anchor.
+
+        Uses SCAN to iterate keys in the namespace and filters by the
+        doc= anchor in each chunk's file_source JSON value.
+        """
+        if not doc_id:
+            return []
+        pattern_parts = f"doc={doc_id}"
+        prefix = f"{self.final_namespace}:"
+        out: list[dict[str, Any]] = []
+        async with self._get_redis_connection() as redis:
+            cursor = 0
+            while True:
+                cursor, keys = await redis.scan(
+                    cursor, match=f"{prefix}*", count=100,
+                )
+                for key in keys:
+                    raw = await redis.get(key)
+                    if not raw:
+                        continue
+                    try:
+                        chunk = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    fp = chunk.get("file_path", "")
+                    if pattern_parts not in fp:
+                        continue
+                    chunk["chunk_id"] = str(key[len(prefix):]) if key.startswith(prefix) else key
+                    chunk.setdefault("create_time", 0)
+                    chunk.setdefault("update_time", 0)
+                    out.append(chunk)
+                    if len(out) >= limit:
+                        break
+                if cursor == 0 or len(out) >= limit:
+                    break
+        out.sort(key=lambda c: c.get("chunk_order_index") or 0)
+        return out
+
     @redis_retry
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         if not data:

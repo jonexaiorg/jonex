@@ -3,10 +3,11 @@
   "configurations": [
     {
       "name": "Backend: Sidecar",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "windows": { "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe" },
       "consoleName": "Sidecar",
       "type": "debugpy",
       "request": "launch",
-      "python": "${workspaceFolder}/.venv/bin/python",
       "program": "${workspaceFolder}/main.py",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
@@ -19,10 +20,11 @@
     },
     {
       "name": "Backend: API Gateway",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "windows": { "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe" },
       "consoleName": "API Gateway",
       "type": "debugpy",
       "request": "launch",
-      "python": "${workspaceFolder}/.venv/bin/python",
       "program": "${workspaceFolder}/run_gateway.py",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
@@ -35,10 +37,11 @@
     },
     {
       "name": "Backend: Capability - Knowledge Base",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "windows": { "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe" },
       "consoleName": "Knowledge Base",
       "type": "debugpy",
       "request": "launch",
-      "python": "${workspaceFolder}/.venv/bin/python",
       "program": "${workspaceFolder}/deploy/start_capability.py",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
@@ -55,10 +58,11 @@
     },
     {
       "name": "Backend: Capability - Business Domain",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "windows": { "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe" },
       "consoleName": "Business Domain",
       "type": "debugpy",
       "request": "launch",
-      "python": "${workspaceFolder}/.venv/bin/python",
       "program": "${workspaceFolder}/deploy/start_capability.py",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
@@ -75,10 +79,11 @@
     },
     {
       "name": "Backend: Capability - Platform",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "windows": { "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe" },
       "consoleName": "Platform",
       "type": "debugpy",
       "request": "launch",
-      "python": "${workspaceFolder}/.venv/bin/python",
       "program": "${workspaceFolder}/deploy/start_capability.py",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
@@ -99,11 +104,12 @@
       "type": "debugpy",
       "request": "launch",
       "python": "${workspaceFolder}/.venv-atomic-rag/bin/python",
+      "windows": { "python": "${workspaceFolder}\\.venv-atomic-rag\\Scripts\\python.exe" },
       "module": "lightrag.api.lightrag_server",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "envFile": "${workspaceFolder}/.env.local.rag.local",
+      "envFile": "${workspaceFolder}/.env.rag.local",
       "env": {
         "PYTHONUNBUFFERED": "1",
         "PYTHONPATH": "${workspaceFolder}/Reference/LightRAG",
@@ -113,9 +119,9 @@
         "WORKING_DIR": "${workspaceFolder}/.lightrag_data/rag_storage",
         "INPUT_DIR": "${workspaceFolder}/.lightrag_data/inputs",
         "LLM_BINDING_HOST": "http://127.0.0.1:8787/v1",
-        "LLM_BINDING_API_KEY": "CHANGE_ME_LIGHTRAG",
+        "LLM_BINDING_API_KEY": "gw_lightrag",
         "EMBEDDING_BINDING_HOST": "http://127.0.0.1:8787/v1",
-        "EMBEDDING_BINDING_API_KEY": "CHANGE_ME_LIGHTRAG"
+        "EMBEDDING_BINDING_API_KEY": "gw_lightrag"
       }
     },
     {
@@ -124,11 +130,12 @@
       "type": "debugpy",
       "request": "launch",
       "python": "${workspaceFolder}/.venv-atomic-rag/bin/python",
+      "windows": { "python": "${workspaceFolder}\\.venv-atomic-rag\\Scripts\\python.exe" },
       "program": "${workspaceFolder}/deploy/start_capability.py",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "envFile": "${workspaceFolder}/.env.local.local",
+      "envFile": "${workspaceFolder}/.env.local",
       "env": {
         "PYTHONUNBUFFERED": "1",
         "CAPABILITY_KIND": "atomic",
@@ -139,6 +146,13 @@
         "LIGHTRAG_API_URL": "http://127.0.0.1:9621",
         "LIGHTRAG_API_TIMEOUT": "300"
       }
+    },
+    {
+      "name": "Frontend: Dev Gateway",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/frontends",
+      "command": "pnpm run dev:gateway"
     },
     {
       "name": "Frontend: Shell",
@@ -177,6 +191,14 @@
       "sourceMaps": true
     },
     {
+      "name": "Browser: Dev Gateway",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:8080",
+      "webRoot": "${workspaceFolder}/frontends",
+      "sourceMaps": true
+    },
+    {
       "name": "Browser: Template Domains",
       "type": "chrome",
       "request": "launch",
@@ -200,8 +222,20 @@
       "stopAll": true
     },
     {
+      "name": "Backend: All (无 RAG)",
+      "configurations": [
+        "Backend: Sidecar",
+        "Backend: API Gateway",
+        "Backend: Capability - Knowledge Base",
+        "Backend: Capability - Business Domain",
+        "Backend: Capability - Platform"
+      ],
+      "stopAll": true
+    },
+    {
       "name": "Frontend: All",
       "configurations": [
+        "Frontend: Dev Gateway",
         "Frontend: Shell",
         "Frontend: Core Business",
         "Frontend: Ecosystem Management",
@@ -280,11 +314,29 @@
         "Backend: Capability - Platform",
         "Backend: LightRAG",
         "Backend: Capability - Atomic RAG",
+        "Frontend: Dev Gateway",
         "Frontend: Shell",
         "Frontend: Core Business",
         "Frontend: Ecosystem Management",
         "Frontend: Platform Management",
-        "Browser: Shell"
+        "Browser: Dev Gateway"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Jonex: Full Stack (无 RAG)",
+      "configurations": [
+        "Backend: Sidecar",
+        "Backend: API Gateway",
+        "Backend: Capability - Knowledge Base",
+        "Backend: Capability - Business Domain",
+        "Backend: Capability - Platform",
+        "Frontend: Dev Gateway",
+        "Frontend: Shell",
+        "Frontend: Core Business",
+        "Frontend: Ecosystem Management",
+        "Frontend: Platform Management",
+        "Browser: Dev Gateway"
       ],
       "stopAll": true
     }

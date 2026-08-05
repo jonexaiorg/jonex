@@ -25,11 +25,22 @@ from ..repository import KnowledgeDocumentRepository, OntologyGraphRepository
 logger = logging.getLogger(__name__)
 
 
+# [jonex] §11 v2 stage key 白名单：过滤未知阶段、避免噪音泄露到聚合字段
+_V2_STAGE_KEYS = frozenset({
+    "created", "queued", "parse", "text_insert", "multimodal",
+    "push_chunks", "ontology_extract", "pipeline_done",
+})
+
+# [jonex] P1-1：created/queued 是排队等待，不算入 worker 端到端耗时
+_QUEUE_KEYS = frozenset({"created", "queued"})
+
+
 def _normalize_stage_timings(raw):
     """归一 worker 分阶段耗时，兼容两种形态：
     - v1：dict，含 `worker_total_ms` + 各阶段键
     - v2：list[{stage,label,started_at,ended_at,elapsed_seconds}]
     返回 (worker_total_ms: int|None, per_stage_ms: dict)。
+    v2 list 形态仅取白名单内 stage key，其余静默跳过。
     """
     if isinstance(raw, dict):
         total = raw.get("worker_total_ms")
@@ -42,14 +53,32 @@ def _normalize_stage_timings(raw):
             if not isinstance(s, dict):
                 continue
             stage = s.get("stage") or "unknown"
+            # [jonex] §11 白名单过滤
+            if stage not in _V2_STAGE_KEYS:
+                continue
             try:
                 secs = float(s.get("elapsed_seconds") or 0)
             except (TypeError, ValueError):
                 secs = 0.0
             per[f"{stage}_ms"] = int(secs * 1000)
-            total_s += secs
+            # [jonex] P1-1：created/queued 是排队，不算入 worker 端到端
+            if stage not in _QUEUE_KEYS:
+                total_s += secs
         return (int(total_s * 1000) if raw else None), per
     return None, {}
+
+
+def _detect_pipeline_version(raw) -> str | None:
+    """从 stage_timings 形态推断 pipeline 版本。
+    - list → v2 (raganything pipeline)
+    - dict → v1 (lightrag_adapter legacy)
+    - None/empty → None
+    """
+    if isinstance(raw, list):
+        return "v2"
+    if isinstance(raw, dict):
+        return "v1"
+    return None
 
 MAX_ONTOLOGY_RETRIES = 3
 
@@ -203,6 +232,25 @@ class ReconciliationService:
 
             # ── 未到硬上限且任务还活着 → 只是排队/慢，继续等 ──
             if alive and elapsed_seconds < HARD:
+                # [jonex] R5-a：processing + cleanup 卡死兜底 —— 不再等 6h HARD，
+                # 按删除量动态超时判死（与 _handle_failed 同口径），覆盖 patrol
+                # 对 processing 态盲区。reparse 进入 cleanup 后任务 status 为
+                # processing，旧 patrol 只看 alive 就继续等 → 永久卡 ingesting。
+                if current_step == "cleanup":
+                    stuck_timeout = self._cleanup_stuck_timeout(st)
+                    if elapsed_seconds >= stuck_timeout:
+                        logger.error(
+                            "Patrol PARSING+cleanup stuck→FAILED: doc_id=%s task_id=%s "
+                            "waited=%.0fmin current_step=%s",
+                            doc.id, doc.rag_task_id, elapsed_seconds / 60, current_step,
+                        )
+                        async with get_db_session() as session:
+                            repo_s = KnowledgeDocumentRepository(session)
+                            await repo_s.set_status(
+                                doc, DocStatus.FAILED,
+                                error_message=f"文档清理超时（cleanup 卡死 {elapsed_seconds/60:.0f} 分钟），请重试",
+                            )
+                        continue
                 waiting += 1
                 logger.info(
                     "Patrol→仍在处理/排队，继续等待: doc_id=%s waited=%.0fmin rag_status=%s current_step=%s",
@@ -501,7 +549,9 @@ class ReconciliationService:
         kb_id = (doc.knowledge_base_id or (doc.extra_metadata or {}).get("knowledge_base_id", ""))
         # worker 透传的分阶段耗时（见 docs/ingestion-timing-metrics-design.md §3.4 C）
         # 兼容 v1(dict) 与 v2(list) 两种 stage_timings 形态
-        worker_total_ms, worker_timings = _normalize_stage_timings(status_info.get("stage_timings"))
+        stage_timings_raw = status_info.get("stage_timings")
+        worker_total_ms, worker_timings = _normalize_stage_timings(stage_timings_raw)
+        pipeline_version = _detect_pipeline_version(stage_timings_raw)
 
         # [jonex] P1-E schema 版本 fencing：任务用的 schema 版本与文档目标版本不一致 → 丢弃
         # 本体结果（不 delete_by_document / 不 merge），文档本体保持 PENDING 等目标版本任务。
@@ -589,9 +639,10 @@ class ReconciliationService:
         logger.info("Reconcile→READY: doc_id=%s, chunks=%d", doc.id,
                      len(status_info.get("lightrag_doc_ids") or status_info.get("doc_ids") or []))
         logger.info(
-            "reconcile_timing doc_id=%s source=%s neo4j_write_ms=%s e2e_ready_ms=%s worker_total_ms=%s",
+            "reconcile_timing doc_id=%s source=%s pipeline_version=%s neo4j_write_ms=%s e2e_ready_ms=%s worker_total_ms=%s",
             doc.id,
             reconcile_source,
+            pipeline_version or "unknown",
             neo4j_write_ms,
             e2e_ready_ms,
             worker_total_ms,
@@ -602,6 +653,7 @@ class ReconciliationService:
                 "document_id": str(doc.id),
                 "status": "ready",
                 "reconcile_source": reconcile_source,
+                "pipeline_version": pipeline_version,
                 "neo4j_write_ms": neo4j_write_ms,
                 "e2e_ready_ms": e2e_ready_ms,
                 "worker_total_ms": worker_total_ms,
@@ -625,20 +677,28 @@ class ReconciliationService:
         })
         return "updated"
 
+    @staticmethod
+    def _cleanup_stuck_timeout(status_info: dict) -> float:
+        """[jonex] R5-a：cleanup 动态超时公式 = BASE + PER_DOC × cleanup_total，套 CEIL 上限。
+
+        供 patrol（processing+cleanup 盲区）与 _handle_failed（failed+cleanup 已覆盖）
+        共享同一口径。
+        """
+        base = int(os.getenv("RECONCILE_CLEANUP_BASE_SEC", "600"))
+        per_doc = int(os.getenv("RECONCILE_CLEANUP_PER_DOC_SEC", "15"))
+        ceil = int(os.getenv("RECONCILE_CLEANUP_CEIL_SEC", "21600"))
+        cleanup_total = int(status_info.get("cleanup_total", 0) or 0)
+        return min(ceil, base + per_doc * cleanup_total)
+
     async def _handle_failed(self, doc, status_info: dict) -> str:
         """Handle failed task. Try storage fallback first before finalizing failure."""
         # [jonex] P0-J：cleanup 进行中的任务对 storage fallback 免疫——保持 PARSING，
         # 不因 LightRAG 里仍有（旧）数据就恢复 READY，避免绕过未完成的清理。
         if status_info.get("current_step") == "cleanup":
-            # [jonex] 3-A：cleanup 不再无限期 skip，按删除量动态超时判死，避免任务永久卡
-            # cleanup 导致文档永久停在 ingesting（前端不可见、不可重传）。
-            # stuck_timeout = BASE + PER_DOC × cleanup_total，套 CEIL 上限。
-            base = int(os.getenv("RECONCILE_CLEANUP_BASE_SEC", "600"))
-            per_doc = int(os.getenv("RECONCILE_CLEANUP_PER_DOC_SEC", "15"))
-            ceil = int(os.getenv("RECONCILE_CLEANUP_CEIL_SEC", "21600"))
+            # [jonex] 3-A + R5-a：cleanup 不再无限期 skip，按删除量动态超时判死。
+            stuck_timeout = self._cleanup_stuck_timeout(status_info)
             cleanup_total = int(status_info.get("cleanup_total", 0) or 0)
             pending = int(status_info.get("cleanup_pending_count", 0) or 0)
-            stuck_timeout = min(ceil, base + per_doc * cleanup_total)
 
             # 计时基准：doc.updated_at（进入 cleanup 后对账 skip 不再刷新，可作卡死时长代理）
             now = datetime.now()  # [jonex] P0-2: naive 本地时间，与 DB 写入口径一致

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Empty, Input, Modal, Spin, message } from 'antd';
-import { observer } from 'mobx-react-lite';
 import { useStore } from '@/store';
 import ReactMarkdown from 'react-markdown';
 import {
@@ -333,7 +332,7 @@ function FeedbackButtons({
   );
 }
 
-const KnowledgeSearch = observer(function KnowledgeSearch() {
+const KnowledgeSearch = function KnowledgeSearch() {
   const { t } = useTranslation();
   const { global } = useStore();
   const [query, setQuery] = useState('');
@@ -896,7 +895,6 @@ const KnowledgeSearch = observer(function KnowledgeSearch() {
       {viewer}
     </div>
   );
-});
+};
 
-KnowledgeSearch.displayName = 'KnowledgeSearch';
 export default KnowledgeSearch;

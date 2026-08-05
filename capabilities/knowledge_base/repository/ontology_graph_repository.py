@@ -118,21 +118,34 @@ class OntologyGraphRepository:
                 tenant_id, kb_id, rel["target_name"], rel.get("target_type"))
             src_name = rel["source_name"]
             tgt_name = rel["target_name"]
+        # [jonex] 方案⑧：从 rel dict 取关系的 source_chunks，用于 ONT_REL 边出处 + stub 端点兜底
+        # Neo4j 不允许 list-of-map 作为属性值，以 JSON string 存储（与 merge_entity 口径一致）
+        rel_source_chunks = rel.get("source_chunks") or []
         cypher = """
         MERGE (s:OntologyEntity {tenant_id:$t, kb_id:$k, entity_type:$src_type, canonical_name:$src_name})
         ON CREATE SET s.stub=true, s.confidence=0.1, s.aliases=[], s.aliases_text='',
-            s.attributes='{}', s.source_chunks=[], s.lightrag_doc_ids=[],
+            s.attributes='{}',
+            s.source_chunks=apoc.convert.toJson($rel_source_chunks),
+            s.lightrag_doc_ids=[],
             s.extraction_method='stub', s.doc_ids=[$doc_id], s.created_at=timestamp(), s.updated_at=timestamp()
         MERGE (o:OntologyEntity {tenant_id:$t, kb_id:$k, entity_type:$tgt_type, canonical_name:$tgt_name})
         ON CREATE SET o.stub=true, o.confidence=0.1, o.aliases=[], o.aliases_text='',
-            o.attributes='{}', o.source_chunks=[], o.lightrag_doc_ids=[],
+            o.attributes='{}',
+            o.source_chunks=apoc.convert.toJson($rel_source_chunks),
+            o.lightrag_doc_ids=[],
             o.extraction_method='stub', o.doc_ids=[$doc_id], o.created_at=timestamp(), o.updated_at=timestamp()
         MERGE (s)-[r:ONT_REL {relation_type:$rel_type}]->(o)
         ON CREATE SET r.confidence=$confidence, r.attributes=$attributes,
             r.lightrag_doc_ids=$lightrag_doc_ids, r.doc_ids=[$doc_id],
+            r.source_chunks=apoc.convert.toJson($rel_source_chunks),
             r.created_at=timestamp(), r.updated_at=timestamp()
         ON MATCH SET r.doc_ids=apoc.coll.toSet(coalesce(r.doc_ids,[])+[$doc_id]),
             r.lightrag_doc_ids=apoc.coll.toSet(coalesce(r.lightrag_doc_ids,[])+$lightrag_doc_ids),
+            r.source_chunks=apoc.convert.toJson(
+                apoc.coll.toSet(
+                    apoc.convert.fromJsonList(coalesce(r.source_chunks,'[]'))+$rel_source_chunks
+                )
+            ),
             r.attributes=$attributes,
             r.confidence=CASE WHEN $confidence>coalesce(r.confidence,0) THEN $confidence ELSE r.confidence END,
             r.updated_at=timestamp()
@@ -149,6 +162,7 @@ class OntologyGraphRepository:
             "confidence": rel.get("confidence", 1.0),
             "attributes": json.dumps(rel.get("attributes", {}), ensure_ascii=False),
             "lightrag_doc_ids": rel.get("lightrag_doc_ids", []),
+            "rel_source_chunks": rel_source_chunks,   # [jonex] 方案⑧
         }
         async with self._driver.session() as session:
             await session.run(cypher, params)
@@ -273,7 +287,7 @@ class OntologyGraphRepository:
                node.aliases AS aliases, node.attributes AS attributes,
                node.description AS description,
                node.confidence AS confidence, node.kb_id AS kb_id,
-               node.doc_ids AS doc_ids, score
+               node.doc_ids AS doc_ids, node.source_chunks AS source_chunks, score
         ORDER BY score DESC LIMIT $limit
         """
         async with self._driver.session() as session:
@@ -290,6 +304,11 @@ class OntologyGraphRepository:
                     row["aliases"] = json.loads(row["aliases"])
                 except (json.JSONDecodeError, TypeError):
                     row["aliases"] = []
+            if isinstance(row.get("source_chunks"), str):
+                try:
+                    row["source_chunks"] = json.loads(row["source_chunks"])
+                except (json.JSONDecodeError, TypeError):
+                    row["source_chunks"] = []
         return rows
 
     async def neighbors(
@@ -327,8 +346,10 @@ class OntologyGraphRepository:
                            name: n.canonical_name, type: n.entity_type,
                            aliases: n.aliases, description: n.description,
                            attributes: n.attributes, confidence: n.confidence,
-                           kb_id: n.kb_id, doc_ids: n.doc_ids
+                           kb_id: n.kb_id, doc_ids: n.doc_ids,
+                           source_chunks: n.source_chunks
                        },
+                       relation_source_chunks: r.source_chunks,
                        hop: 1,
                        relation_chain: [r.relation_type],
                        path: [e.canonical_name, n.canonical_name]
@@ -347,6 +368,7 @@ class OntologyGraphRepository:
                  CASE WHEN startNode(last_rel) = path_nodes[hop-1] THEN 'outgoing' ELSE 'incoming' END AS rel_dir
             WITH e, n, rel_dir, rel_types,
                  [pn IN path_nodes | pn.canonical_name] AS path_names,
+                 last_rel.source_chunks AS relation_source_chunks,
                  min(hop) AS hop
             ORDER BY hop ASC, coalesce(n.confidence,0) DESC, n.canonical_name ASC
             WITH e, collect({
@@ -357,10 +379,12 @@ class OntologyGraphRepository:
                         name: n.canonical_name, type: n.entity_type,
                         aliases: n.aliases, description: n.description,
                         attributes: n.attributes, confidence: n.confidence,
-                        kb_id: n.kb_id, doc_ids: n.doc_ids
+                        kb_id: n.kb_id, doc_ids: n.doc_ids,
+                        source_chunks: n.source_chunks
                     },
                     relation_type: rel_types[-1],
                     relation_chain: rel_types,
+                    relation_source_chunks: relation_source_chunks,
                     path: path_names,
                     direction: rel_dir,
                     hop: hop
@@ -434,7 +458,7 @@ class OntologyGraphRepository:
         RETURN e.canonical_name AS name, e.entity_type AS type,
                e.aliases AS aliases, e.attributes AS attributes,
                e.description AS description, e.confidence AS confidence,
-               e.kb_id AS kb_id, e.doc_ids AS doc_ids, 1.0 AS score
+               e.kb_id AS kb_id, e.doc_ids AS doc_ids, e.source_chunks AS source_chunks, 1.0 AS score
         """
         async with self._driver.session() as session:
             result = await session.run(cypher, {"t": tenant_id, "kbs": kb_ids, "name": name})
@@ -450,6 +474,11 @@ class OntologyGraphRepository:
                     row["aliases"] = json.loads(row["aliases"])
                 except (json.JSONDecodeError, TypeError):
                     row["aliases"] = []
+            if isinstance(row.get("source_chunks"), str):
+                try:
+                    row["source_chunks"] = json.loads(row["source_chunks"])
+                except (json.JSONDecodeError, TypeError):
+                    row["source_chunks"] = []
         return rows
 
     async def prefix_match_entities(self, tenant_id: str, kb_ids: list[str], prefix: str, limit: int = 5) -> list[dict]:
@@ -461,7 +490,7 @@ class OntologyGraphRepository:
         RETURN e.canonical_name AS name, e.entity_type AS type,
                e.aliases AS aliases, e.attributes AS attributes,
                e.description AS description, e.confidence AS confidence,
-               e.kb_id AS kb_id, e.doc_ids AS doc_ids, 1.0 AS score
+               e.kb_id AS kb_id, e.doc_ids AS doc_ids, e.source_chunks AS source_chunks, 1.0 AS score
         ORDER BY size(e.canonical_name) ASC
         LIMIT $limit
         """
@@ -479,6 +508,11 @@ class OntologyGraphRepository:
                     row["aliases"] = json.loads(row["aliases"])
                 except (json.JSONDecodeError, TypeError):
                     row["aliases"] = []
+            if isinstance(row.get("source_chunks"), str):
+                try:
+                    row["source_chunks"] = json.loads(row["source_chunks"])
+                except (json.JSONDecodeError, TypeError):
+                    row["source_chunks"] = []
         return rows
 
 
@@ -674,7 +708,7 @@ class OntologyGraphRepository:
 
     @staticmethod
     def _deserialize_attrs(rows: list[dict]) -> None:
-        """就地把 rows 里的 attributes/aliases 字符串反序列化为 dict/list。"""
+        """就地把 rows 里的 attributes/aliases/source_chunks 字符串反序列化为 dict/list。"""
         for row in rows:
             if isinstance(row.get("attributes"), str):
                 try:
@@ -686,12 +720,17 @@ class OntologyGraphRepository:
                     row["aliases"] = json.loads(row["aliases"])
                 except (json.JSONDecodeError, TypeError):
                     row["aliases"] = []
+            if isinstance(row.get("source_chunks"), str):
+                try:
+                    row["source_chunks"] = json.loads(row["source_chunks"])
+                except (json.JSONDecodeError, TypeError):
+                    row["source_chunks"] = []
 
     @staticmethod
     def _deserialize_fact_entities(facts: list[dict]) -> None:
-        """就地把每条 fact 的 target_entity.attributes/aliases 反序列化为 dict/list。
+        """就地把每条 fact 的 target_entity.attributes/aliases/source_chunks 反序列化。
 
-        注：仅 attributes/aliases 在 Neo4j 内以 JSON 字符串存储需反序列化；
+        注：仅 attributes/aliases/source_chunks 在 Neo4j 内以 JSON 字符串存储需反序列化；
         doc_ids 为 Neo4j 原生数组、confidence 为原生 float，Python driver 已自动转换为
         list/float，无需在此处理（与 exact_match_entities/list_entities 反序列化口径一致）。
         """
@@ -709,6 +748,17 @@ class OntologyGraphRepository:
                     ent["aliases"] = json.loads(ent["aliases"])
                 except (json.JSONDecodeError, TypeError):
                     ent["aliases"] = []
+            if isinstance(ent.get("source_chunks"), str):
+                try:
+                    ent["source_chunks"] = json.loads(ent["source_chunks"])
+                except (json.JSONDecodeError, TypeError):
+                    ent["source_chunks"] = []
+            # [jonex] 方案⑧：relation_source_chunks 在 fact 顶层，以 JSON 字符串存储
+            if isinstance(f.get("relation_source_chunks"), str):
+                try:
+                    f["relation_source_chunks"] = json.loads(f["relation_source_chunks"])
+                except (json.JSONDecodeError, TypeError):
+                    f["relation_source_chunks"] = []
 
     async def get_kb_graph(
         self,
@@ -938,7 +988,8 @@ class OntologyGraphRepository:
         RETURN node.canonical_name AS name, node.entity_type AS type,
                node.aliases AS aliases, node.attributes AS attributes,
                node.description AS description, node.confidence AS confidence,
-               node.kb_id AS kb_id, node.doc_ids AS doc_ids, score AS vscore
+               node.kb_id AS kb_id, node.doc_ids AS doc_ids,
+               node.source_chunks AS source_chunks, score AS vscore
         ORDER BY score DESC LIMIT $limit
         """
         topk = int(os.getenv("ONTOLOGY_VECTOR_TOPK", "200"))

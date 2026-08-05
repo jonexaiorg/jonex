@@ -55,6 +55,7 @@ export default function DomainKnowledgeDocumentResult() {
   const [relationTypes, setRelationTypes] = useState<RelationInstanceSummary[] | null>(null);
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [videoOpen, setVideoOpen] = useState(false);
+  const [videoTimeStart, setVideoTimeStart] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id || !docId) return;
@@ -149,11 +150,12 @@ export default function DomainKnowledgeDocumentResult() {
           stage={stage}
           docId={docId}
           mediaType={doc?.mediaType}
-          onPlayVideo={() => {
+          onPlayVideo={(timeStart?: number | null) => {
             if (!videoUrl) {
               message.error(t('domainKnowledge.videoLoadFailed'));
               return;
             }
+            setVideoTimeStart(timeStart ?? null);
             setVideoOpen(true);
           }}
         />
@@ -260,7 +262,12 @@ export default function DomainKnowledgeDocumentResult() {
         />
       </Spin>
 
-      <VideoPlayerModal open={videoOpen} videoUrl={videoUrl} onClose={() => setVideoOpen(false)} />
+      <VideoPlayerModal
+        open={videoOpen}
+        videoUrl={videoUrl}
+        timeStart={videoTimeStart}
+        onClose={() => setVideoOpen(false)}
+      />
     </div>
   );
 }

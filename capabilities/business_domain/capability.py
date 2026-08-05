@@ -128,6 +128,12 @@ class BusinessDomainCapability(BaseCapability):
             "create_template_constraint":  lambda r, d: t.create_constraint(r.tenant_id, d["scenario_id"], d),
             "update_template_constraint":  lambda r, d: t.update_constraint(d["constraint_id"], r.tenant_id, d),
             "delete_template_constraint":  lambda r, d: _deleted(t.delete_constraint(d["constraint_id"], r.tenant_id)),
+            # ── 本体 YAML 导入导出 ──  # [jonex]
+            "export_template_ontology_yaml": lambda r, d: t.export_ontology_yaml(r.tenant_id, d["scenario_id"]),
+            "import_template_ontology_yaml": lambda r, d: t.import_ontology_yaml(
+                r.tenant_id, d["scenario_id"], d["yaml_text"],
+                dry_run=d.get("dry_run", True), mode=d.get("mode", "merge"),
+            ),
         }
 
     def _build_metadata(self) -> CapabilityMetadata:

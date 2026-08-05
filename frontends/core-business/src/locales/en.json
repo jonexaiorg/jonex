@@ -785,7 +785,22 @@
       "importOkText": "Import Selected",
       "selectDomain": "Select template domain",
       "selectScenario": "Select one or more domain scenarios"
-    }
+    },
+    "exportYaml": "Export as YAML",
+    "importYaml": "Import from YAML",
+    "yamlImportTitle": "Import Compiled Schema",
+    "yamlImportSuccess": "YAML import succeeded. Schema has been updated.",
+    "yamlImportFailed": "YAML import failed",
+    "yamlImportConflict": "Schema has been updated by another operation, please refresh and retry",
+    "yamlImportSelectFile": "Please select a YAML file first",
+    "yamlImportConfirm": "Confirm Import",
+    "yamlImportCancel": "Cancel",
+    "yamlImportSummary": "Import Summary",
+    "yamlImportCountEntities": "Entities: {{count}}",
+    "yamlImportCountAttributes": "Attributes: {{count}}",
+    "yamlImportCountRelations": "Relations: {{count}}",
+    "yamlImportCountConstraints": "Constraints: {{count}}",
+    "yamlImportErrorsTitle": "Import Errors"
   },
   "synonym": {
     "empty": "No synonyms",

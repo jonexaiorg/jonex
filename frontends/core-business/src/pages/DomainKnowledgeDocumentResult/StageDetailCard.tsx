@@ -8,15 +8,15 @@ import type { DocumentChunk } from '@/types/domainKnowledge';
 
 function formatTimeRange(timeStart: number, timeEnd: number | null): string {
   const fmt = (sec: number): string => {
-    const s = Math.max(0, Math.floor(sec))
-    const m = Math.floor(s / 60)
-    const r = s % 60
-    return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
-  }
+    const s = Math.max(0, Math.floor(sec));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
+  };
   if (timeEnd != null && timeEnd > timeStart) {
-    return `${fmt(timeStart)} - ${fmt(timeEnd)}`
+    return `${fmt(timeStart)} - ${fmt(timeEnd)}`;
   }
-  return fmt(timeStart)
+  return fmt(timeStart);
 }
 
 export interface ProcessingStage {
@@ -29,7 +29,7 @@ interface StageDetailCardProps {
   stage: ProcessingStage;
   docId?: string;
   mediaType?: 'video' | 'document';
-  onPlayVideo?: () => void;
+  onPlayVideo?: (timeStart?: number | null) => void;
 }
 
 export default function StageDetailCard({ stage, docId, mediaType, onPlayVideo }: StageDetailCardProps) {
@@ -217,24 +217,11 @@ export default function StageDetailCard({ stage, docId, mediaType, onPlayVideo }
                               length: selectedChunk.content_length,
                             })}
                           </Tag>
-                          {selectedChunk.time_start != null && (
-                            <Tag
-                              style={{
-                                border: 'none',
-                                borderRadius: 6,
-                                background: '#ede9fe',
-                                color: '#7c3aed',
-                                fontSize: 12,
-                              }}
-                            >
-                              {formatTimeRange(selectedChunk.time_start, selectedChunk.time_end)}
-                            </Tag>
-                          )}
                           {mediaType === 'video' && (
                             <Button
                               type="primary"
                               icon={<PlayCircleOutlined />}
-                              onClick={() => onPlayVideo?.()}
+                              onClick={() => onPlayVideo?.(selectedChunk.time_start)}
                               style={{ borderRadius: 8, marginLeft: 20 }}
                             >
                               {t('domainKnowledge.playVideo')}

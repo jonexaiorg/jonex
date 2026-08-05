@@ -1,14 +1,13 @@
 import React from 'react';
 import { Layout } from 'antd';
 import { Outlet } from 'react-router-dom';
-import { observer } from 'mobx-react-lite';
 import usePageMeta from '@/hooks/usePageMeta';
 import HeaderNav from '@/components/HeaderNav';
 import styles from './index.module.scss';
 
 const { Content } = Layout;
 
-const BasicLayout = observer(() => {
+const BasicLayout = () => {
   const meta = usePageMeta() as Record<string, any>;
 
   return (
@@ -28,6 +27,6 @@ const BasicLayout = observer(() => {
       </Layout>
     </div>
   );
-});
+};
 
 export default BasicLayout;

@@ -38,9 +38,20 @@ class OpenAIDriver(BaseModelDriver):
         """
         import httpx
 
+        # [jonex] Gap A: lazy-import contextvar overlay to avoid circular imports
+        try:
+            from raganything.service.jonex_metering_ctx import (
+                build_ingest_headers as _build_ingest_h,
+            )
+        except ImportError:
+            _build_ingest_h = lambda: {}  # noqa: E731
+
         headers: dict[str, str] = {
             "Content-Type": "application/json",
             **spec.extra_headers,  # [jonex] X-Jonex-Tenant-Id, X-Jonex-Kb-Id, etc.
+            # [jonex] Gap A: overlay per-task contextvar (doc_id/trace_id)
+            # overrides build-time static tenant/kb with per-task values.
+            **_build_ingest_h(),
         }
         if spec.api_key:
             headers["Authorization"] = f"Bearer {spec.api_key}"

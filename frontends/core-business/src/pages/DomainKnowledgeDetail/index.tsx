@@ -28,7 +28,6 @@ import {
   SwapOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
-import { observer } from 'mobx-react-lite';
 import { useStore } from '@/store';
 import type {
   DomainKnowledgeDetail as DomainKnowledgeDetailType,
@@ -122,7 +121,7 @@ function renderRuleText(segments: RuleTextSegment[]): React.ReactNode {
   );
 }
 
-const DomainKnowledgeDetail = observer(function DomainKnowledgeDetail() {
+const DomainKnowledgeDetail = function DomainKnowledgeDetail() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -478,7 +477,6 @@ const DomainKnowledgeDetail = observer(function DomainKnowledgeDetail() {
       />
     </div>
   );
-});
+};
 
-DomainKnowledgeDetail.displayName = 'DomainKnowledgeDetail';
 export default DomainKnowledgeDetail;

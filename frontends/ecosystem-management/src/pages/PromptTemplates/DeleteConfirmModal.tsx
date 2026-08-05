@@ -5,17 +5,18 @@ import { deletePromptTemplate } from '../../api/promptTemplates';
 
 interface DeleteConfirmModalProps {
   deletingId: string | null;
+  domainSpaceId?: string | null;
   onClose: () => void;
   onDeleted: () => void;
 }
 
-export default function DeleteConfirmModal({ deletingId, onClose, onDeleted }: DeleteConfirmModalProps) {
+export default function DeleteConfirmModal({ deletingId, domainSpaceId, onClose, onDeleted }: DeleteConfirmModalProps) {
   const { t } = useTranslation();
 
   const handleDelete = async () => {
     if (!deletingId) return;
     try {
-      await deletePromptTemplate(deletingId);
+      await deletePromptTemplate(deletingId, domainSpaceId ?? undefined);
       message.success(t('promptTemplate.deleteSuccess'));
       onClose();
       onDeleted();

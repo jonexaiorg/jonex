@@ -22,6 +22,8 @@ from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 
 from api_gateway.deps import require_auth_header, raise_from_capability_result
 from jonex_core.common.crypto import generate_view_token, verify_view_token
+from pydantic.v1 import BaseModel
+
 from jonex_core.common.object_storage import build_object_key, get_object_storage, get_object_storage_for
 from capabilities.knowledge_base.dtos import (
     AddDocumentTagRequest,
@@ -412,16 +414,23 @@ async def get_chunk(request: Request, document_id: str, chunk_id: str):
     return success_response(data=result)
 
 
+class ReparseRequest(BaseModel):
+    force: bool = False
+
+
 @router.post("/documents/{document_id}/reparse", summary="重新解析文档")
-async def reparse_document(request: Request, document_id: str):
+async def reparse_document(request: Request, document_id: str, body: ReparseRequest = ReparseRequest()):
     """按文档 id 重新解析（force_reparse）。
 
     复用文档已存的存储/所属知识库信息重新入库，无需前端传其他参数。
+
+    传 ``force=true`` 可跳过 R1-c 源文件 hash 检查，强制重跑解析
+    （用于仅修改解析配置/提示词/本体 schema 的场景）。
     """
     result = await _call_kb_capability(
         request,
         "reparse_document",
-        {"document_id": document_id},
+        {"document_id": document_id, "force": body.force},
     )
     return success_response(data=result)
 
@@ -1431,6 +1440,60 @@ async def recompile_ontology_compiled_schema(request: Request, payload: dict = B
     - apply_to_documents=true：编译成功后顺带触发该 KB 文档批量重抽（对账被动）。
     """
     result = await _call_kb_capability(request, "recompile_schema", payload)
+    return success_response(data=result)
+
+
+@router.get("/ontology/compiled-schema/yaml", summary="导出本体编译 schema 为 YAML")  # [jonex]
+async def export_ontology_compiled_schema_yaml(
+    request: Request,
+    knowledge_base_id: str = Query(..., description="知识库 ID"),
+):
+    """将当前知识库的 compiled schema 导出为 YAML 文本。
+
+    返回 JSON: { filename, yaml_text, warnings }。
+    yaml_text 是完整的 YAML 字符串，可直接保存为 .yaml 文件。
+    """
+    result = await _call_kb_capability(
+        request, "export_compiled_schema_yaml", {"knowledge_base_id": knowledge_base_id},
+    )
+    return success_response(data=result)
+
+
+@router.post("/ontology/compiled-schema/yaml/import", summary="从 YAML 导入本体编译 schema")  # [jonex]
+async def import_ontology_compiled_schema_yaml(
+    request: Request,
+    knowledge_base_id: str = Form(..., description="知识库 ID"),
+    expected_schema_version: int = Form(..., description="期望的 schema 版本（乐观锁）"),
+    file: UploadFile = File(..., description="YAML 文件"),
+    dry_run: bool = Form(False, description="是否仅试运行（默认 false，实际写入）"),
+):
+    """从 YAML 文件导入 compiled schema。
+
+    - Gateway 读取文件内容转为 yaml_text 字符串，经 Sidecar /invoke 传给能力层。
+    - dry_run=true：仅解析校验并返回摘要，不写入数据库。
+    - dry_run=false：解析后调用 save_compiled_schema 写入。
+    - 文件过大（>50MB）或非 UTF-8 编码会返回 400。
+    """
+    raw = await file.read()
+    if len(raw) > 50 * 1024 * 1024:
+        raise InvalidParameterError(message=translate("err.kb.yaml_file_too_large", fallback="YAML 文件不能超过 50MB"))
+    try:
+        yaml_text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise InvalidParameterError(message=translate("err.kb.yaml_not_utf8", fallback="YAML 文件必须是 UTF-8 编码"))
+    if not yaml_text.strip():
+        raise InvalidParameterError(message=translate("err.kb.yaml_file_empty", fallback="YAML 文件内容不能为空"))
+
+    result = await _call_kb_capability(
+        request,
+        "import_compiled_schema_yaml",
+        {
+            "knowledge_base_id": knowledge_base_id,
+            "yaml_text": yaml_text,
+            "expected_schema_version": expected_schema_version,
+            "dry_run": dry_run,
+        },
+    )
     return success_response(data=result)
 
 

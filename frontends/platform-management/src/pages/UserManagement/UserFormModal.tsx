@@ -1,7 +1,7 @@
 import React, { useState, forwardRef, useImperativeHandle } from 'react';
-import { Modal, Input, Select, message } from 'antd';
+import { Form, Input, Modal, Select, message } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { createUser, updateUser, type UserItem, type UserCreatePayload, type UserUpdatePayload } from '../../api/users';
+import { createUser, updateUser, type UserItem, type UserCreatePayload } from '../../api/users';
 import type { TenantItem } from '../../api/tenants';
 
 export interface UserFormModalHandle {
@@ -19,14 +19,7 @@ const UserFormModal = forwardRef<UserFormModalHandle, Props>(({ tenants, onSaved
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<UserItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    username: '',
-    password: '',
-    display_name: '',
-    email: '',
-    role: 'user',
-    tenant_id: '',
-  });
+  const [form] = Form.useForm();
 
   useImperativeHandle(
     ref,
@@ -34,23 +27,23 @@ const UserFormModal = forwardRef<UserFormModalHandle, Props>(({ tenants, onSaved
       open(user) {
         if (user) {
           setEditing(user);
-          setForm({
+          form.setFieldsValue({
             username: user.username,
             password: '',
             display_name: user.display_name || '',
             email: user.email || '',
             role: user.role,
-            tenant_id: user.tenant_id,
+            new_password: '',
           });
         } else {
           setEditing(null);
-          setForm({
+          form.setFieldsValue({
             username: '',
             password: '',
             display_name: '',
             email: '',
             role: 'user',
-            tenant_id: tenants[0]?.id || '',
+            new_password: '',
           });
         }
         setOpen(true);
@@ -59,31 +52,23 @@ const UserFormModal = forwardRef<UserFormModalHandle, Props>(({ tenants, onSaved
         setOpen(false);
       },
     }),
-    [tenants],
+    [form],
   );
 
   const handleSave = async () => {
-    if (!editing && !form.username) {
-      message.warning(t('userManagement.requiredUsername'));
-      return;
-    }
-    if (!editing && !form.password) {
-      message.warning(t('userManagement.requiredPassword'));
-      return;
-    }
-    setSubmitting(true);
     try {
+      const values = await form.validateFields();
+      setSubmitting(true);
       if (editing) {
-        const payload: UserUpdatePayload = { display_name: form.display_name, email: form.email, role: form.role };
-        await updateUser(editing.id, payload);
+        await updateUser(editing.id, { display_name: values.display_name, email: values.email, role: values.role });
         message.success(t('userManagement.updated'));
       } else {
         const payload: UserCreatePayload = {
-          username: form.username,
-          password: form.password,
-          display_name: form.display_name,
-          email: form.email,
-          role: form.role,
+          username: values.username,
+          password: values.password,
+          display_name: values.display_name,
+          email: values.email,
+          role: values.role,
         };
         await createUser(payload);
         message.success(t('userManagement.created'));
@@ -91,6 +76,7 @@ const UserFormModal = forwardRef<UserFormModalHandle, Props>(({ tenants, onSaved
       setOpen(false);
       await onSaved();
     } catch (e: unknown) {
+      if (e && typeof e === 'object' && 'errorFields' in e) return;
       message.error(e instanceof Error ? e.message : t('userManagement.saveFailed'));
     } finally {
       setSubmitting(false);
@@ -107,78 +93,59 @@ const UserFormModal = forwardRef<UserFormModalHandle, Props>(({ tenants, onSaved
       cancelText={t('common.cancel')}
       confirmLoading={submitting}
       width={520}
+      destroyOnClose
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-        <div>
-          <label style={{ display: 'block', marginBottom: 4, fontWeight: 500, fontSize: 13 }}>
-            {t('userManagement.username')} <span style={{ color: '#dc2626' }}>*</span>
-          </label>
-          <Input
-            placeholder={t('userManagement.placeholderUsername')}
-            value={form.username}
-            disabled={!!editing}
-            onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-          />
+      <Form form={form} layout="vertical" style={{ marginTop: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <Form.Item
+            name="username"
+            label={t('userManagement.username')}
+            rules={editing ? [] : [{ required: true, message: t('userManagement.requiredUsername') }]}
+          >
+            <Input placeholder={t('userManagement.placeholderUsername')} disabled={!!editing} />
+          </Form.Item>
+          <Form.Item
+            name="display_name"
+            label={t('userManagement.displayName')}
+            rules={[{ required: true, message: t('userManagement.requiredDisplayName') }]}
+          >
+            <Input placeholder={t('userManagement.placeholderDisplayName')} />
+          </Form.Item>
         </div>
-        <div>
-          <label style={{ display: 'block', marginBottom: 4, fontWeight: 500, fontSize: 13 }}>
-            {t('userManagement.displayName')} <span style={{ color: '#dc2626' }}>*</span>
-          </label>
-          <Input
-            placeholder={t('userManagement.placeholderDisplayName')}
-            value={form.display_name}
-            onChange={(e) => setForm((f) => ({ ...f, display_name: e.target.value }))}
+        <Form.Item
+          name="email"
+          label={t('userManagement.email')}
+          rules={[{ required: true, message: t('userManagement.requiredEmail'), type: 'email' }]}
+        >
+          <Input placeholder={t('userManagement.placeholderEmail')} />
+        </Form.Item>
+        <Form.Item
+          name="role"
+          label={t('userManagement.role')}
+          rules={[{ required: true, message: t('userManagement.requiredRole') }]}
+        >
+          <Select
+            options={[
+              { label: t('auth.systemAdmin'), value: 'admin' },
+              { label: t('userManagement.roleUser'), value: 'user' },
+            ]}
           />
-        </div>
-      </div>
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ display: 'block', marginBottom: 4, fontWeight: 500, fontSize: 13 }}>
-          {t('userManagement.email')} <span style={{ color: '#dc2626' }}>*</span>
-        </label>
-        <Input
-          placeholder={t('userManagement.placeholderEmail')}
-          value={form.email}
-          onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-        />
-      </div>
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ display: 'block', marginBottom: 4, fontWeight: 500, fontSize: 13 }}>
-          {t('userManagement.role')} <span style={{ color: '#dc2626' }}>*</span>
-        </label>
-        <Select
-          value={form.role}
-          onChange={(v) => setForm((f) => ({ ...f, role: v }))}
-          style={{ width: '100%' }}
-          options={[
-            { label: t('auth.systemAdmin'), value: 'admin' },
-            { label: t('userManagement.roleUser'), value: 'user' },
-          ]}
-        />
-      </div>
-      {!editing && (
-        <div style={{ marginTop: 14 }}>
-          <label style={{ display: 'block', marginBottom: 4, fontWeight: 500, fontSize: 13 }}>
-            {t('auth.password')} <span style={{ color: '#dc2626' }}>*</span>
-          </label>
-          <Input.Password
-            placeholder={t('userManagement.placeholderPassword')}
-            value={form.password}
-            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-          />
-        </div>
-      )}
-      {editing && (
-        <div style={{ marginTop: 14 }}>
-          <label style={{ display: 'block', marginBottom: 4, fontWeight: 500, fontSize: 13 }}>
-            {t('userManagement.newPassword')}
-          </label>
-          <Input.Password
-            placeholder={t('userManagement.placeholderNewPassword')}
-            value={form.password}
-            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-          />
-        </div>
-      )}
+        </Form.Item>
+        {!editing && (
+          <Form.Item
+            name="password"
+            label={t('auth.password')}
+            rules={[{ required: true, message: t('userManagement.requiredPassword') }]}
+          >
+            <Input.Password placeholder={t('userManagement.placeholderPassword')} />
+          </Form.Item>
+        )}
+        {editing && (
+          <Form.Item name="new_password" label={t('userManagement.newPassword')}>
+            <Input.Password placeholder={t('userManagement.placeholderNewPassword')} />
+          </Form.Item>
+        )}
+      </Form>
     </Modal>
   );
 });

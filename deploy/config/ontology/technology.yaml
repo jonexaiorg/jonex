@@ -1,0 +1,548 @@
+# ============================================================
+# 科技产品与技术知识库本体定义（TBox）
+# ============================================================
+# 领域：消费电子 / 计算硬件 / 机器人 / 软件与工具 / 学术基准与论文
+# 数据来源：VideoDR-Technology-KnowledgeBase-Test 语料（视频 + PDF 文档）
+#   覆盖：电动滑板车与充电器（小米）、GPU 与 CUDA 工具包（NVIDIA Nsight）、
+#         编码助手软件版本（Claude Code）、智能手机规格（iPhone）、
+#         四足/人形机器人（宇树 Go2-W、Figure）、家电（夏普电饭煲）、
+#         软件工程评测基准与论文（SWE-bench）、MIDI 键盘控制器（Arturia）、
+#         DJ 控制器（Pioneer DJ / Serato）等科技产品与技术资料。
+#
+# 结构参考 deploy/config/ontology/default.yaml：
+#   - entity_types：实体类型（name / aliases / attributes）
+#   - relation_types：关系类型（name / source / target / description）
+#   - attribute.type 取值：string | text | number | date | enum | boolean
+#   - OntologyRegistry 初始化时加载，供 OntologyExtractor 在 LLM 抽取阶段使用。
+#
+# 增补说明（v2）：已依据 corpus/documents 下各文档的 MinerU 详细解析
+#   （DOCxxxxxx.md / *_content_list.json）补充细粒度实体、属性与关系，覆盖：
+#   - 产品世系与阵容（小米滑板车 6 Max/6 Ultra/7 系、宇树 Go2/Go2-W/B2 等）
+#   - 芯片/GPU 架构（NVIDIA Blackwell/Ampere/Hopper、Apple A18 Pro 等）
+#   - 软件版本依赖链（Nsight 版本 ↔ CUDA Toolkit / Visual Studio / 显卡驱动）
+#   - 检测/认证机构（北京 TIRT、深圳 AMC）与测试报告编号、合规要求
+#   - 配套软件与生态（Xiaomi Home、Apple Find My、Analog Lab Lite、Serato DJ Pro、MIDI Control Center）
+#
+# 增补说明（v3）：已通读全部 40 篇文档的详细解析，覆盖干扰域并补充：
+#   - 航天/科考任务（STS-31/STS-134、DART、Perseverance 着陆、Artemis II、F-1 发动机试车）→ 新增 Mission
+#   - 设施/场站（数据中心、变电站、海上油气平台、炼油厂、污水处理厂、量产工厂、仓库、家庭光储系统）→ 新增 Facility
+#   - 安全事故（Husky Superior 炼油厂爆炸 CSB 调查）→ 新增 Incident
+#   - 航空/航天器、汽车、无人机（Lockheed Constellation、WP-3D、保时捷 911、大众 Arteon、DJI Mavic 2）→ 归入 Product（含载具属性）
+#   - 更多消费电子与基准（ASUS ROG Phone 5、iPhone Air、MedEthicEval 医学伦理 LLM 基准）
+#
+# 增补说明（v4）：依据知识库入库 chunk（lightrag_doc_chunks，视频转写摘要）补充：
+#   - AI/LLM 模型横评（Llama 3.3 70B、GLM-5、Claude Opus 4.5/Sonnet、GPT-5.2、Qwen3、Kimi）
+#     及推理硬件对比（H100/H200/A6000 Ada/Apple M3 Max，指标 tokens/秒、功耗、性价比、能效比）→ 新增 AIModel
+#   - 推理/编码工具链（Ollama、vLLM、Open WebUI、CLINE、OpenRouter、VS Code、Claude Code）
+#   - 无线/通信协议（LoRa、Meshtastic、OcuSync、Wi-Fi、Bluetooth、5G；频段/信号强度/免许可）→ 新增 Protocol
+#   - 量化/推理概念（Q4、FP16）、售价与产品阵容（小米滑板车 6/6 Max/6 Ultra/6 Pro/6 Lite，€799.99）
+
+version: 1
+domain: technology
+
+entity_types:
+  # ── 主体：组织与人 ───────────────────────────────────────
+  - name: Organization
+    aliases: ["公司", "企业", "厂商", "制造商", "品牌", "机构", "组织", "大学", "高校", "研究机构", "实验室", "检测机构", "认证机构"]
+    attributes:
+      - { name: legal_name, type: string, required: false, description: "法定全称或官方名称，如 Beijing TIRT Technology Service Co., Ltd." }
+      - { name: org_type, type: enum, required: false, description: "组织类型：manufacturer/vendor/university/lab/testing_lab/agency/company" }
+      - { name: industry, type: string, required: false, description: "所属行业或领域" }
+      - { name: country, type: string, required: false, description: "所属国家/地区" }
+      - { name: website, type: string, required: false, description: "官方网站" }
+      - { name: ticker, type: string, required: false, description: "股票代码，如 NYSE:XOM" }
+      - { name: headquarters, type: string, required: false, description: "总部所在地，如 near Cincinnati, OH" }
+      - { name: employee_count, type: number, required: false, description: "员工规模，如 more than 200 employees" }
+
+  - name: Person
+    aliases: ["人", "人员", "个人", "作者", "研究员", "开发者", "贡献者", "提交者", "工程师", "宇航员", "机长", "指令长", "发言人"]
+    attributes:
+      - { name: title, type: string, required: false, description: "职位或头衔，如 NASA astronaut/commander/pilot/spokesperson" }
+      - { name: role, type: string, required: false, description: "在语境中的角色，如作者/发布者/贡献者/乘员/调查员" }
+      - { name: affiliation, type: string, required: false, description: "所属机构名称，如 NASA/SJTU/Porsche" }
+      - { name: email, type: string, required: false, description: "电子邮箱" }
+      - { name: nationality, type: string, required: false, description: "国籍，如 American" }
+      - { name: birth_date, type: date, required: false, description: "出生日期" }
+      - { name: record_held, type: text, required: false, description: "创下的纪录，如女性单次航天最长 328 天 / 首位离开近地轨道的女性" }
+
+  # ── 产品：硬件设备与整机 ─────────────────────────────────
+  - name: Product
+    aliases: ["产品", "设备", "型号", "机型", "整机", "硬件", "装置", "机器人", "手机", "滑板车", "控制器", "家电", "显卡", "开发板", "无人机", "车辆", "汽车", "飞机", "航空器", "航天器", "卫星", "火星车", "赤道仪", "光伏板", "储能电池"]
+    attributes:
+      - { name: model, type: string, required: false, description: "型号标识/产品编号，如 KS-1800、DDJ-400、Go2-W、Mavic 2 Pro" }
+      - { name: brand, type: string, required: false, description: "品牌名称" }
+      - { name: category, type: string, required: false, description: "产品品类，如电动滑板车/智能手机/四足机器人/DJ 控制器/无人机/汽车/飞机/航天器/光伏板/储能电池" }
+      - { name: generation, type: string, required: false, description: "产品世代/代次" }
+      - { name: release_date, type: date, required: false, description: "发布或上市日期/年份" }
+      - { name: price, type: number, required: false, description: "价格数值" }
+      - { name: price_currency, type: string, required: false, description: "价格币种，如 THB/USD/CNY" }
+      - { name: width, type: string, required: false, description: "宽度（含单位）" }
+      - { name: height, type: string, required: false, description: "高度（含单位）" }
+      - { name: depth, type: string, required: false, description: "深度/厚度（含单位）" }
+      - { name: weight, type: string, required: false, description: "重量（含单位）" }
+      - { name: color, type: string, required: false, description: "颜色/外观配色，如 Lightning Yellow/Black Titanium" }
+      - { name: ingress_rating, type: string, required: false, description: "防护等级，如 IPX6/IP68" }
+      - { name: series, type: string, required: false, description: "所属产品系列/阵容，如 Xiaomi Electric Scooter 6 系列" }
+      - { name: warranty, type: string, required: false, description: "保修期，如 1 年/3-year warranty on the heating plate" }
+      - { name: display_size, type: string, required: false, description: "屏幕尺寸，如 6.9-inch/3\" TFT" }
+      - { name: resolution, type: string, required: false, description: "分辨率，如 2868-by-1320 / 460 ppi" }
+      - { name: brightness, type: string, required: false, description: "亮度指标，如 1000 nits typical / 2000 nits peak / 1 nit min" }
+      - { name: battery_life, type: string, required: false, description: "电池续航，如视频播放 up to 33 hours / 1.5-3h" }
+      - { name: battery_capacity, type: string, required: false, description: "电池容量，如 585Wh/15000mAh" }
+      - { name: storage, type: string, required: false, description: "存储容量，如 256GB/512GB/1TB" }
+      - { name: chip, type: string, required: false, description: "主控芯片/SoC，如 A18 Pro chip" }
+      - { name: os, type: string, required: false, description: "预装操作系统，如 iOS 18/HyperOS" }
+      - { name: connectivity, type: string, required: false, description: "无线/连接能力，如 Wi-Fi 7/蓝牙 5.3/WIFI6&4G" }
+      - { name: max_speed, type: string, required: false, description: "最大速度，如 25km/h / 0~2.5m/s / 72km/h(无人机) / 250 knots(飞机)" }
+      - { name: load_capacity, type: string, required: false, description: "最大载荷/承重，如 140kg / ≈8kg（极限 ~12kg）" }
+      - { name: operating_voltage, type: string, required: false, description: "供电/工作电压，如 33.6V" }
+      - { name: memory, type: string, required: false, description: "运行内存/RAM，如 18 GB LPDDR5 / 应用最低内存要求" }
+      - { name: refresh_rate, type: string, required: false, description: "屏幕刷新率，如 120Hz / 144Hz" }
+      - { name: range, type: string, required: false, description: "航程/续航里程/通信距离，如 75km / 18km(无人机) / 3800 nautical miles(飞机)" }
+      - { name: flight_time, type: string, required: false, description: "最长飞行/悬停时间（无人机/航空器），如 31 分钟 / 11.5 hours" }
+      - { name: thrust, type: string, required: false, description: "推力（发动机/火箭），如 1.5 million pounds of thrust" }
+      - { name: price_range, type: string, required: false, description: "价格区间/参考售价，如 £6,663–£11,115 / Rs. 25.99 Lakh" }
+      - { name: operating_temperature, type: string, required: false, description: "工作环境温度，如 -10°C~40°C / -15°C~40°C" }
+
+  - name: Component
+    aliases: ["部件", "组件", "配件", "模块", "元件", "零件", "接口", "端口", "芯片", "处理器", "电机", "电池", "充电器", "显示屏", "摄像头", "镜头", "传感器", "激光雷达", "轮胎", "关节电机", "编码器", "旋钮", "踏板"]
+    attributes:
+      - { name: component_type, type: string, required: false, description: "部件类型：motor/battery/charger/chip/cpu/gpu/display/camera/lens/sensor/lidar/port/wheel/joint 等" }
+      - { name: model, type: string, required: false, description: "部件型号或规格标识，如 GO-M8010-6/A18 Pro" }
+      - { name: rating, type: string, required: false, description: "关键参数额定值（含单位），如 1200W/585Wh/45N·m" }
+      - { name: quantity, type: number, required: false, description: "数量，如 16 个关节电机 / 8 performance pads" }
+      - { name: power, type: string, required: false, description: "功率，如 600 watts/268W/1200W" }
+      - { name: voltage, type: string, required: false, description: "电压，如 33.6V/54.6Vdc" }
+      - { name: capacity, type: string, required: false, description: "容量，如 585Wh/15000mAh/1.8 liters" }
+      - { name: cores, type: string, required: false, description: "核心/单元数量，如 6-core CPU/16-core Neural Engine/8 核 CPU" }
+      - { name: interface_type, type: string, required: false, description: "接口类型，如 USB-C/XLR/TRS/RCA/1/8\"/Kensington lock" }
+      - { name: supports_balanced_xlr, type: boolean, required: false, description: "麦克风等接口是否支持平衡 XLR 线缆" }
+
+  # ── 软件与版本 ───────────────────────────────────────────
+  - name: Software
+    aliases: ["软件", "应用", "App", "程序", "固件", "驱动", "工具", "工具包", "工具集", "操作系统", "SDK", "套件", "插件", "扩展包", "编辑器", "IDE", "推理服务器", "推理框架", "API", "平台"]
+    attributes:
+      - { name: software_type, type: enum, required: false, description: "类型：application/app/toolkit/os/firmware/driver/library/plugin/ide/inference_server/api/platform（如 Ollama/vLLM 为 inference_server，CLINE 为 plugin，OpenRouter 为 api）" }
+      - { name: vendor, type: string, required: false, description: "开发商/发行方，如 Anthropic/NVIDIA/Arturia/Serato/Z.ai" }
+      - { name: latest_version, type: string, required: false, description: "最新/当前版本号" }
+      - { name: platform, type: string, required: false, description: "运行平台，如 Windows/macOS/iOS/Linux" }
+      - { name: license, type: string, required: false, description: "授权方式，如开源/商业授权/免费" }
+
+  - name: SoftwareRelease
+    aliases: ["版本", "发行版", "发布版本", "release", "版本号", "更新", "工具包版本"]
+    attributes:
+      - { name: version, type: string, required: true, description: "版本号，如 v2.1.39、2025.1.0、CUDA Toolkit 12.8" }
+      - { name: release_date, type: date, required: false, description: "发布日期，如 Feb 11" }
+      - { name: release_year, type: number, required: false, description: "发布年份" }
+      - { name: changelog, type: text, required: false, description: "更新内容摘要（What's changed）" }
+      - { name: commit_hash, type: string, required: false, description: "关联提交哈希，如 be5d08f" }
+      - { name: recommended_driver, type: string, required: false, description: "推荐配套驱动版本，如 NVIDIA Display Driver 571.96 或更新" }
+      - { name: supported_ide, type: string, required: false, description: "支持的 IDE/环境，如 Visual Studio 2022/2026" }
+      - { name: is_prerelease, type: boolean, required: false, description: "是否为早期访问/预发布版本" }
+
+  # ── 规格 / 功能 / 技术 ───────────────────────────────────
+  - name: Specification
+    aliases: ["规格", "参数", "指标", "技术指标", "性能参数", "配置", "系统要求"]
+    attributes:
+      - { name: spec_name, type: string, required: false, description: "指标名称，如加速时间/续航里程/亮度/电池续航/最低内存/充电时间/峰值功率/峰值扭矩/最大爬坡/推理速度/功耗/性价比/能效比/信号强度/显存" }
+      - { name: value, type: string, required: false, description: "指标数值（含单位），如 2.4s(8–24km/h)/75km/1000 nits/33 hours/45N·m/38 tokens·s⁻¹/-100dB" }
+      - { name: unit, type: string, required: false, description: "计量单位" }
+      - { name: condition, type: text, required: false, description: "测试条件或取值说明，如 25±2°C、75±0.5kg 负载、15km/h 匀速" }
+      - { name: compliance_requirement, type: string, required: false, description: "合规要求阈值，如 ≥1200W / 45N·m ± 3N·m" }
+      - { name: report_no, type: string, required: false, description: "测试报告编号，如 OTSA1-202501024 / EDG2507250233S00501R" }
+
+  - name: Feature
+    aliases: ["功能", "特性", "模式", "技术", "能力", "系统", "骑行模式", "性能模式"]
+    attributes:
+      - { name: feature_type, type: string, required: false, description: "功能类别，如 riding_mode/safety/connectivity/AI/charging" }
+      - { name: description, type: text, required: false, description: "功能说明，如 Boost mode 8–24km/h 快速加速" }
+      - { name: default_state, type: enum, required: false, description: "默认状态：enabled/disabled（如 E-ABS、TCS 默认关闭）" }
+      - { name: requires_app, type: boolean, required: false, description: "是否需经配套 App 启用（如 Xiaomi Home 才能开启 Boost/Find My）" }
+      - { name: autonomy_level, type: string, required: false, description: "自动驾驶/自动化等级（如 Emergency Assist 2.0、五级自动驾驶）" }
+
+  # ── 学术：基准 / 论文 ────────────────────────────────────
+  - name: Benchmark
+    aliases: ["基准", "评测", "评测基准", "测试集", "数据集", "评估框架", "榜单"]
+    attributes:
+      - { name: domain, type: string, required: false, description: "评测领域，如软件工程/医学伦理" }
+      - { name: author_count, type: number, required: false, description: "作者数量，如 SWE-bench 为 7 位作者" }
+      - { name: problem_count, type: number, required: false, description: "任务/问题数量，如 2,294 个软件工程问题" }
+      - { name: repository_count, type: number, required: false, description: "来源仓库数量，如 12 个 Python 仓库" }
+      - { name: training_instance_count, type: number, required: false, description: "训练集实例数，如 SWE-bench-train 19,000" }
+      - { name: best_model, type: string, required: false, description: "最佳表现模型，如 Claude 2 / Qwen2.5" }
+      - { name: best_score, type: string, required: false, description: "最佳成绩，如 1.96% 解决率 / accuracy 0.85" }
+      - { name: dataset_size, type: string, required: false, description: "数据集规模，如 Knowledge 629 / DV 236 / PD 100 / ED 100" }
+      - { name: evaluated_models, type: text, required: false, description: "被评测模型，如 GPT-4/GPT-4-turbo/Qwen2.5/LLaMa3/HA" }
+      - { name: year, type: number, required: false, description: "发布年份" }
+      - { name: venue, type: string, required: false, description: "发表会议/期刊，如 ICLR 2024" }
+      - { name: url, type: string, required: false, description: "数据/榜单地址，如 swebench.com" }
+
+  - name: Publication
+    aliases: ["论文", "出版物", "文章", "会议论文", "预印本", "技术报告"]
+    attributes:
+      - { name: venue, type: string, required: false, description: "发表会议/期刊，如 ICLR 2024" }
+      - { name: year, type: number, required: false, description: "发表年份" }
+      - { name: arxiv_id, type: string, required: false, description: "arXiv 编号或 DOI，如 arXiv:2310.06770v3" }
+      - { name: author_count, type: number, required: false, description: "作者数量" }
+      - { name: institutions, type: string, required: false, description: "作者所属机构，如 Princeton University / University of Chicago" }
+      - { name: contact, type: string, required: false, description: "通讯作者邮箱" }
+
+  # ── 标准 / 认证 ──────────────────────────────────────────
+  - name: Standard
+    aliases: ["标准", "认证", "规范", "合规", "测试标准"]
+    attributes:
+      - { name: code, type: string, required: false, description: "标准编号，如 IEC 60529:2013、TIS 1039-2547、IPX6、ERP Level VI、RoHS" }
+      - { name: standard_body, type: string, required: false, description: "标准机构/发布方，如 IEC/TIS" }
+      - { name: edition_year, type: string, required: false, description: "标准版本年份，如 2013" }
+
+  # ── 上下文：地点 / 事件 / 概念 ──────────────────────────
+  - name: Location
+    aliases: ["地点", "位置", "地区", "城市", "国家", "场所", "中心"]
+    attributes:
+      - { name: address, type: string, required: false, description: "地址或所在区域" }
+
+  - name: Event
+    aliases: ["事件", "活动", "发布会", "任务", "项目", "演示", "会议", "赛事"]
+    attributes:
+      - { name: date, type: date, required: false, description: "发生日期" }
+      - { name: description, type: text, required: false, description: "事件说明" }
+
+  - name: Concept
+    aliases: ["概念", "术语", "定义", "品类", "分类", "技术方向"]
+    attributes: []
+
+  # ── 产品世系 / 硬件架构 ──────────────────────────────────
+  - name: ProductSeries
+    aliases: ["系列", "产品系列", "产品线", "产品家族", "阵容", "型号系列"]
+    attributes:
+      - { name: brand, type: string, required: false, description: "品牌，如 Xiaomi/Unitree" }
+      - { name: category, type: string, required: false, description: "系列品类，如电动滑板车/四足机器人" }
+      - { name: members, type: text, required: false, description: "系列成员示例，如 6 Max/6 Ultra/7 Series；Go2/Go2-W" }
+
+  - name: HardwareArchitecture
+    aliases: ["架构", "芯片架构", "微架构", "GPU架构", "计算架构", "指令集架构"]
+    attributes:
+      - { name: vendor, type: string, required: false, description: "厂商，如 NVIDIA/Apple" }
+      - { name: generation, type: string, required: false, description: "代次/系列，如 Blackwell/Ampere/Hopper/Maxwell/Pascal/Volta" }
+      - { name: representative_chips, type: string, required: false, description: "代表芯片/GPU，如 B100/B200/GB202/H100/A100/GA102" }
+
+  # ── 航天任务 / 设施场站 / 事故（v3 增补域） ─────────────
+  - name: Mission
+    aliases: ["任务", "航天任务", "太空任务", "飞行任务", "科考任务", "试验", "试车", "探测任务"]
+    attributes:
+      - { name: mission_type, type: enum, required: false, description: "任务类型：crewed/uncrewed/deploy/impactor/landing/test/resupply" }
+      - { name: launch_date, type: date, required: false, description: "发射日期，如 1990-04-24 / 2011-05-16" }
+      - { name: landing_date, type: date, required: false, description: "返回/着陆日期，如 2011-06-01" }
+      - { name: duration, type: string, required: false, description: "任务时长，如 15 days, 17 hours, 38 minutes / 328 days" }
+      - { name: crew_size, type: number, required: false, description: "乘员人数，如 5/6" }
+      - { name: orbit, type: string, required: false, description: "轨道参数，如 51.6° / 122 nautical miles" }
+      - { name: distance_traveled, type: string, required: false, description: "飞行里程，如 122,883,151 miles / 5.7 million miles" }
+      - { name: target, type: string, required: false, description: "任务目标/天体，如 Dimorphos / Moon / ISS" }
+      - { name: outcome, type: text, required: false, description: "任务结果/成果，如部署哈勃望远镜、部署 AMS-2" }
+
+  - name: Facility
+    aliases: ["设施", "场站", "工厂", "厂", "基础设施", "数据中心", "变电站", "炼油厂", "污水处理厂", "平台", "仓库", "配送中心", "发射台"]
+    attributes:
+      - { name: facility_type, type: enum, required: false, description: "类型：refinery/treatment_plant/substation/oil_platform/data_center/factory/warehouse/distribution_center/power_system/launch_pad" }
+      - { name: capacity, type: string, required: false, description: "容量/储量，如 storage 1.2 million barrels / 13.5kWh" }
+      - { name: throughput, type: string, required: false, description: "产能/吞吐量，如 150,000 barrels/day / 384 million gallons/day / 7,000 items/day" }
+      - { name: commissioned_date, type: string, required: false, description: "投产/建成时间，如 1937 / Nov. 28, 2017" }
+      - { name: location, type: string, required: false, description: "所在位置，如 200 miles offshore Newfoundland" }
+      - { name: annual_output, type: string, required: false, description: "年产出，如 up to 12,000 humanoid robots per year" }
+
+  - name: Incident
+    aliases: ["事故", "安全事故", "爆炸", "火灾", "事件", "调查"]
+    attributes:
+      - { name: incident_type, type: enum, required: false, description: "类型：explosion/fire/release/leak/implosion" }
+      - { name: incident_date, type: date, required: false, description: "发生日期，如 2018-04-26" }
+      - { name: injuries, type: number, required: false, description: "受伤人数，如 36" }
+      - { name: damage_cost, type: string, required: false, description: "经济损失，如 roughly $550 million" }
+      - { name: substance_released, type: string, required: false, description: "泄漏/释放物质，如 39,000 pounds of flammable hydrocarbon vapor" }
+      - { name: evacuees, type: number, required: false, description: "疏散人数，如 2,500" }
+
+  # ── AI 模型 / 通信协议（v4 增补域） ─────────────────────
+  - name: AIModel
+    aliases: ["模型", "大模型", "大语言模型", "LLM", "AI模型", "推理模型", "语言模型", "基础模型"]
+    attributes:
+      - { name: developer, type: string, required: false, description: "研发方/发布方，如 Meta/Anthropic/OpenAI/Z.ai/阿里/Google" }
+      - { name: model_family, type: string, required: false, description: "模型系列，如 Llama/Claude/GPT/Qwen/GLM/Gemini" }
+      - { name: parameter_size, type: string, required: false, description: "参数规模，如 70B/72B/8B/80B" }
+      - { name: quantization, type: string, required: false, description: "量化精度，如 Q4/FP16/int8" }
+      - { name: context_length, type: string, required: false, description: "上下文长度，如 128K/1M tokens" }
+      - { name: pretrain_data, type: string, required: false, description: "预训练数据规模" }
+      - { name: price, type: string, required: false, description: "调用价格/成本，如每百万 token 价格" }
+      - { name: throughput, type: string, required: false, description: "推理吞吐，如 38 tokens/秒(H200)/6.7 tokens/秒(M3 Max)" }
+
+  - name: Protocol
+    aliases: ["协议", "通信协议", "通讯协议", "无线协议", "无线技术", "通信技术", "连接标准", "网络协议"]
+    attributes:
+      - { name: protocol_type, type: string, required: false, description: "类型，如 LoRa/Meshtastic/Wi-Fi/Bluetooth/OcuSync/5G/USB/MIDI" }
+      - { name: frequency_band, type: string, required: false, description: "工作频段，如 169MHz-915MHz(sub-GHz)/2.4GHz/5.8GHz" }
+      - { name: range, type: string, required: false, description: "有效距离，如城市有遮挡约 6 个街区" }
+      - { name: signal_strength, type: string, required: false, description: "信号强度示例，如 -91dB/-95dB/-100dB" }
+      - { name: is_license_free, type: boolean, required: false, description: "是否免许可频段（如 LoRa 在美国免许可）" }
+      - { name: power_profile, type: string, required: false, description: "功耗特性，如低功耗（IoT）" }
+
+relation_types:
+  # 主体归属
+  - name: MANUFACTURED_BY
+    source: Product
+    target: Organization
+    description: "产品由某组织制造/生产/推出"
+
+  - name: DEVELOPED_BY
+    source: Software
+    target: Organization
+    description: "软件由某组织开发/发行"
+
+  - name: AFFILIATED_WITH
+    source: Person
+    target: Organization
+    description: "人员隶属于某组织/机构"
+
+  - name: AUTHORED_BY
+    source: Publication
+    target: Person
+    description: "论文/出版物由某人撰写"
+
+  - name: PRESENTS
+    source: Publication
+    target: Benchmark
+    description: "论文提出/介绍某评测基准或数据集"
+
+  # 产品构成与特性
+  - name: HAS_COMPONENT
+    source: Product
+    target: Component
+    description: "产品包含某部件/组件/配件"
+
+  - name: HAS_FEATURE
+    source: Product
+    target: Feature
+    description: "产品具备某功能/模式/技术"
+
+  - name: HAS_SPEC
+    source: Product
+    target: Specification
+    description: "产品/部件具有某项规格参数指标"
+
+  - name: COMPLIES_WITH
+    source: Product
+    target: Standard
+    description: "产品符合/通过某标准或认证"
+
+  # 产品间关系
+  - name: SUCCEEDS
+    source: Product
+    target: Product
+    description: "新产品是旧产品的升级/后继世代（前代 → 后代用于对比）"
+
+  - name: COMPATIBLE_WITH
+    source: Product
+    target: Product
+    description: "产品之间兼容配套使用，如充电器与滑板车"
+
+  - name: BELONGS_TO_CATEGORY
+    source: Product
+    target: Concept
+    description: "产品归属于某品类/分类"
+
+  # 软件与版本
+  - name: HAS_RELEASE
+    source: Software
+    target: SoftwareRelease
+    description: "软件包含某个发行版本"
+
+  - name: RELEASED_BY
+    source: SoftwareRelease
+    target: Person
+    description: "版本由某人发布/提交"
+
+  - name: SUPPORTS
+    source: SoftwareRelease
+    target: Software
+    description: "某版本支持/适配另一软件或工具包（如 Nsight 版本支持 CUDA Toolkit 版本）"
+
+  - name: REQUIRES
+    source: Software
+    target: Specification
+    description: "软件的运行/系统要求（如最低内存、操作系统版本）"
+
+  - name: RUNS_SOFTWARE
+    source: Product
+    target: Software
+    description: "硬件设备/系统运行或使用某软件或工具包版本"
+
+  # 学术与场景
+  - name: EVALUATED_BY
+    source: Software
+    target: Benchmark
+    description: "模型/软件在某评测基准上被评估"
+
+  - name: DEMONSTRATED_AT
+    source: Product
+    target: Event
+    description: "产品/基准在某演示、发布会或任务中展示"
+
+  - name: SHOWN_AT
+    source: Benchmark
+    target: Location
+    description: "评测基准/成果在某场所（如算力中心）展示"
+
+  - name: LOCATED_AT
+    source: Organization
+    target: Location
+    description: "组织/机构位于某地"
+
+  - name: RELATES_TO
+    source: Concept
+    target: Concept
+    description: "概念之间的关联"
+
+  # ── 增补关系（v2）：世系 / 检测 / 依赖 / 生态 ────────────
+  - name: MEMBER_OF
+    source: Product
+    target: ProductSeries
+    description: "产品隶属于某产品系列/阵容"
+
+  - name: TESTED_BY
+    source: Product
+    target: Organization
+    description: "产品/指标由某检测或认证机构测试认证（如北京 TIRT、深圳 AMC）"
+
+  - name: DEPENDS_ON
+    source: SoftwareRelease
+    target: Software
+    description: "某版本依赖/推荐配套软件、工具包、IDE 或驱动（如 Nsight 版本推荐显卡驱动、支持 Visual Studio）"
+
+  - name: SUPPORTS_HARDWARE
+    source: SoftwareRelease
+    target: HardwareArchitecture
+    description: "某软件版本支持某硬件/GPU 架构（如 Nsight 2025.1.0 支持 Blackwell）"
+
+  - name: BUILT_ON
+    source: Product
+    target: HardwareArchitecture
+    description: "硬件产品基于某芯片/GPU 架构构建"
+
+  - name: INTEGRATES_WITH
+    source: Software
+    target: Software
+    description: "软件之间集成/配套（如 MiniLab MkII 配 Analog Lab Lite、Serato DJ Pro 扩展包）"
+
+  - name: CONTROLS
+    source: Product
+    target: Software
+    description: "硬件设备通过配套软件/App 进行控制或连接（如滑板车经 Xiaomi Home、控制器经 MIDI Control Center/Serato DJ Pro）"
+
+  # ── 增补关系（v3）：航天任务 / 设施 / 事故 ──────────────
+  - name: CREW_MEMBER_OF
+    source: Person
+    target: Mission
+    description: "人员是某任务的乘员/机组（如 Mark Kelly → STS-134、Christina Koch → Artemis II）"
+
+  - name: CONDUCTED_BY
+    source: Mission
+    target: Organization
+    description: "任务由某机构执行/主导（如 STS-134 → NASA、DART → JHU APL）"
+
+  - name: EXECUTED_WITH
+    source: Mission
+    target: Product
+    description: "任务由某载具/航天器执行搭载（如 STS-134 → 航天飞机 Endeavour、F-1 试车 → Saturn V）"
+
+  - name: DEPLOYED
+    source: Mission
+    target: Product
+    description: "任务部署/释放的载荷（如 STS-31 → 哈勃太空望远镜、STS-134 → AMS-2）"
+
+  - name: TARGETS
+    source: Mission
+    target: Location
+    description: "任务目标天体/地点（如 DART → Dimorphos、Perseverance → Jezero 撞击坑）"
+
+  - name: OPERATED_BY
+    source: Facility
+    target: Organization
+    description: "设施由某机构运营（如 WP-3D → NOAA、Blue Plains → DC Water、Hebron 平台 → ExxonMobil Canada）"
+
+  - name: HAS_STAKE_IN
+    source: Organization
+    target: Facility
+    description: "机构持有某设施/项目权益（如 ExxonMobil 35.5%、Chevron Canada 29.6% → Hebron）"
+
+  - name: SITUATED_IN
+    source: Facility
+    target: Location
+    description: "设施位于某地（如 Triton Knoll 变电站 → 英国、Hebron 平台 → 纽芬兰近海）"
+
+  - name: CONNECTS_TO
+    source: Facility
+    target: Facility
+    description: "基础设施互联（如 Triton Knoll 陆上变电站接入国家电网）"
+
+  - name: INSTALLED_AT
+    source: Product
+    target: Facility
+    description: "产品部署/安装于某设施（如 Brightpick Autopicker → 仓库、H100 GPU → Starcloud-1 数据中心）"
+
+  - name: OCCURRED_AT
+    source: Incident
+    target: Facility
+    description: "事故发生于某设施（如爆炸 → Husky Superior 炼油厂）"
+
+  - name: INVESTIGATED_BY
+    source: Incident
+    target: Organization
+    description: "事故由某机构调查（如 Husky Superior 爆炸 → CSB）"
+
+  # ── 增补关系（v4）：AI 模型 / 通信协议 ──────────────────
+  - name: PROVIDED_BY
+    source: AIModel
+    target: Organization
+    description: "AI/LLM 模型由某机构研发/发布（如 Llama 3.3 → Meta、GLM-5 → Z.ai、Claude Opus → Anthropic）"
+
+  - name: COMPARED_WITH
+    source: AIModel
+    target: AIModel
+    description: "模型之间横向对比（如 GLM-5 vs Claude Opus 4.5 vs GPT-5.2、Sonnet vs Opus）"
+
+  - name: BENCHMARKED_ON
+    source: AIModel
+    target: Product
+    description: "模型在某硬件/GPU 上跑分或运行（如 Llama 3.3 70B Q4 → H100/H200/A6000 Ada/M3 Max）"
+
+  - name: SERVED_BY
+    source: AIModel
+    target: Software
+    description: "模型经某推理服务/工具运行或调用（如经 Ollama/vLLM 推理、经 CLINE/OpenRouter 调用）"
+
+  - name: SCORED_ON
+    source: AIModel
+    target: Benchmark
+    description: "模型在某评测基准上取得成绩（如各 LLM 在 MedEthicEval/SWE-bench 上的表现）"
+
+  - name: USES_PROTOCOL
+    source: Product
+    target: Protocol
+    description: "设备采用某通信/无线协议（如无人机用 OcuSync、手机用 Wi-Fi 7/5G、LoRa 板用 LoRa）"
+
+constraints:
+  - type: required_attribute
+    entity: SoftwareRelease
+    attribute: version
+    severity: warning
+
+  - type: required_attribute
+    entity: Product
+    attribute: model
+    severity: warning
+
+  - type: required_attribute
+    entity: Benchmark
+    attribute: author_count
+    severity: warning
+
+disambiguation:
+  case_insensitive: true
+  alias_merge: true

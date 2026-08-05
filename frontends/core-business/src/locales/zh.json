@@ -785,7 +785,22 @@
       "importOkText": "导入所选",
       "selectDomain": "选择模板领域",
       "selectScenario": "选择领域场景（可多选）"
-    }
+    },
+    "exportYaml": "导出为 YAML",
+    "importYaml": "从 YAML 导入",
+    "yamlImportTitle": "导入编译 Schema",
+    "yamlImportSuccess": "YAML 导入成功，Schema 已更新。",
+    "yamlImportFailed": "YAML 导入失败",
+    "yamlImportConflict": "Schema 已被其他操作更新，请刷新后重试",
+    "yamlImportSelectFile": "请先选择 YAML 文件",
+    "yamlImportConfirm": "确认导入",
+    "yamlImportCancel": "取消",
+    "yamlImportSummary": "导入摘要",
+    "yamlImportCountEntities": "实体: {{count}}",
+    "yamlImportCountAttributes": "属性: {{count}}",
+    "yamlImportCountRelations": "关系: {{count}}",
+    "yamlImportCountConstraints": "约束: {{count}}",
+    "yamlImportErrorsTitle": "导入错误"
   },
   "synonym": {
     "empty": "暂无同义词数据",

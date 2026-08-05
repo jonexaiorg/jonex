@@ -13,7 +13,7 @@ import {
 import { Result } from 'antd';
 import i18next from 'i18next';
 import { getRoutes } from './routes.config';
-import { menuConfig } from '@/router/menu.config';
+import { getMenuFromRoutes } from '@/router/menu';
 import AppLayout from '@/components/AppLayout';
 import { readAccessToken, readCachedUser, clearAuthStorage, buildLoginRedirectUrl } from '@jonex/shell-sdk';
 
@@ -86,7 +86,7 @@ const createAuthLoader =
 
       if (user) {
         const userRoles: string[] = user.roles || (user.role ? [user.role] : []);
-        const menuItem = (menuConfig as MenuItem[]).find((item) => item.path === path);
+        const menuItem = getMenuFromRoutes(getRoutes(), (s: string) => s).find((item) => item.path === path);
         if (menuItem && !menuItem?.roles?.some((role) => userRoles?.includes(role))) {
           return redirect('/error?page=403');
         }
@@ -112,7 +112,7 @@ const createAuthLoader =
         : userInfo?.role
           ? [userInfo.role]
           : [];
-    const menuItem = (menuConfig as MenuItem[]).find((item) => item.path === path);
+    const menuItem = getMenuFromRoutes(getRoutes(), (s: string) => s).find((item) => item.path === path);
     if (menuItem && !menuItem?.roles?.some((role) => userRoles?.includes(role))) {
       return redirect('/error?page=403');
     }

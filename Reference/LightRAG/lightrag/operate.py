@@ -1140,7 +1140,16 @@ async def _rebuild_single_entity(
             }
             await knowledge_graph_inst.upsert_node(entity_name, updated_entity_data)
 
-            # Update entity in vector database (equally critical)
+            # [jonex] R3 判据3：描述文本未变化则跳过 re-embed + Milvus upsert
+            stored_description = current_entity.get("description", "")
+            if stored_description and stored_description == final_description:
+                logger.debug(
+                    "[jonex][R3] skip re-embed entity=%s (description unchanged)",
+                    entity_name,
+                )
+                return
+
+            # Update entity in vector database
             entity_vdb_id = compute_mdhash_id(entity_name, prefix="ent-")
             entity_content = f"{entity_name}\n{final_description}"
 
@@ -1554,6 +1563,16 @@ async def _rebuild_single_relationship(
                 )
 
     await knowledge_graph_inst.upsert_edge(src, tgt, updated_relationship_data)
+
+    # [jonex] R3 判据3：描述文本未变化则跳过 re-embed + Milvus upsert
+    stored_rel_description = current_relationship.get("description", "")
+    if stored_rel_description and stored_rel_description == final_description:
+        logger.debug(
+            "[jonex][R3] skip re-embed relation=%s~%s (description unchanged)",
+            src, tgt,
+        )
+        # graph 已更新（source_id/file_path），仅跳过向量 upsert
+        return
 
     # Update relationship in vector database
     # Sort src and tgt to ensure consistent ordering (smaller string first)

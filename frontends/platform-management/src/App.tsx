@@ -14,7 +14,7 @@ function AntdGate({ children }: { children: React.ReactNode }) {
   // 会被 cssinjs 回收的 CSS 变量下发；MF 共享单例后必须所有应用一致关闭，否则
   // 任一应用的 cssVar:true 会为共享 antd 注册全局变量，导致 popup z-index 丢失。
   return (
-    <ConfigProvider locale={antdLocale} theme={{ ...antdTheme, cssVar: false }}>
+    <ConfigProvider locale={antdLocale} theme={{ ...antdTheme }}>
       {children}
     </ConfigProvider>
   );

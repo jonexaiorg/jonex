@@ -14,6 +14,7 @@ STAGE_LLM_ANSWER = "llm_answer"
 STAGE_RAG_FALLBACK = "rag_fallback"
 STAGE_FUSION = "fusion"
 STAGE_RETRIEVAL_RERANK = "retrieval_rerank"   # LightRAG 检索期重排（召回后、送 LLM 前）
+STAGE_REF_RETRIEVE = "ref_retrieve"            # 本体成功后取 chunk 引用（RAG 检索，不含生成）
 STAGE_RERANK = "rerank"                        # 平台引用期重排（LLM 答完后，多 KB fallback 引用）
 
 # ── 状态标识 ──

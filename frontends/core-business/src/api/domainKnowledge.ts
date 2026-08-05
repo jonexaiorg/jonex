@@ -63,6 +63,7 @@ import type {
   DeleteOntologyInstanceResponse,
   UpdateOntologyRelationResponse,
   DeleteOntologyRelationResponse,
+  YamlImportResult,
 } from '@/types/domainKnowledge';
 import { request, getData, postData, putData, deleteData } from './request';
 import axios from 'axios';
@@ -1891,4 +1892,36 @@ export function setDocumentTags(
   data: { knowledge_base_id: string; tag_ids: string[] },
 ): Promise<void> {
   return putData(`/knowledge-base/documents/${documentId}/tags`, data);
+}
+
+// ─── YAML 导入/导出 APIs ────────────────────────────────
+
+export async function exportCompiledSchemaYaml(
+  kbId: string,
+): Promise<{ filename: string; yaml_text: string; warnings: string[] }> {
+  return getData<{ filename: string; yaml_text: string; warnings: string[] }>(
+    request.get('/knowledge-base/ontology/compiled-schema/yaml', {
+      params: { knowledge_base_id: kbId },
+    }),
+  );
+}
+
+export async function importCompiledSchemaYaml(
+  kbId: string,
+  expectedSchemaVersion: number,
+  file: File,
+  dryRun: boolean,
+): Promise<YamlImportResult> {
+  const fd = new FormData();
+  fd.append('knowledge_base_id', kbId);
+  fd.append('expected_schema_version', String(expectedSchemaVersion));
+  fd.append('file', file);
+  if (dryRun) {
+    fd.append('dry_run', 'true');
+  }
+  return getData<YamlImportResult>(
+    request.post('/knowledge-base/ontology/compiled-schema/yaml/import', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  );
 }

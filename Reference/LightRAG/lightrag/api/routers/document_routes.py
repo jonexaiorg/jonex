@@ -1875,8 +1875,16 @@ async def background_delete_documents(
     doc_ids: List[str],
     delete_file: bool = False,
     delete_llm_cache: bool = False,
+    jonex_ctx: dict | None = None,  # [jonex] R4: {tenant_id, kb_id, doc_id, trace_id}
 ):
-    """Background task to delete multiple documents"""
+    """Background task to delete multiple documents.
+
+    [jonex] R4：在后台任务入口设置计量 contextvar（scene=lightrag_rebuild），
+    使删除期间 LLM rebuild 调用的计量维度正确归因（不再误记为 lightrag_query）。
+    contextvar 在 asyncio.create_task 时自动复制到子 task，覆盖全部子操作。
+    """
+    meter_token = None  # [jonex] R4：在 try 内设置，finally 统一清理，避免早返回泄漏
+
     from lightrag.kg.shared_storage import (
         get_namespace_data,
         get_namespace_lock,
@@ -1892,6 +1900,15 @@ async def background_delete_documents(
     total_docs = len(doc_ids)
     successful_deletions = []
     failed_deletions = []
+    # [jonex] R2：批末统一 rebuild 累加器
+    all_affected_entity_names: set[str] = set()
+    all_affected_relation_keys: set[tuple] = set()
+    # [jonex] R5-d：删除耗时埋点
+    _delete_start_time = time.time()
+    _rebuild_entity_count = 0
+    _rebuild_relation_count = 0
+    _rebuild_start_time = 0.0
+    _rebuild_elapsed = 0.0
 
     # Double-check pipeline status before proceeding
     async with pipeline_status_lock:
@@ -1920,6 +1937,21 @@ async def background_delete_documents(
             )
 
     try:
+        # [jonex] R4：在 try 内设置计量上下文（离开 try 时 finally 统一清理），
+        # 避免 busy 早返回（try 之前 return）导致的 contextvar 泄漏。
+        if jonex_ctx and (jonex_ctx.get("tenant_id") or jonex_ctx.get("kb_id")):
+            from lightrag.jonex_metering import _jonex_ctx
+            meter_token = _jonex_ctx.set({
+                **jonex_ctx,
+                "user_id": "",
+                "scene": "lightrag_rebuild",
+            })
+            logger.info(
+                "[jonex][R4] background_delete_documents 设置计量上下文 tenant=%s kb=%s doc=%s",
+                jonex_ctx.get("tenant_id", ""), jonex_ctx.get("kb_id", ""),
+                jonex_ctx.get("doc_id", ""),
+            )
+
         # Loop through each document ID and delete them one by one
         for i, doc_id in enumerate(doc_ids, 1):
             # Check for cancellation at the start of each document deletion
@@ -1943,14 +1975,21 @@ async def background_delete_documents(
 
             file_path = "#"
             try:
+                # [jonex] R2：整批统一 rebuild —— 逐 doc 跳过 rebuild 并收集受影响实体/关系
                 result = await rag.adelete_by_doc_id(
-                    doc_id, delete_llm_cache=delete_llm_cache
+                    doc_id, delete_llm_cache=delete_llm_cache,
+                    defer_rebuild=True,
                 )
                 file_path = (
                     getattr(result, "file_path", "-") if "result" in locals() else "-"
                 )
                 if result.status == "success":
                     successful_deletions.append(doc_id)
+                    # [jonex] R2：累加受影响实体/关系，批末统一 rebuild
+                    if hasattr(result, "affected_entity_names"):
+                        all_affected_entity_names.update(result.affected_entity_names)
+                    if hasattr(result, "affected_relation_keys"):
+                        all_affected_relation_keys.update(result.affected_relation_keys)
                     success_msg = (
                         f"Document deleted {i}/{total_docs}: {doc_id}[{file_path}]"
                     )
@@ -2087,6 +2126,74 @@ async def background_delete_documents(
                     pipeline_status["latest_message"] = error_msg
                     pipeline_status["history_messages"].append(error_msg)
 
+        # [jonex] R2：批末统一 rebuild —— 所有 doc 删完后一次性重建受影响的实体/关系，
+        # 把 800×rebuild 降为 1×rebuild，共享实体只重建一次（~O(N²) → ~O(N)）。
+        if all_affected_entity_names or all_affected_relation_keys:
+            _rebuild_start_time = time.time()  # [jonex] R5-d
+            logger.info(
+                "[jonex][R2] batch rebuild start: entities=%d relations=%d",
+                len(all_affected_entity_names), len(all_affected_relation_keys),
+            )
+            try:
+                from lightrag.operate import rebuild_knowledge_from_chunks
+                from dataclasses import asdict
+
+                # 从存储查询每个受影响实体/关系的当前剩余 chunk（已反映全部删除）
+                entities_to_rebuild: dict = {}
+                for name in all_affected_entity_names:
+                    stored = await rag.entity_chunks.get_by_id(name)
+                    if stored and isinstance(stored, dict):
+                        chunk_ids = stored.get("chunk_ids", [])
+                        if chunk_ids:
+                            entities_to_rebuild[name] = [c for c in chunk_ids if c]
+
+                relationships_to_rebuild: dict = {}
+                from lightrag.utils import make_relation_chunk_key  # [jonex] R2 fix
+                for key in all_affected_relation_keys:
+                    # [jonex] R2 fix：relation_chunks 的存储键是 make_relation_chunk_key(src,tgt)
+                    # 返回的字符串（GRAPH_FIELD_SEP.join(sorted((src,tgt)))），不能直接用元组。
+                    stored = await rag.relation_chunks.get_by_id(make_relation_chunk_key(*key))
+                    if stored and isinstance(stored, dict):
+                        chunk_ids = stored.get("chunk_ids", [])
+                        if chunk_ids:
+                            relationships_to_rebuild[key] = [c for c in chunk_ids if c]
+
+                if entities_to_rebuild or relationships_to_rebuild:
+                    await rebuild_knowledge_from_chunks(
+                        entities_to_rebuild=entities_to_rebuild,
+                        relationships_to_rebuild=relationships_to_rebuild,
+                        knowledge_graph_inst=rag.chunk_entity_relation_graph,
+                        entities_vdb=rag.entities_vdb,
+                        relationships_vdb=rag.relationships_vdb,
+                        text_chunks_storage=rag.text_chunks,
+                        llm_response_cache=rag.llm_response_cache,
+                        global_config=asdict(rag),
+                        pipeline_status=pipeline_status,
+                        pipeline_status_lock=pipeline_status_lock,
+                        entity_chunks_storage=rag.entity_chunks,
+                        relation_chunks_storage=rag.relation_chunks,
+                    )
+                _rebuild_entity_count = len(entities_to_rebuild)  # [jonex] R5-d
+                _rebuild_relation_count = len(relationships_to_rebuild)  # [jonex] R5-d
+                _rebuild_elapsed = time.time() - _rebuild_start_time  # [jonex] R5-d
+                logger.info(
+                    "[jonex][R2] batch rebuild complete: entities=%d(%d rebuild) relations=%d(%d rebuild) elapsed=%.1fs",
+                    len(all_affected_entity_names), _rebuild_entity_count,
+                    len(all_affected_relation_keys), _rebuild_relation_count,
+                    _rebuild_elapsed,
+                )
+            except Exception as rebuild_err:
+                logger.error(
+                    "[jonex][R2] batch rebuild failed: %s", rebuild_err,
+                )
+                logger.error(traceback.format_exc())
+                # 不抛异常：图已更新（source_id 已去删 chunk），重建失败靠后续
+                # 操作（再删/查询命中时自动修正）。记录在 pipeline history 中便于排查。
+                async with pipeline_status_lock:
+                    pipeline_status["history_messages"].append(
+                        f"Batch rebuild failed (entities may have stale descriptions): {rebuild_err}"
+                    )
+
     except Exception as e:
         error_msg = f"Critical error during batch deletion: {str(e)}"
         logger.error(error_msg)
@@ -2105,6 +2212,29 @@ async def background_delete_documents(
             pipeline_status["latest_message"] = completion_msg
             pipeline_status["history_messages"].append(completion_msg)
 
+            # [jonex] R5-d：delete_timing 结构化日志（event=delete_timing）
+            _delete_total_ms = int((time.time() - _delete_start_time) * 1000)
+            _rebuild_ms = int(_rebuild_elapsed * 1000) if _rebuild_elapsed > 0 else 0
+            logger.info(
+                "delete_timing total_docs=%d successful=%d failed=%d "
+                "rebuild_entities=%d rebuild_relations=%d "
+                "total_ms=%d rebuild_ms=%d",
+                total_docs, len(successful_deletions), len(failed_deletions),
+                _rebuild_entity_count, _rebuild_relation_count,
+                _delete_total_ms, _rebuild_ms,
+                extra={
+                    "event": "delete_timing",
+                    "total_docs": total_docs,
+                    "successful": len(successful_deletions),
+                    "failed": len(failed_deletions),
+                    "rebuild_entity_count": _rebuild_entity_count,
+                    "rebuild_relation_count": _rebuild_relation_count,
+                    "total_ms": _delete_total_ms,
+                    "rebuild_ms": _rebuild_ms,
+                    "workspace": getattr(rag, "workspace", ""),
+                },
+            )
+
             # Check if there are pending document indexing requests
             has_pending_request = pipeline_status.get("request_pending", False)
 
@@ -2117,6 +2247,11 @@ async def background_delete_documents(
                 await rag.apipeline_process_enqueue_documents()
             except Exception as e:
                 logger.error(f"Error processing pending documents after deletion: {e}")
+
+        # [jonex] R4：清理计量 contextvar，避免污染同事件循环的后续任务
+        if meter_token is not None:
+            from lightrag.jonex_metering import clear_jonex_context
+            clear_jonex_context(meter_token)
 
 
 def create_document_routes(
@@ -3038,6 +3173,14 @@ def create_document_routes(
                     )
 
             # Add deletion task to background tasks
+            # [jonex] R4：从 HTTP 请求头提取计量维度，传入后台删除任务，
+            # 使 rebuild 路径的 LLM 调用场景标注为 lightrag_rebuild
+            jonex_ctx = {
+                "tenant_id": (http_request.headers.get("X-Jonex-Tenant-Id") or "").strip(),
+                "kb_id": (http_request.headers.get("X-Jonex-Kb-Id") or "").strip(),
+                "doc_id": (http_request.headers.get("X-Jonex-Doc-Id") or "").strip(),
+                "trace_id": (http_request.headers.get("X-Jonex-Trace-Id") or "").strip(),
+            }
             background_tasks.add_task(
                 background_delete_documents,
                 rag,
@@ -3045,6 +3188,7 @@ def create_document_routes(
                 doc_ids,
                 delete_request.delete_file,
                 delete_request.delete_llm_cache,
+                jonex_ctx,  # [jonex] R4
             )
 
             return DeleteDocByIdResponse(

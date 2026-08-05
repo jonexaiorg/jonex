@@ -15,7 +15,6 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { observer } from 'mobx-react-lite';
 import { useStore } from '@/store';
 import { SPACE_URL_PARAM } from '@jonex/shell-sdk';
 import type { DomainKnowledgeItem, DomainKnowledgePermissionMember } from '@/types/domainKnowledge';
@@ -36,7 +35,7 @@ import './index.scss';
 
 const PAGE_SIZE = 6;
 
-const DomainKnowledge = observer(function DomainKnowledge() {
+const DomainKnowledge = function DomainKnowledge() {
   const { global } = useStore();
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -78,8 +77,6 @@ const DomainKnowledge = observer(function DomainKnowledge() {
 
   // ── create modal state ────────────────────────────────
   const [createOpen, setCreateOpen] = useState(false);
-  const [createName, setCreateName] = useState('');
-  const [createDesc, setCreateDesc] = useState('');
   const [createSubmitting, setCreateSubmitting] = useState(false);
 
   // ── edit & delete state ───────────────────────────────
@@ -165,17 +162,13 @@ const DomainKnowledge = observer(function DomainKnowledge() {
   }, [global.spacesLoaded, global.currentSpaceId, page, keyword]);
 
   // ── create handler ───────────────────────────────────
-  const handleCreate = async () => {
-    if (!createName.trim()) {
-      message.warning(t('domainKnowledge.knowledgeBaseNameRequired'));
-      return;
-    }
+  const handleCreate = async (values: { name: string; description?: string }) => {
     setCreateSubmitting(true);
     try {
       const data = {
-        name: createName.trim(),
+        name: values.name.trim(),
         space_id: global.currentSpaceId!,
-        description: createDesc || undefined,
+        description: values.description?.trim() || undefined,
       };
       if (editingKb) {
         await updateKnowledgeInfo(editingKb.id, data);
@@ -186,8 +179,6 @@ const DomainKnowledge = observer(function DomainKnowledge() {
       }
       setCreateOpen(false);
       setEditingKb(null);
-      setCreateName('');
-      setCreateDesc('');
       fetchList(1, keyword);
     } catch (err: any) {
       message.error(
@@ -200,15 +191,11 @@ const DomainKnowledge = observer(function DomainKnowledge() {
 
   const openCreateModal = () => {
     setEditingKb(null);
-    setCreateName('');
-    setCreateDesc('');
     setCreateOpen(true);
   };
 
   const openEditModal = (kb: DomainKnowledgeItem) => {
     setEditingKb(kb);
-    setCreateName(kb.name);
-    setCreateDesc(kb.description || '');
     setCreateOpen(true);
   };
 
@@ -501,11 +488,7 @@ const DomainKnowledge = observer(function DomainKnowledge() {
       <CreateEditModal
         open={createOpen}
         editingKb={editingKb}
-        name={createName}
-        description={createDesc}
         submitting={createSubmitting}
-        onNameChange={setCreateName}
-        onDescChange={setCreateDesc}
         onOk={handleCreate}
         onCancel={() => setCreateOpen(false)}
       />
@@ -519,7 +502,6 @@ const DomainKnowledge = observer(function DomainKnowledge() {
       />
     </div>
   );
-});
+};
 
-DomainKnowledge.displayName = 'DomainKnowledge';
 export default DomainKnowledge;

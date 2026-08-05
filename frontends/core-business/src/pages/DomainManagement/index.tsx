@@ -3,7 +3,6 @@ import { Input, Button, Table, Tag, Modal, Space, message, Result, Spin } from '
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { observer } from 'mobx-react-lite';
 import { useStore } from '@/store';
 import { SPACE_URL_PARAM } from '@jonex/shell-sdk';
 import type { ColumnsType } from 'antd/es/table';
@@ -35,7 +34,7 @@ import PermissionModal from './PermissionModal';
 import SrvConfigModal from './SrvConfigModal';
 import './index.scss';
 
-const DomainManagement = observer(function DomainManagement() {
+const DomainManagement = function DomainManagement() {
   const { t } = useTranslation();
   const { global } = useStore();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -89,7 +88,7 @@ const DomainManagement = observer(function DomainManagement() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [global.currentSpaceId, t]);
 
   useEffect(() => {
     global.loadSpaces();
@@ -318,11 +317,12 @@ const DomainManagement = observer(function DomainManagement() {
   const [availableKbs, setAvailableKbs] = useState<KnowledgeBaseOption[]>([]);
 
   useEffect(() => {
+    if (!global.currentSpaceId) return;
     // 尝试从领域知识库 API 加载真实 KB 列表，失败则使用 MOCK 数据
     getDomainKnowledgeList({
       page: 1,
       pageSize: 100,
-      spaceId: global.currentSpaceId ?? undefined,
+      spaceId: global.currentSpaceId,
     })
       .then((result) => {
         if (result.list && result.list.length > 0) {
@@ -332,7 +332,7 @@ const DomainManagement = observer(function DomainManagement() {
       .catch(() => {
         /* fallback to MOCK */
       });
-  }, []);
+  }, [global.currentSpaceId]);
 
   // ── Table columns ──
   const columns: ColumnsType<DomainServiceItem> = [
@@ -556,7 +556,6 @@ const DomainManagement = observer(function DomainManagement() {
       />
     </div>
   );
-});
+};
 
-DomainManagement.displayName = 'DomainManagement';
 export default DomainManagement;

@@ -182,7 +182,10 @@ class ContextExtractor:
         Returns:
             Context text from surrounding pages
         """
-        current_page = current_item_info.get("page_idx", 0)
+        # [jonex] §12 MinerU 顶层 item 有 page_idx 但 item_info 为空字典，加 original 兜底
+        current_page = current_item_info.get("page_idx")
+        if current_page is None:
+            current_page = (current_item.get("original") or {}).get("page_idx", 0)
         window_size = self.config.context_window
 
         start_page = max(0, current_page - window_size)

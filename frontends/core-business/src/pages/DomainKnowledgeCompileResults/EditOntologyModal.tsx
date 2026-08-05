@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Modal, Button, Input, Select, message } from 'antd';
-import { SaveOutlined, PlusOutlined, CloseOutlined } from '@ant-design/icons';
+import { Form, Modal, Button, Input, Select, message } from 'antd';
+import { SaveOutlined, CloseOutlined } from '@ant-design/icons';
 
 interface EditOntologyModalProps {
   open: boolean;
@@ -35,12 +35,10 @@ export default function EditOntologyModal({
 }: EditOntologyModalProps) {
   const { t } = useTranslation();
   const isCreate = mode === 'create';
+  const [form] = Form.useForm();
 
-  const [entityType, setEntityType] = useState('');
-  const [name, setName] = useState('');
   const [aliases, setAliases] = useState<string[]>([]);
   const [aliasInput, setAliasInput] = useState('');
-  const [desc, setDesc] = useState('');
   const [attributes, setAttributes] = useState<Record<string, string>>({});
   const [attrKey, setAttrKey] = useState('');
   const [attrValue, setAttrValue] = useState('');
@@ -48,16 +46,16 @@ export default function EditOntologyModal({
   useEffect(() => {
     if (open) {
       if (isCreate) {
-        setEntityType('');
-        setName('');
+        form.setFieldsValue({ type: undefined, name: '', description: '' });
         setAliases([]);
-        setDesc('');
         setAttributes({});
       } else if (record) {
-        setEntityType(record.type);
-        setName(record.name);
+        form.setFieldsValue({
+          type: record.type,
+          name: record.name,
+          description: record.description ?? '',
+        });
         setAliases(record.aliases ?? []);
-        setDesc(record.description ?? '');
         setAttributes(
           record.attributes
             ? Object.fromEntries(
@@ -70,47 +68,25 @@ export default function EditOntologyModal({
       setAttrKey('');
       setAttrValue('');
     }
-  }, [open, record, isCreate]);
+  }, [open, record, isCreate, form]);
 
-  const resetForm = () => {
-    setEntityType('');
-    setName('');
-    setAliases([]);
-    setAliasInput('');
-    setDesc('');
-    setAttributes({});
-    setAttrKey('');
-    setAttrValue('');
-  };
-
-  const handleSave = () => {
-    if (!name.trim()) {
-      message.warning(t('common.nameRequired'));
-      return;
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+      const payload = {
+        name: values.name.trim(),
+        type: values.type,
+        aliases: aliases.length > 0 ? aliases : undefined,
+        description: values.description?.trim() || undefined,
+        attributes:
+          Object.keys(attributes).length > 0
+            ? Object.fromEntries(Object.entries(attributes).filter(([, v]) => v !== ''))
+            : undefined,
+      };
+      onSave(payload);
+    } catch {
+      /* 校验失败，由 Form 提示 */
     }
-    if (!entityType) {
-      message.warning(t('common.required'));
-      return;
-    }
-
-    const payload = {
-      name: name.trim(),
-      type: entityType,
-      aliases: aliases.length > 0 ? aliases : undefined,
-      description: desc.trim() || undefined,
-      attributes:
-        Object.keys(attributes).length > 0
-          ? Object.fromEntries(Object.entries(attributes).filter(([, v]) => v !== ''))
-          : undefined,
-    };
-
-    onSave(payload);
-    resetForm();
-  };
-
-  const handleCancel = () => {
-    resetForm();
-    onCancel();
   };
 
   const addAlias = () => {
@@ -148,12 +124,12 @@ export default function EditOntologyModal({
         </span>
       }
       open={open}
-      onCancel={handleCancel}
+      onCancel={onCancel}
       width={560}
       centered
       footer={
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-          <Button size="middle" onClick={handleCancel}>
+          <Button size="middle" onClick={onCancel}>
             {t('common.cancel')}
           </Button>
           <Button type="primary" size="middle" icon={<SaveOutlined />} onClick={handleSave}>
@@ -164,199 +140,149 @@ export default function EditOntologyModal({
       styles={{ body: { padding: '24px 24px 12px' } }}
       closeIcon={<CloseOutlined style={{ color: '#64748b' }} />}
     >
-      {/* 实体类型 */}
-      <div style={{ marginBottom: 16 }}>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: '#0b2b5c',
-            marginBottom: 8,
-          }}
+      <Form form={form} layout="vertical">
+        <Form.Item
+          name="type"
+          label={t('domainKnowledge.entityType')}
+          rules={[{ required: true, message: t('common.required') }]}
         >
-          {t('domainKnowledge.entityType')} <span style={{ color: '#ef4444' }}>*</span>
-        </div>
-        <Select
-          value={entityType || undefined}
-          onChange={setEntityType}
-          options={ontologyOptions}
-          placeholder={t('compile.ontologyDefPlaceholder')}
-          style={{ width: '100%' }}
-          size="middle"
-        />
-      </div>
+          <Select options={ontologyOptions} placeholder={t('compile.ontologyDefPlaceholder')} size="middle" />
+        </Form.Item>
 
-      {/* 实例名称 */}
-      <div style={{ marginBottom: 16 }}>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: '#0b2b5c',
-            marginBottom: 8,
-          }}
+        <Form.Item
+          name="name"
+          label={t('compile.instanceName')}
+          rules={[{ required: true, message: t('common.nameRequired') }]}
         >
-          {t('compile.instanceName')} <span style={{ color: '#ef4444' }}>*</span>
-        </div>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={t('compile.instanceNamePlaceholder')}
-          size="middle"
-        />
-      </div>
+          <Input placeholder={t('compile.instanceNamePlaceholder')} size="middle" />
+        </Form.Item>
 
-      {/* 别名 */}
-      <div style={{ marginBottom: 16 }}>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: '#0b2b5c',
-            marginBottom: 8,
-          }}
-        >
-          {t('domainKnowledge.alias')}
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-          <Input
-            placeholder={t('compile.aliasPlaceholder')}
-            value={aliasInput}
-            onChange={(e) => setAliasInput(e.target.value)}
-            onPressEnter={(e) => {
-              e.preventDefault();
-              addAlias();
+        {/* 别名 */}
+        <div style={{ marginBottom: 24 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: '#0b2b5c',
+              marginBottom: 8,
             }}
-            style={{ flex: 1 }}
-            size="middle"
-          />
-          <Button onClick={addAlias}>{t('common.add')}</Button>
-        </div>
-        {aliases.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {aliases.map((alias) => (
-              <span
-                key={alias}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '2px 8px',
-                  borderRadius: 6,
-                  background: '#eff6ff',
-                  color: '#3b82f6',
-                  fontSize: 12,
-                }}
-              >
-                {alias}
-                <CloseOutlined style={{ fontSize: 10, cursor: 'pointer' }} onClick={() => removeAlias(alias)} />
-              </span>
-            ))}
+          >
+            {t('domainKnowledge.alias')}
           </div>
-        )}
-      </div>
-
-      {/* 描述 */}
-      <div style={{ marginBottom: 16 }}>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: '#0b2b5c',
-            marginBottom: 8,
-          }}
-        >
-          {t('common.description')}
-        </div>
-        <Input.TextArea
-          rows={2}
-          placeholder={t('compile.createInstanceDescPlaceholder')}
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-        />
-      </div>
-
-      {/* 自定义属性 */}
-      <div>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: '#0b2b5c',
-            marginBottom: 8,
-          }}
-        >
-          {t('compile.customAttributes')}
-        </div>
-        <div
-          style={{
-            background: '#f8fafc',
-            borderRadius: 12,
-            padding: 16,
-            border: '1px solid #eef2f6',
-          }}
-        >
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <Input
-              placeholder={t('compile.attrKeyPlaceholder')}
-              value={attrKey}
-              onChange={(e) => setAttrKey(e.target.value)}
-              style={{ width: 160 }}
-              size="middle"
-            />
-            <Input
-              placeholder={t('compile.attrValuePlaceholder')}
-              value={attrValue}
-              onChange={(e) => setAttrValue(e.target.value)}
+              placeholder={t('compile.aliasPlaceholder')}
+              value={aliasInput}
+              onChange={(e) => setAliasInput(e.target.value)}
               onPressEnter={(e) => {
                 e.preventDefault();
-                addAttributeItem();
+                addAlias();
               }}
               style={{ flex: 1 }}
               size="middle"
             />
-            <Button onClick={addAttributeItem}>{t('common.add')}</Button>
+            <Button onClick={addAlias}>{t('common.add')}</Button>
           </div>
-          {Object.keys(attributes).length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {Object.entries(attributes).map(([k, v]) => (
-                <div
-                  key={k}
+          {aliases.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {aliases.map((alias) => (
+                <span
+                  key={alias}
                   style={{
-                    display: 'flex',
+                    display: 'inline-flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '4px 10px',
+                    gap: 4,
+                    padding: '2px 8px',
                     borderRadius: 6,
-                    background: '#fff',
-                    border: '1px solid #e2e8f0',
-                    fontSize: 13,
+                    background: '#eff6ff',
+                    color: '#3b82f6',
+                    fontSize: 12,
                   }}
                 >
-                  <span style={{ fontWeight: 500, color: '#0b2b5c' }}>{k}</span>
-                  <span
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <span style={{ color: '#64748b' }}>{v}</span>
-                    <CloseOutlined
-                      style={{
-                        fontSize: 10,
-                        cursor: 'pointer',
-                        color: '#94a3b8',
-                      }}
-                      onClick={() => removeAttributeItem(k)}
-                    />
-                  </span>
-                </div>
+                  {alias}
+                  <CloseOutlined style={{ fontSize: 10, cursor: 'pointer' }} onClick={() => removeAlias(alias)} />
+                </span>
               ))}
             </div>
           )}
         </div>
-      </div>
+
+        <Form.Item name="description" label={t('common.description')}>
+          <Input.TextArea rows={2} placeholder={t('compile.createInstanceDescPlaceholder')} />
+        </Form.Item>
+
+        {/* 自定义属性 */}
+        <Form.Item label={t('compile.customAttributes')}>
+          <div
+            style={{
+              background: '#f8fafc',
+              borderRadius: 12,
+              padding: 16,
+              border: '1px solid #eef2f6',
+            }}
+          >
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <Input
+                placeholder={t('compile.attrKeyPlaceholder')}
+                value={attrKey}
+                onChange={(e) => setAttrKey(e.target.value)}
+                style={{ width: 160 }}
+                size="middle"
+              />
+              <Input
+                placeholder={t('compile.attrValuePlaceholder')}
+                value={attrValue}
+                onChange={(e) => setAttrValue(e.target.value)}
+                onPressEnter={(e) => {
+                  e.preventDefault();
+                  addAttributeItem();
+                }}
+                style={{ flex: 1 }}
+                size="middle"
+              />
+              <Button onClick={addAttributeItem}>{t('common.add')}</Button>
+            </div>
+            {Object.keys(attributes).length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {Object.entries(attributes).map(([k, v]) => (
+                  <div
+                    key={k}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '4px 10px',
+                      borderRadius: 6,
+                      background: '#fff',
+                      border: '1px solid #e2e8f0',
+                      fontSize: 13,
+                    }}
+                  >
+                    <span style={{ fontWeight: 500, color: '#0b2b5c' }}>{k}</span>
+                    <span
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <span style={{ color: '#64748b' }}>{v}</span>
+                      <CloseOutlined
+                        style={{
+                          fontSize: 10,
+                          cursor: 'pointer',
+                          color: '#94a3b8',
+                        }}
+                        onClick={() => removeAttributeItem(k)}
+                      />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Form.Item>
+      </Form>
     </Modal>
   );
 }

@@ -48,6 +48,7 @@ class ExtractedRelation:
     target_type: str
     relation_type: str
     confidence: float = 1.0
+    source_chunks: List[Dict[str, Any]] = field(default_factory=list)   # [jonex] 方案⑧ 关系出处
 
 
 @dataclass
@@ -392,15 +393,25 @@ class OntologyExtractor:
                 filtered, content_list, ontology_json, scope,
             )
 
-        # Phase 5：溯源回填（按 name 匹配候选实体的 source_id/file_path）
-        prov = {
-            e.get("name", e.get("entity_name", "")): {
+        # Phase 5：溯源回填（按 name + aliases 匹配候选实体的 source_id/file_path）
+        # [jonex] 方案⑧ D：索引覆盖 canonical_name 与 aliases，降低归一化/翻译改名 miss
+        prov: dict[str, dict] = {}
+        for e in filtered:
+            p = {
                 "source_id": e.get("source_id", ""), "file_path": e.get("file_path", "")
             }
-            for e in filtered
-        }
+            if p["source_id"] or p["file_path"]:
+                prov[e.get("name", e.get("entity_name", ""))] = p
+                for alias in (e.get("aliases") or []):
+                    if alias and alias not in prov:
+                        prov[alias] = p
         for ent in entities:
             p = prov.get(ent.canonical_name)
+            if not p:
+                for alias in (ent.aliases or []):
+                    p = prov.get(alias)
+                    if p:
+                        break
             if p and (p["source_id"] or p["file_path"]):
                 ent.source_chunks = [p]
 
@@ -484,6 +495,19 @@ class OntologyExtractor:
         return (not actual) or (actual == "unknown") or (actual == expected)
 
     @staticmethod
+    def _rel_source_chunks(lr: dict) -> list:
+        """从一条 lightrag 关系边提取 source_chunks。
+
+        graph_reader._map_relation 已带出 file_path/source_id，
+        此处组装为与实体 source_chunks 同构的 [{source_id, file_path}]。
+        """
+        sid = lr.get("source_id", "") or ""
+        fp = lr.get("file_path", "") or ""
+        if sid or fp:
+            return [{"source_id": sid, "file_path": fp}]
+        return []
+
+    @staticmethod
     def _fallback_untyped_edges(
         lightrag_relations: List[dict],
         typed_relations: List[ExtractedRelation],
@@ -509,6 +533,7 @@ class OntologyExtractor:
                 source_type=entity_type_map.get(s, ""),
                 target_type=entity_type_map.get(t, ""),
                 relation_type="RELATED_TO", confidence=conf,
+                source_chunks=OntologyExtractor._rel_source_chunks(lr),
             ))
         return extra
 
@@ -766,6 +791,16 @@ class OntologyExtractor:
         if not edges:
             return [], []
 
+        # [jonex] 方案⑧：预建 source_chunks 索引（不改 LLM payload）
+        # sc_by_idx 与 edges 同过滤口径，保证 idx 严格对齐
+        _filtered_lr = [lr for lr in lightrag_relations
+                        if lr.get("source_entity") and lr.get("target_entity")]
+        sc_by_idx = {j: OntologyExtractor._rel_source_chunks(lr)
+                     for j, lr in enumerate(_filtered_lr)}
+        sc_by_pair = {(lr.get("source_entity", ""), lr.get("target_entity", "")):
+                      OntologyExtractor._rel_source_chunks(lr)
+                      for lr in _filtered_lr}
+
         system_prompt = RELATION_SYSTEM_PROMPT.format(relations_json=relations_json)
         batches = [edges[i:i + rel_batch] for i in range(0, len(edges), rel_batch)]
         sem = asyncio.Semaphore(_extract_concurrency())
@@ -814,6 +849,8 @@ class OntologyExtractor:
                         target_type=entity_type_map.get(tgt, ""),
                         relation_type=rel.get("relation_type", ""),
                         confidence=float(rel.get("confidence", 1.0)),
+                        source_chunks=sc_by_idx.get(
+                            batch_idx * rel_batch + idx, []),   # [jonex] 方案⑧
                     ))
             else:
                 user_prompt = RELATION_USER_PROMPT.format(n=len(batch), edges_json=json.dumps(batch, ensure_ascii=False))
@@ -839,6 +876,7 @@ class OntologyExtractor:
                         target_type=entity_type_map.get(tgt, ""),
                         relation_type=rel.get("relation_type", ""),
                         confidence=float(rel.get("confidence", 1.0)),
+                        source_chunks=sc_by_pair.get((src, tgt), []),   # [jonex] 方案⑧
                     ))
             return b_relations, b_errors
 

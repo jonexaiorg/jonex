@@ -3969,7 +3969,14 @@ class PGDocStatusStorage(DocStatusStorage):
             Union[dict[str, Any], None]: Document data if found, None otherwise
             Returns the same format as get_by_id method
         """
-        sql = "select * from LIGHTRAG_DOC_STATUS where workspace=$1 and file_path=$2"
+        # [jonex] ORDER BY ensures deterministic result when multiple rows share the same
+        # file_path (e.g. a processed original + historical duplicate-FAILED records):
+        #  1. status = 'processed' first (CASE 0 < 1)
+        #  2. within the same priority tier, newest created_at first
+        sql = """select * from LIGHTRAG_DOC_STATUS
+                  where workspace=$1 and file_path=$2
+                  order by case when status = 'processed' then 0 else 1 end,
+                           created_at desc"""
         params = {"workspace": self.workspace, "file_path": file_path}
         result = await self.db.query(sql, list(params.values()), True)
 
@@ -4496,6 +4503,84 @@ class PGDocStatusStorage(DocStatusStorage):
             logger.error(
                 f"[{self.workspace}] Error while deleting records from {self.namespace}: {e}"
             )
+
+    async def insert_if_absent(self, data: dict[str, dict[str, Any]]) -> set[str]:
+        """[jonex] Atomic insert-if-absent — only inserts, never overwrites.
+
+        Uses PostgreSQL ``INSERT ... ON CONFLICT DO NOTHING RETURNING id``
+        to atomically check-and-insert.  Returns the set of actually-inserted ids.
+        Eliminates the TOCTOU race between filter_keys and upsert that produces
+        orphan track_ids in apipeline_enqueue_documents.
+        """
+        if not data:
+            return set()
+
+        timing_label = f"{self.workspace} PGDocStatusStorage.insert_if_absent"
+        total_start = time.perf_counter()
+        performance_timing_log(
+            "[%s] start records=%s",
+            timing_label,
+            len(data),
+        )
+
+        # Build VALUES clause with $N placeholders (13 columns × N rows)
+        row_placeholders: list[str] = []
+        flat_params: list[Any] = []
+        _COL_COUNT = 13  # workspace, id, content_summary, ... updated_at
+        for k, v in data.items():
+            offset = len(flat_params) + 1  # $1-based
+            row_placeholders.append(
+                f"(${offset}, ${offset+1}, ${offset+2}, ${offset+3}, ${offset+4},"
+                f" ${offset+5}, ${offset+6}, ${offset+7}, ${offset+8}, ${offset+9},"
+                f" ${offset+10}, ${offset+11}, ${offset+12})"
+            )
+            flat_params.extend([
+                self.workspace,                             # $N+0
+                k,                                          # $N+1
+                v["content_summary"],                       # $N+2
+                v["content_length"],                        # $N+3
+                v.get("chunks_count", -1),                  # $N+4
+                v["status"],                                # $N+5
+                v["file_path"],                             # $N+6
+                json.dumps(v.get("chunks_list", [])),        # $N+7
+                v.get("track_id"),                          # $N+8
+                json.dumps(v.get("metadata", {})),           # $N+9
+                v.get("error_msg"),                         # $N+10
+                _parse_doc_status_datetime(
+                    v.get("created_at"),
+                    f"[{self.workspace}] doc {k} created_at",
+                ),                                          # $N+11
+                _parse_doc_status_datetime(
+                    v.get("updated_at"),
+                    f"[{self.workspace}] doc {k} updated_at",
+                ),                                          # $N+12
+            ])
+
+        sql = f"""INSERT INTO LIGHTRAG_DOC_STATUS(
+                     workspace, id, content_summary, content_length, chunks_count,
+                     status, file_path, chunks_list, track_id, metadata,
+                     error_msg, created_at, updated_at
+                 ) VALUES {','.join(row_placeholders)}
+                 ON CONFLICT(id, workspace) DO NOTHING
+                 RETURNING id"""
+
+        async def _batch_insert(connection: asyncpg.Connection) -> list[str]:
+            rows = await connection.fetch(sql, *flat_params)
+            return [r["id"] for r in rows]
+
+        inserted_ids = await self.db._run_with_retry(
+            _batch_insert, timing_label=timing_label,
+        )
+
+        inserted = set(inserted_ids)
+        performance_timing_log(
+            "[%s] total records=%s inserted=%s total=%.4fs",
+            timing_label,
+            len(data),
+            len(inserted),
+            time.perf_counter() - total_start,
+        )
+        return inserted
 
     async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
         """Update or insert document status

@@ -1455,7 +1455,9 @@ class LightRAG:
         new_docs: dict[str, Any] = {
             id_: {
                 "status": DocStatus.PENDING,
-                "content_summary": get_content_summary(content_data["content"], max_length=4096),
+                # [jonex] 4093 而非 4096：get_content_summary 超长时返回 content[:max]+"..."，
+                # 4096+3=4099 会撑爆 content_summary varchar(4096)（此处留 3 字符余量兜底）
+                "content_summary": get_content_summary(content_data["content"], max_length=4093),
                 "content_length": len(content_data["content"]),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -1467,14 +1469,18 @@ class LightRAG:
             for id_, content_data in contents.items()
         }
 
-        # 3. Filter out already processed documents
-        # Get docs ids
+        # 3. [jonex] Atomic insert-if-absent — replaces the non-atomic
+        #    filter_keys + upsert pair that could produce orphan track_ids
+        #    (TOCTOU race: two concurrent calls both see "new", then the
+        #    later upsert overwrites the earlier track_id → orphan).
+        #    insert_if_absent uses INSERT … ON CONFLICT DO NOTHING to
+        #    atomically check-and-insert; returns the set of actually-
+        #    inserted ids.
         all_new_doc_ids = set(new_docs.keys())
-        # Exclude IDs of documents that are already enqueued
-        unique_new_doc_ids = await self.doc_status.filter_keys(all_new_doc_ids)
+        inserted_ids = await self.doc_status.insert_if_absent(new_docs)
 
         # Handle duplicate documents - create trackable records with current track_id
-        ignored_ids = list(all_new_doc_ids - unique_new_doc_ids)
+        ignored_ids = list(all_new_doc_ids - inserted_ids)
         if ignored_ids:
             duplicate_docs: dict[str, Any] = {}
             for doc_id in ignored_ids:
@@ -1522,7 +1528,7 @@ class LightRAG:
         # Filter new_docs to only include documents with unique IDs
         new_docs = {
             doc_id: new_docs[doc_id]
-            for doc_id in unique_new_doc_ids
+            for doc_id in inserted_ids
             if doc_id in new_docs
         }
 
@@ -1543,8 +1549,8 @@ class LightRAG:
         # Persist data to disk immediately
         await self.full_docs.index_done_callback()
 
-        # Store document status (without content)
-        await self.doc_status.upsert(new_docs)
+        # [jonex] doc_status records were already inserted atomically by
+        # insert_if_absent above (with the correct track_id). No upsert needed here.
         logger.debug(f"Stored {len(new_docs)} new unique documents")
 
         return track_id
@@ -3300,7 +3306,8 @@ class LightRAG:
         return found_statuses
 
     async def adelete_by_doc_id(
-        self, doc_id: str, delete_llm_cache: bool = False
+        self, doc_id: str, delete_llm_cache: bool = False,
+        *, defer_rebuild: bool = False,  # [jonex] R2
     ) -> DeletionResult:
         """Delete a document and all its related data, including chunks, graph elements.
 
@@ -3329,10 +3336,16 @@ class LightRAG:
         - Prevents concurrent single deletions that could cause race conditions
         - Rejects operations when pipeline is busy with non-deletion tasks
 
+        [jonex] R2：``defer_rebuild=True`` 时跳过逐文档 rebuild，仅收集受影响的
+        实体/关系名，由调用方（background_delete_documents）在批末统一 rebuild 一次。
+
         Args:
             doc_id (str): The unique identifier of the document to be deleted.
             delete_llm_cache (bool): Whether to delete cached LLM extraction results
                 associated with the document. Defaults to False.
+            defer_rebuild (bool): [jonex] R2 — if True, skip the per-document
+                rebuild_knowledge_from_chunks call and instead populate
+                affected_entity_names/affected_relation_keys in the result.
 
         Returns:
             DeletionResult: An object containing the outcome of the deletion process.
@@ -3341,6 +3354,8 @@ class LightRAG:
                 - `message` (str): A summary of the operation's result.
                 - `status_code` (int): HTTP status code (e.g., 200, 404, 403, 500).
                 - `file_path` (str | None): The file path of the deleted document, if available.
+                - `affected_entity_names` (set): [jonex] R2 — entity names needing rebuild.
+                - `affected_relation_keys` (set): [jonex] R2 — relation keys needing rebuild.
         """
         # Get pipeline status shared data and lock for validation
         pipeline_status = await get_namespace_data(
@@ -3628,6 +3643,9 @@ class LightRAG:
             relationships_to_rebuild = {}  # (src, tgt) -> remaining chunk id list
             entity_chunk_updates: dict[str, list[str]] = {}
             relation_chunk_updates: dict[tuple[str, str], list[str]] = {}
+            # [jonex] R2：defer_rebuild 受影响集合（在 step 8 填充）
+            affected_entity_names: set[str] = set()
+            affected_relation_keys: set[tuple] = set()
 
             try:
                 deletion_stage = "analyze_graph_dependencies"
@@ -4023,27 +4041,37 @@ class LightRAG:
                 raise Exception(f"Failed to persist pre-rebuild changes: {e}") from e
 
             # 8. Rebuild entities and relationships from remaining chunks
+            # [jonex] R2：defer_rebuild 模式下跳过逐文档 rebuild，
+            # 将受影响实体/关系名收集到 DeletionResult，由调用方批末统一 rebuild。
             if entities_to_rebuild or relationships_to_rebuild:
-                try:
-                    deletion_stage = "rebuild_knowledge_graph"
-                    await rebuild_knowledge_from_chunks(
-                        entities_to_rebuild=entities_to_rebuild,
-                        relationships_to_rebuild=relationships_to_rebuild,
-                        knowledge_graph_inst=self.chunk_entity_relation_graph,
-                        entities_vdb=self.entities_vdb,
-                        relationships_vdb=self.relationships_vdb,
-                        text_chunks_storage=self.text_chunks,
-                        llm_response_cache=self.llm_response_cache,
-                        global_config=asdict(self),
-                        pipeline_status=pipeline_status,
-                        pipeline_status_lock=pipeline_status_lock,
-                        entity_chunks_storage=self.entity_chunks,
-                        relation_chunks_storage=self.relation_chunks,
+                if defer_rebuild:
+                    affected_entity_names = set(entities_to_rebuild.keys())
+                    affected_relation_keys = set(relationships_to_rebuild.keys())
+                    logger.info(
+                        "[jonex][R2] defer_rebuild: doc=%s affected_entities=%d affected_relations=%d",
+                        doc_id, len(affected_entity_names), len(affected_relation_keys),
                     )
+                else:
+                    try:
+                        deletion_stage = "rebuild_knowledge_graph"
+                        await rebuild_knowledge_from_chunks(
+                            entities_to_rebuild=entities_to_rebuild,
+                            relationships_to_rebuild=relationships_to_rebuild,
+                            knowledge_graph_inst=self.chunk_entity_relation_graph,
+                            entities_vdb=self.entities_vdb,
+                            relationships_vdb=self.relationships_vdb,
+                            text_chunks_storage=self.text_chunks,
+                            llm_response_cache=self.llm_response_cache,
+                            global_config=asdict(self),
+                            pipeline_status=pipeline_status,
+                            pipeline_status_lock=pipeline_status_lock,
+                            entity_chunks_storage=self.entity_chunks,
+                            relation_chunks_storage=self.relation_chunks,
+                        )
 
-                except Exception as e:
-                    logger.error(f"Failed to rebuild knowledge from chunks: {e}")
-                    raise Exception(f"Failed to rebuild knowledge graph: {e}") from e
+                    except Exception as e:
+                        logger.error(f"Failed to rebuild knowledge from chunks: {e}")
+                        raise Exception(f"Failed to rebuild knowledge graph: {e}") from e
 
             # 9. Delete LLM cache while the document status still exists so a failure
             # remains retryable via the same doc_id.
@@ -4122,6 +4150,8 @@ class LightRAG:
                 message=log_message,
                 status_code=200,
                 file_path=file_path,
+                affected_entity_names=affected_entity_names,  # [jonex] R2
+                affected_relation_keys=affected_relation_keys,  # [jonex] R2
             )
 
         except Exception as e:

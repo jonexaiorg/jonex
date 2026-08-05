@@ -78,16 +78,29 @@ class ModelFactory:
 
     @staticmethod
     def _build_metering_headers(
-        tenant_id: str = "", kb_id: str = "", trace_id: str = "",
+        tenant_id: str = "", kb_id: str = "", doc_id: str = "", trace_id: str = "",
     ) -> dict[str, str]:
-        """[jonex] Build X-Jonex-* metering headers for llm-gateway accounting."""
+        """[jonex] Build X-Jonex-* metering headers for llm-gateway accounting.
+
+        Priority: ingest contextvar (per-task doc_id/trace_id) > explicit parameters
+        (build-time tenant/kb static fallback).
+        """
+        from raganything.service.jonex_metering_ctx import get_ingest_ctx
+
         headers: dict[str, str] = {"X-Jonex-Scene": "raganything_ingest"}
-        if tenant_id:
-            headers["X-Jonex-Tenant-Id"] = tenant_id
-        if kb_id:
-            headers["X-Jonex-Kb-Id"] = kb_id
-        if trace_id:
-            headers["X-Jonex-Trace-Id"] = trace_id
+        c = get_ingest_ctx() or {}
+        tid = c.get("tenant_id") or tenant_id
+        kid = c.get("kb_id") or kb_id
+        did = c.get("doc_id") or doc_id
+        trc = c.get("trace_id") or trace_id
+        if tid:
+            headers["X-Jonex-Tenant-Id"] = tid
+        if kid:
+            headers["X-Jonex-Kb-Id"] = kid
+        if did:
+            headers["X-Jonex-Doc-Id"] = did
+        if trc:
+            headers["X-Jonex-Trace-Id"] = trc
         return headers
 
     # ── Public API ────────────────────────────────────────────────────
@@ -269,10 +282,12 @@ class ModelFactory:
 
         host = os.getenv("LLM_BINDING_HOST", "")
         key = os.getenv("LLM_BINDING_API_KEY", "")
-        metering_headers = self._build_metering_headers(tenant_id, kb_id)
         timeout = float(os.getenv("LLM_HTTP_TIMEOUT", "120"))
 
         async def _llm(prompt: str, system_prompt: str = "", **kw) -> str:
+            # [jonex] Gap A3: 每次调用现算 metering headers（读 contextvar），
+            # 不再 build 时烘焙，使 doc_id/trace_id 随任务变化。
+            metering_headers = self._build_metering_headers(tenant_id, kb_id)
             messages: list[dict] = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
@@ -321,10 +336,12 @@ class ModelFactory:
         host = os.getenv("LLM_BINDING_HOST", "")
         key = os.getenv("LLM_BINDING_API_KEY", "")
         emb_dim = int(os.getenv("EMBEDDING_DIM", "1024"))
-        metering_headers = self._build_metering_headers(tenant_id, kb_id)
         timeout = float(os.getenv("LLM_HTTP_TIMEOUT", "120"))
 
         async def _embed(texts: list[str]) -> list[list[float]]:
+            # [jonex] Gap A3: 每次调用现算 metering headers（读 contextvar），
+            # 不再 build 时烘焙，使 doc_id/trace_id 随任务变化。
+            metering_headers = self._build_metering_headers(tenant_id, kb_id)
             headers: dict[str, str] = {
                 "Content-Type": "application/json",
                 **metering_headers,

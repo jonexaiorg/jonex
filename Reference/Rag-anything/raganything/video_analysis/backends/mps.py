@@ -455,8 +455,8 @@ class MPSVideoBackend(VideoAnalysisBackend):
                 raw_scenes = obj.get("scenes")
                 tags = obj.get("tags")
 
-        # Normalise scenes: parse MPS time_range ("MM:SS-MM:SS")
-        # into start_time / end_time (float seconds) for downstream.
+        # Normalise scenes: prefer explicit start_time/end_time from the prompt,
+        # then fall back to MPS time_range ("MM:SS-MM:SS").
         # Also normalise the description key — MPS may return it as
         # "シーンの説明" (Japanese), "scene_description", etc.
         _DESC_CANDIDATES = ("description", "scene_description",
@@ -471,18 +471,22 @@ class MPSVideoBackend(VideoAnalysisBackend):
                         if key in scene:
                             scene["description"] = scene.pop(key)
                             break
+                start_time = _parse_scene_seconds(
+                    _first_present(scene, "start_time", "start")
+                )
+                end_time = _parse_scene_seconds(
+                    _first_present(scene, "end_time", "end")
+                )
                 time_range = scene.pop("time_range", None)
-                if time_range:
+                if (start_time is None or end_time is None) and time_range:
                     parts = time_range.split("-")
                     if len(parts) == 2:
-                        scene["start_time"] = _parse_mps_timestamp(parts[0])
-                        scene["end_time"] = _parse_mps_timestamp(parts[1])
-                    else:
-                        scene["start_time"] = 0.0
-                        scene["end_time"] = 0.0
-                else:
-                    scene["start_time"] = 0.0
-                    scene["end_time"] = 0.0
+                        start_time = _parse_mps_timestamp(parts[0])
+                        end_time = _parse_mps_timestamp(parts[1])
+                if start_time is not None:
+                    scene["start_time"] = start_time
+                if end_time is not None:
+                    scene["end_time"] = end_time
                 scenes.append(scene)
 
         # Use MPS-level summary if present, otherwise build from scenes/tags
@@ -543,3 +547,27 @@ def _parse_mps_timestamp(ts: str) -> float:
     if len(parts) > 2:
         total += int(parts[2]) * 3600  # hours
     return total
+
+
+def _parse_scene_seconds(value) -> float | None:
+    """Parse scene time fields from seconds or MM:SS-style strings."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    if ":" in text:
+        return _parse_mps_timestamp(text)
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _first_present(data: dict, *keys: str):
+    for key in keys:
+        if key in data and data[key] is not None:
+            return data[key]
+    return None

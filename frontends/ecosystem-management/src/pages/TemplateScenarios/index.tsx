@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Button, Select, Table, Tag, message } from 'antd';
+import { Alert, Button, Menu, message, Modal, Select, Table, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
   ArrowLeftOutlined,
   DeleteOutlined,
   EditOutlined,
+  ExportOutlined,
+  ImportOutlined,
   PlusOutlined,
   ProfileOutlined,
   ReloadOutlined,
@@ -16,11 +18,13 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
+  exportScenarioOntologyYaml,
   fetchTemplateConstraints,
   fetchTemplateDomains,
   fetchTemplateObjects,
   fetchTemplateRelations,
   fetchTemplateScenarios,
+  importScenarioOntologyYaml,
 } from '../../api/templateScenarios';
 import type {
   TemplateAttribute,
@@ -29,6 +33,7 @@ import type {
   TemplateObject,
   TemplateRelation,
   TemplateScenario,
+  YamlImportResult,
 } from '../../api/templateScenarios';
 import {
   getTemplateAttributeDisplay,
@@ -96,6 +101,8 @@ export default function TemplateScenarios() {
   const relationModalRef = useRef<RelationModalHandle>(null);
   const constraintModalRef = useRef<ConstraintModalHandle>(null);
   const deleteModalRef = useRef<DeleteConfirmModalHandle>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedFileRef = useRef<File | null>(null);
 
   const [domainFilter, setDomainFilter] = useState('');
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
@@ -104,6 +111,10 @@ export default function TemplateScenarios() {
   const [loadingDomains, setLoadingDomains] = useState(false);
   const [loadingScenes, setLoadingScenes] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
+
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [importResult, setImportResult] = useState<YamlImportResult | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
 
   const domainNameMap = useMemo(() => {
     return new Map(domains.map((domain) => [domain.id, getTemplateDomainDisplay(domain, t).name]));
@@ -513,6 +524,77 @@ export default function TemplateScenarios() {
     }
   }
 
+  // ── YAML Import/Export handlers ──
+
+  const handleExportYaml = useCallback(async () => {
+    if (!selectedSceneId) return
+    try {
+      const result = await exportScenarioOntologyYaml(selectedSceneId)
+      const blob = new Blob([result.yaml_text], { type: 'application/x-yaml' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = result.filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      message.success(t('templateScenarios.exportSuccess'))
+    } catch (error) {
+      message.error(getErrorMessage(error, t('templateScenarios.exportFailed')))
+    }
+  }, [selectedSceneId, t])
+
+  const handleImportClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleFileSelected = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      if (!file || !selectedSceneId) {
+        if (event.target) event.target.value = ''
+        return
+      }
+      selectedFileRef.current = file
+      setImportLoading(true)
+      try {
+        const result = await importScenarioOntologyYaml(selectedSceneId, file, true)
+        setImportResult(result)
+        setImportModalVisible(true)
+      } catch (error) {
+        message.error(getErrorMessage(error, t('templateScenarios.importFailed')))
+      } finally {
+        setImportLoading(false)
+        if (event.target) event.target.value = ''
+      }
+    },
+    [selectedSceneId, t],
+  )
+
+  const handleConfirmImport = useCallback(async () => {
+    if (!selectedSceneId || !selectedFileRef.current) return
+    setImportLoading(true)
+    try {
+      await importScenarioOntologyYaml(selectedSceneId, selectedFileRef.current, false)
+      setImportModalVisible(false)
+      setImportResult(null)
+      selectedFileRef.current = null
+      message.success(t('templateScenarios.importSuccess'))
+      await refreshTemplateDetails(selectedSceneId)
+    } catch (error) {
+      message.error(getErrorMessage(error, t('templateScenarios.importFailed')))
+    } finally {
+      setImportLoading(false)
+    }
+  }, [selectedSceneId, refreshTemplateDetails, t])
+
+  const handleCloseImportModal = useCallback(() => {
+    setImportModalVisible(false)
+    setImportResult(null)
+    selectedFileRef.current = null
+  }, [])
+
   return (
     <div className="template-scenarios-page">
       <div className="yx-page-title">
@@ -546,50 +628,69 @@ export default function TemplateScenarios() {
               options={domainOptions}
             />
 
-            <ul className="template-scenarios-list">
-              {loadingScenes ? (
-                <li className="template-scenarios-no-scene">{t('templateScenarios.loadingScenes')}</li>
-              ) : null}
-              {!loadingScenes && scenes.length === 0 ? (
-                <li className="template-scenarios-no-scene">{t('templateScenarios.noMatchScene')}</li>
-              ) : null}
-              {!loadingScenes &&
-                scenes.map((scene) => (
-                  <li
-                    key={scene.id}
-                    className={scene.id === selectedSceneId ? 'active' : ''}
-                    onClick={() => {
-                      setSelectedSceneId(scene.id);
-                      setActiveTab('objects');
-                    }}
-                  >
-                    <div className="template-scenarios-item-main">
-                      <div className="template-scenarios-item-name">
-                        {getTemplateScenarioDisplay(scene, english, t).name}
+            {loadingScenes ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8' }}>
+                {t('templateScenarios.loadingScenes')}
+              </div>
+            ) : scenes.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8' }}>
+                {t('templateScenarios.noMatchScene')}
+              </div>
+            ) : (
+              <Menu
+                className="template-scenarios-list"
+                mode="inline"
+                selectedKeys={selectedSceneId ? [selectedSceneId] : []}
+                onSelect={({ key }) => {
+                  setSelectedSceneId(key);
+                  setActiveTab('objects');
+                }}
+                items={scenes.map((scene) => ({
+                  key: scene.id,
+                  label: (
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        width: '100%',
+                      }}
+                    >
+                      <div className="template-scenarios-item-main">
+                        <div className="template-scenarios-item-name">
+                          {getTemplateScenarioDisplay(scene, english, t).name}
+                        </div>
+                        <div className="template-scenarios-item-meta">{formatTime(scene.created_at)}</div>
+                        <Tag className="template-scenarios-domain-tag">{getDomainName(scene.domain_id)}</Tag>
                       </div>
-                      <div className="template-scenarios-item-meta">{formatTime(scene.created_at)}</div>
-                      <Tag className="template-scenarios-domain-tag">{getDomainName(scene.domain_id)}</Tag>
+                      <div className="template-scenarios-item-actions">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<EditOutlined />}
+                          aria-label={t('templateScenarios.ariaLabelEditScene')}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEditScene(scene, event);
+                          }}
+                        />
+                        <Button
+                          type="text"
+                          danger
+                          size="small"
+                          icon={<DeleteOutlined />}
+                          aria-label={t('templateScenarios.ariaLabelDeleteScene')}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openDeleteScene(scene, event);
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className="template-scenarios-item-actions">
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<EditOutlined />}
-                        aria-label={t('templateScenarios.ariaLabelEditScene')}
-                        onClick={(event) => openEditScene(scene, event)}
-                      />
-                      <Button
-                        type="text"
-                        danger
-                        size="small"
-                        icon={<DeleteOutlined />}
-                        aria-label={t('templateScenarios.ariaLabelDeleteScene')}
-                        onClick={(event) => openDeleteScene(scene, event)}
-                      />
-                    </div>
-                  </li>
-                ))}
-            </ul>
+                  ),
+                }))}
+              />
+            )}
 
             <Button
               className="template-scenarios-create-scene"
@@ -607,9 +708,17 @@ export default function TemplateScenarios() {
               <>
                 <div className="template-scenarios-right-header">
                   <h2>{t('templateScenarios.selectSceneFromLeft')}</h2>
-                  <Button icon={<ReloadOutlined />} onClick={refreshCurrentView} loading={loadingScenes}>
-                    {t('templateScenarios.refresh')}
-                  </Button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button icon={<ExportOutlined />} disabled>
+                      {t('templateScenarios.exportYaml')}
+                    </Button>
+                    <Button icon={<ImportOutlined />} disabled>
+                      {t('templateScenarios.importYaml')}
+                    </Button>
+                    <Button icon={<ReloadOutlined />} onClick={refreshCurrentView} loading={loadingScenes}>
+                      {t('templateScenarios.refresh')}
+                    </Button>
+                  </div>
                 </div>
                 <div className="yx-empty-state template-scenarios-empty">{t('templateScenarios.selectSceneHint')}</div>
               </>
@@ -623,13 +732,21 @@ export default function TemplateScenarios() {
                         t('templateScenarios.noSceneDescription')}
                     </p>
                   </div>
-                  <Button
-                    icon={<ReloadOutlined />}
-                    onClick={refreshCurrentView}
-                    loading={loadingScenes || loadingDetails}
-                  >
-                    {t('templateScenarios.refresh')}
-                  </Button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button icon={<ExportOutlined />} onClick={handleExportYaml}>
+                      {t('templateScenarios.exportYaml')}
+                    </Button>
+                    <Button icon={<ImportOutlined />} onClick={handleImportClick} loading={importLoading}>
+                      {t('templateScenarios.importYaml')}
+                    </Button>
+                    <Button
+                      icon={<ReloadOutlined />}
+                      onClick={refreshCurrentView}
+                      loading={loadingScenes || loadingDetails}
+                    >
+                      {t('templateScenarios.refresh')}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="yx-tabs template-scenarios-tabs">
@@ -766,6 +883,78 @@ export default function TemplateScenarios() {
         english={english}
         onDeleted={handleItemDeleted}
       />
+
+      <input
+        type="file"
+        accept=".yaml,.yml"
+        style={{ display: 'none' }}
+        ref={fileInputRef}
+        onChange={handleFileSelected}
+      />
+
+      <Modal
+        title={t('templateScenarios.importSummary')}
+        open={importModalVisible}
+        onCancel={handleCloseImportModal}
+        width={640}
+        footer={
+          importResult?.errors && importResult.errors.length > 0
+            ? null
+            : [
+                <Button key="cancel" onClick={handleCloseImportModal}>
+                  {t('common.cancel')}
+                </Button>,
+                <Button key="confirm" type="primary" onClick={handleConfirmImport} loading={importLoading}>
+                  {t('templateScenarios.confirmImport')}
+                </Button>,
+              ]
+        }
+      >
+        {importResult && (
+          <>
+            {importResult.dry_run && (
+              <Alert
+                message={t('templateScenarios.dryRunNotice')}
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+            )}
+            <Table
+              dataSource={[
+                { key: 'entities', category: t('templateScenarios.entities'), ...importResult.summary.entities },
+                { key: 'attributes', category: t('templateScenarios.attributes'), ...importResult.summary.attributes },
+                { key: 'relations', category: t('templateScenarios.relations'), ...importResult.summary.relations },
+                { key: 'constraints', category: t('templateScenarios.constraints'), ...importResult.summary.constraints },
+              ]}
+              columns={[
+                { title: t('templateScenarios.category'), dataIndex: 'category', key: 'category' },
+                { title: t('templateScenarios.create'), dataIndex: 'create', key: 'create' },
+                { title: t('templateScenarios.update'), dataIndex: 'update', key: 'update' },
+                { title: t('templateScenarios.skip'), dataIndex: 'skip', key: 'skip' },
+              ]}
+              rowKey="key"
+              pagination={false}
+              size="small"
+              style={{ marginBottom: 16 }}
+            />
+            {importResult.warnings.length > 0 && (
+              <div style={{ marginBottom: importResult.errors.length > 0 ? 12 : 0 }}>
+                {importResult.warnings.map((w, i) => (
+                  <Alert key={`warn-${i}`} message={w} type="warning" showIcon style={{ marginBottom: 8 }} />
+                ))}
+              </div>
+            )}
+            {importResult.errors.length > 0 && (
+              <div>
+                {importResult.errors.map((e, i) => (
+                  <Alert key={`err-${i}`} message={e} type="error" showIcon style={{ marginBottom: 8 }} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

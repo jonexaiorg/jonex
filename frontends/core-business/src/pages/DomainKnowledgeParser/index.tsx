@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
-import { Button, Select, Table } from 'antd';
-import { observer } from 'mobx-react-lite';
+import { Button, Input, Select, Table } from 'antd';
 import { useStore } from '@/store';
 import {
   AudioFilled,
@@ -323,7 +322,6 @@ export function ParserConfigContent({ kbId, spaceId }: ParserConfigContentProps)
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ParserFormState>(emptyForm);
   const [formError, setFormError] = useState('');
-  const [preprocessOpen, setPreprocessOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ParserConfigRow | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [templateTarget, setTemplateTarget] = useState<TemplateTarget>('prompt');
@@ -432,7 +430,7 @@ export function ParserConfigContent({ kbId, spaceId }: ParserConfigContentProps)
     setEditingId(null);
     setForm(emptyForm);
     setFormError('');
-    setPreprocessOpen(false);
+
     setModalOpen(true);
   };
 
@@ -441,13 +439,13 @@ export function ParserConfigContent({ kbId, spaceId }: ParserConfigContentProps)
     setEditingId(row.id);
     setForm(rowToForm(row));
     setFormError('');
-    setPreprocessOpen(false);
+
     setModalOpen(true);
   };
 
   const closeFormModal = () => {
     setModalOpen(false);
-    setPreprocessOpen(false);
+
     setFormError('');
   };
 
@@ -469,23 +467,6 @@ export function ParserConfigContent({ kbId, spaceId }: ParserConfigContentProps)
       };
     });
     setFormError('');
-  };
-
-  const togglePreprocess = (value: string) => {
-    setForm((prev) => {
-      const exists = prev.preprocessing.includes(value);
-      return {
-        ...prev,
-        preprocessing: exists ? prev.preprocessing.filter((item) => item !== value) : [...prev.preprocessing, value],
-      };
-    });
-  };
-
-  const removePreprocess = (value: string) => {
-    setForm((prev) => ({
-      ...prev,
-      preprocessing: prev.preprocessing.filter((item) => item !== value),
-    }));
   };
 
   const buildPayload = (): ParserSettingPayload => ({
@@ -790,7 +771,7 @@ export function ParserConfigContent({ kbId, spaceId }: ParserConfigContentProps)
                     {t('parserConfig.fromTemplate')}
                   </Button>
                 </label>
-                <textarea
+                <Input.TextArea
                   id="parser-prompt"
                   className="parser-form-control parser-textarea"
                   value={form.prompt}
@@ -804,39 +785,17 @@ export function ParserConfigContent({ kbId, spaceId }: ParserConfigContentProps)
                   {t('parserConfig.preprocessing')}
                   <span>{t('parserConfig.preprocessingHint')}</span>
                 </label>
-                <div className="parser-skill-selector">
-                  {form.preprocessing.length > 0 && (
-                    <div className="parser-skill-tags">
-                      {form.preprocessing.map((item) => (
-                        <Button key={item} type="text" size="small" onClick={() => removePreprocess(item)}>
-                          {t(PREPROCESS_DISPLAY_KEYS[item] || item)}
-                          <CloseOutlined />
-                        </Button>
-                      ))}
-                    </div>
-                  )}
-                  <Button className="parser-skill-input-wrap" onClick={() => setPreprocessOpen((open) => !open)}>
-                    <span>
-                      {form.preprocessing.length ? t('parserConfig.continueSelect') : t('parserConfig.clickSelect')}
-                    </span>
-                    <DownOutlined />
-                  </Button>
-                  {preprocessOpen && (
-                    <div className="parser-skill-dropdown">
-                      {preprocessOptions.map((item) => (
-                        <Button
-                          key={item}
-
-                          className={`parser-skill-option ${form.preprocessing.includes(item) ? 'is-checked' : ''}`}
-                          onClick={() => togglePreprocess(item)}
-                        >
-                          <span className="parser-checkbox-box" />
-                          {t(PREPROCESS_DISPLAY_KEYS[item] || item)}
-                        </Button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <Select
+                  mode="multiple"
+                  style={{ width: '100%' }}
+                  placeholder={t('parserConfig.clickSelect')}
+                  value={form.preprocessing}
+                  onChange={(values) => setForm((prev) => ({ ...prev, preprocessing: values }))}
+                  options={preprocessOptions.map((item) => ({
+                    value: item,
+                    label: t(PREPROCESS_DISPLAY_KEYS[item] || item),
+                  }))}
+                />
               </div>
 
               <div className="parser-modal-divider" />
@@ -867,7 +826,7 @@ export function ParserConfigContent({ kbId, spaceId }: ParserConfigContentProps)
                         {t('parserConfig.fromTemplate')}
                       </Button>
                     </label>
-                    <textarea
+                    <Input.TextArea
                       id="parser-summary-prompt"
                       className="parser-form-control parser-mini-textarea"
                       value={form.summaryPrompt}
@@ -897,7 +856,7 @@ export function ParserConfigContent({ kbId, spaceId }: ParserConfigContentProps)
                         {t('parserConfig.fromTemplate')}
                       </Button>
                     </label>
-                    <textarea
+                    <Input.TextArea
                       id="parser-tag-prompt"
                       className="parser-form-control parser-mini-textarea"
                       value={form.tagPrompt}
@@ -988,10 +947,9 @@ export function ParserConfigContent({ kbId, spaceId }: ParserConfigContentProps)
   );
 }
 
-const DomainKnowledgeParser = observer(function DomainKnowledgeParser() {
+const DomainKnowledgeParser = function DomainKnowledgeParser() {
   const { global } = useStore();
   return <ParserConfigContent spaceId={global.currentSpaceId} />;
-});
+};
 
-DomainKnowledgeParser.displayName = 'DomainKnowledgeParser';
 export default DomainKnowledgeParser;

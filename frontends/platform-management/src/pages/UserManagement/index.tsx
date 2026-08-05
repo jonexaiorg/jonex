@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Input, Button, Table, Tag, Select, Spin, Result } from 'antd';
+import { Input, Button, Table, Tag, Select, Result } from 'antd';
 import { SearchOutlined, PlusOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { listAllUsers, type UserItem } from '../../api/users';
@@ -124,35 +124,31 @@ export default function UserManagement() {
       key: 'actions',
       width: 200,
       render: (_: unknown, r: UserItem) => (
-        <span>
-          <a className="yx-table-action" onClick={() => openEdit(r)}>
+        <span style={{ whiteSpace: 'nowrap' }}>
+          <Button type="link" size="small" onClick={() => openEdit(r)}>
             {t('common.edit')}
-          </a>
-          <a
-            className="yx-table-action"
+          </Button>
+          <Button
+            type="link"
+            size="small"
             style={{ marginLeft: 8 }}
             onClick={() => toggleStatusModalRef.current?.open(r)}
           >
             {r.status === 1 ? t('userManagement.disable') : t('userManagement.enable')}
-          </a>
-          <a
-            className="yx-table-action"
+          </Button>
+          <Button
+            type="link"
+            size="small"
             style={{ marginLeft: 8, color: '#dc2626' }}
             onClick={() => deleteConfirmModalRef.current?.open(r)}
           >
             {t('common.delete')}
-          </a>
+          </Button>
         </span>
       ),
     },
   ];
 
-  if (loading)
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', minHeight: 300, alignItems: 'center' }}>
-        <Spin size="large" />
-      </div>
-    );
   if (error)
     return (
       <Result
@@ -200,25 +196,27 @@ export default function UserManagement() {
         <div className="user-main">
           <div className="yx-card">
             <div className="yx-toolbar">
-              <Input
-                prefix={<SearchOutlined />}
-                placeholder={t('userManagement.searchUsers')}
-                style={{ width: 200 }}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                allowClear
-              />
-              <Select
-                placeholder={t('userManagement.allRoles')}
-                style={{ width: 140 }}
-                value={roleFilter || undefined}
-                onChange={(v) => setRoleFilter(v || '')}
-                allowClear
-                options={[
-                  { label: t('auth.systemAdmin'), value: 'admin' },
-                  { label: t('userManagement.roleUser'), value: 'user' },
-                ]}
-              />
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flex: 1 }}>
+                <Input
+                  prefix={<SearchOutlined />}
+                  placeholder={t('userManagement.searchUsers')}
+                  style={{ width: 200 }}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  allowClear
+                />
+                <Select
+                  placeholder={t('userManagement.allRoles')}
+                  style={{ width: 140 }}
+                  value={roleFilter || undefined}
+                  onChange={(v) => setRoleFilter(v || '')}
+                  allowClear
+                  options={[
+                    { label: t('auth.systemAdmin'), value: 'admin' },
+                    { label: t('userManagement.roleUser'), value: 'user' },
+                  ]}
+                />
+              </div>
               <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
                 {t('userManagement.createUser')}
               </Button>
@@ -226,6 +224,7 @@ export default function UserManagement() {
             <Table
               columns={columns}
               dataSource={filtered}
+              loading={loading}
               rowKey="id"
               pagination={{
                 total: filtered.length,

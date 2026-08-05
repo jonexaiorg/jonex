@@ -1,22 +1,10 @@
-import React, { createContext, useContext, type ReactNode } from 'react';
-import global from './global';
+import { useGlobalStore } from './global';
 
-interface ComboStore {
-  global: typeof global;
+/** 兼容旧用法：const { global } = useStore(); global.xxx 仍可响应式工作 */
+export function useStore() {
+  return { global: useGlobalStore() };
 }
 
-const comboStore: ComboStore = {
-  global,
-};
-const StoreContext = createContext<ComboStore | null>(null);
+export { useGlobalStore } from './global';
 
-export function useStore(): ComboStore {
-  const context = useContext(StoreContext);
-  return context || comboStore;
-}
-
-export function StoreProvider({ children, store }: { children: ReactNode; store?: ComboStore }) {
-  return <StoreContext.Provider value={store ?? null}>{children}</StoreContext.Provider>;
-}
-
-export default comboStore;
+export default useGlobalStore;

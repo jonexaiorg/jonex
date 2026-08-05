@@ -140,10 +140,21 @@ class AnthropicDriver(BaseModelDriver):
     # ── HTTP ────────────────────────────────────────────────────────
 
     async def _send_request(self, url: str, body: dict, spec: ModelSpec) -> dict:
+        # [jonex] Gap A: lazy-import contextvar overlay to avoid circular imports
+        try:
+            from raganything.service.jonex_metering_ctx import (
+                build_ingest_headers as _build_ingest_h,
+            )
+        except ImportError:
+            _build_ingest_h = lambda: {}  # noqa: E731
+
         headers = {
             "Content-Type": "application/json",
             "x-api-key": spec.api_key,
             "anthropic-version": "2023-06-01",
+            **spec.extra_headers,  # [jonex] X-Jonex-Tenant-Id, X-Jonex-Kb-Id static fallback
+            # [jonex] Gap A: overlay per-task contextvar (doc_id/trace_id)
+            **_build_ingest_h(),
         }
         async with httpx.AsyncClient(timeout=120.0) as client:
             try:

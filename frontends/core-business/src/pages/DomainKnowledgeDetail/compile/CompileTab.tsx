@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Modal, Tabs, message } from 'antd';
+import { Alert, Button, Modal, Space, Spin, Tabs, Typography, message } from 'antd';
 import type {
   OntologyObjectDef,
   OntologyRelationDef,
@@ -11,6 +11,8 @@ import type {
   SaveOntologyRelationPayload,
   SaveOntologyConstraintPayload,
   SaveCompileStepPayload,
+  CompiledSchema,
+  YamlImportResult,
 } from '@/types/domainKnowledge';
 import { ontologyStatusLabelKey } from '@/types/domainKnowledge';
 import {
@@ -34,6 +36,9 @@ import {
   deleteCompileStep,
   getEngineSetting,
   saveEngineSetting,
+  fetchCompiledSchemaForEditing,
+  exportCompiledSchemaYaml,
+  importCompiledSchemaYaml,
 } from '@/api/domainKnowledge';
 import OntologyObjectSection from './OntologyObjectSection';
 import OntologyRelationSection from './OntologyRelationSection';
@@ -96,6 +101,10 @@ export default function CompileTab({ kbId }: Props) {
   const [targetOptions, setTargetOptions] = useState<ConstraintTargetOptions>(EMPTY_TARGET_OPTIONS);
   const [steps, setSteps] = useState<CompileStep[]>([]);
   const [engine, setEngine] = useState<EngineSetting | null>(null);
+  const [loadingCompiledSchema, setLoadingCompiledSchema] = useState(false);
+
+  // compiled schema (for schema_version tracking and YAML import)
+  const [compiledSchema, setCompiledSchema] = useState<CompiledSchema | null>(null);
   const [loadingObjects, setLoadingObjects] = useState(false);
   const [loadingRelations, setLoadingRelations] = useState(false);
   const [loadingConstraints, setLoadingConstraints] = useState(false);
@@ -129,6 +138,17 @@ export default function CompileTab({ kbId }: Props) {
     mode: 'object' | 'relation';
   }>({ open: false, mode: 'object' });
   const [submitting, setSubmitting] = useState(false);
+
+  // YAML import state
+  const yamlFileInputRef = useRef<HTMLInputElement>(null);
+  const [yamlImportModal, setYamlImportModal] = useState<{
+    open: boolean;
+    result: YamlImportResult | null;
+    loading: boolean;
+    error: string | null;
+  }>({ open: false, result: null, loading: false, error: null });
+  const [yamlExporting, setYamlExporting] = useState(false);
+  const [yamlImporting, setYamlImporting] = useState(false);
 
   const loadObjects = useCallback(() => {
     setLoadingObjects(true);
@@ -176,6 +196,14 @@ export default function CompileTab({ kbId }: Props) {
       .finally(() => setLoadingEngine(false));
   }, [kbId]);
 
+  const loadCompiledSchema = useCallback(() => {
+    setLoadingCompiledSchema(true);
+    fetchCompiledSchemaForEditing(kbId)
+      .then(setCompiledSchema)
+      .catch((e) => message.error(e?.message || 'Failed to load compiled schema'))
+      .finally(() => setLoadingCompiledSchema(false));
+  }, [kbId]);
+
   useEffect(() => {
     loadObjects();
     loadRelations();
@@ -183,7 +211,8 @@ export default function CompileTab({ kbId }: Props) {
     loadTargetOptions();
     loadSteps();
     loadEngine();
-  }, [loadObjects, loadRelations, loadConstraints, loadTargetOptions, loadSteps, loadEngine]);
+    loadCompiledSchema();
+  }, [loadObjects, loadRelations, loadConstraints, loadTargetOptions, loadSteps, loadEngine, loadCompiledSchema]);
 
   // 编译 schema 三类共用全量保存，任一保存后同步刷新三类，保证 schema_version 与目标选项一致
   const reloadCompiledSchema = useCallback(() => {
@@ -191,7 +220,8 @@ export default function CompileTab({ kbId }: Props) {
     loadRelations();
     loadConstraints();
     loadTargetOptions();
-  }, [loadObjects, loadRelations, loadConstraints, loadTargetOptions]);
+    loadCompiledSchema();
+  }, [loadObjects, loadRelations, loadConstraints, loadTargetOptions, loadCompiledSchema]);
 
   const handleSaveError = (e: any, fallback: string) => {
     const msg = e?.message || fallback;
@@ -360,6 +390,90 @@ export default function CompileTab({ kbId }: Props) {
     }
   };
 
+  // ─── YAML 导出/导入 ────────────────────────────────
+
+  const yamlImportFileRef = useRef<File | null>(null);
+
+  const handleExportYaml = async () => {
+    setYamlExporting(true);
+    try {
+      const result = await exportCompiledSchemaYaml(kbId);
+      const blob = new Blob([result.yaml_text], { type: 'application/x-yaml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = result.filename || `compiled-schema-${kbId}.yaml`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      message.error(e?.message || t('compile.yamlImportFailed'));
+    } finally {
+      setYamlExporting(false);
+    }
+  };
+
+  const handleImportYamlClick = () => {
+    yamlFileInputRef.current?.click();
+  };
+
+  const doImport = async (dryRun: boolean) => {
+    const file = yamlImportFileRef.current;
+    const schemaVersion = compiledSchema?.schema_version;
+    if (!file || schemaVersion == null) {
+      message.error(t('compile.yamlImportSelectFile'));
+      return;
+    }
+
+    if (!dryRun) {
+      setYamlImporting(true);
+    }
+    try {
+      const result = await importCompiledSchemaYaml(kbId, schemaVersion, file, dryRun);
+      if (dryRun) {
+        setYamlImportModal({ open: true, result, loading: false, error: null });
+      } else {
+        message.success(t('compile.yamlImportSuccess'));
+        setYamlImportModal({ open: false, result: null, loading: false, error: null });
+        yamlImportFileRef.current = null;
+        reloadCompiledSchema();
+      }
+    } catch (e: any) {
+      const errMsg = e?.message || t('compile.yamlImportFailed');
+      if (dryRun) {
+        setYamlImportModal((prev) => ({ ...prev, loading: false, error: errMsg }));
+      } else {
+        // Check for 409 conflict
+        if (errMsg.includes('409') || errMsg.includes('conflict') || errMsg.includes('已被更新')) {
+          message.error(t('compile.yamlImportConflict'));
+        } else {
+          message.error(errMsg);
+        }
+      }
+    } finally {
+      if (!dryRun) {
+        setYamlImporting(false);
+      }
+    }
+  };
+
+  const handleYamlFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    yamlImportFileRef.current = file;
+    setYamlImportModal({ open: true, result: null, loading: true, error: null });
+    await doImport(true);
+    // reset file input so the same file can be re-selected
+    e.target.value = '';
+  };
+
+  const handleYamlImportConfirm = async () => {
+    setYamlImportModal((prev) => ({ ...prev, loading: true, error: null }));
+    await doImport(false);
+  };
+
   const tabItems = [
     {
       key: 'obj',
@@ -422,6 +536,23 @@ export default function CompileTab({ kbId }: Props) {
 
   return (
     <div>
+      {/* YAML 导出/导入工具栏 */}
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <Button icon={<span>&#x1F4E4;</span>} loading={yamlExporting} onClick={handleExportYaml}>
+          {t('compile.exportYaml')}
+        </Button>
+        <Button icon={<span>&#x1F4E5;</span>} onClick={handleImportYamlClick}>
+          {t('compile.importYaml')}
+        </Button>
+        <input
+          ref={yamlFileInputRef}
+          type="file"
+          accept=".yaml,.yml"
+          style={{ display: 'none' }}
+          onChange={handleYamlFileSelected}
+        />
+      </div>
+
       <Tabs activeKey={activeSubTab} onChange={setActiveSubTab} items={tabItems} />
 
       {/* 编译步骤设置、编译设置暂时隐藏（保留代码以便后续再开） */}
@@ -487,6 +618,86 @@ export default function CompileTab({ kbId }: Props) {
           loadTargetOptions();
         }}
       />
+
+      {/* YAML 导入预览/确认弹窗 */}
+      <Modal
+        title={t('compile.yamlImportTitle')}
+        open={yamlImportModal.open}
+        onCancel={() => {
+          setYamlImportModal({ open: false, result: null, loading: false, error: null });
+          yamlImportFileRef.current = null;
+        }}
+        footer={
+          <Space>
+            <Button
+              onClick={() => {
+                setYamlImportModal({ open: false, result: null, loading: false, error: null });
+                yamlImportFileRef.current = null;
+              }}
+            >
+              {t('compile.yamlImportCancel')}
+            </Button>
+            <Button
+              type="primary"
+              loading={yamlImportModal.loading || yamlImporting}
+              disabled={
+                yamlImportModal.loading ||
+                !!yamlImportModal.error ||
+                (!!yamlImportModal.result?.errors && yamlImportModal.result.errors.length > 0)
+              }
+              onClick={handleYamlImportConfirm}
+            >
+              {t('compile.yamlImportConfirm')}
+            </Button>
+          </Space>
+        }
+      >
+        {yamlImportModal.loading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <Spin />
+            <div style={{ marginTop: 12 }}>
+              <Typography.Text type="secondary">
+                {yamlImportModal.result ? t('compile.yamlImportConfirm') + '...' : t('compile.importYaml') + '...'}
+              </Typography.Text>
+            </div>
+          </div>
+        ) : yamlImportModal.error ? (
+          <Alert type="error" message={t('compile.yamlImportFailed')} description={yamlImportModal.error} showIcon />
+        ) : yamlImportModal.result ? (
+          <div>
+            {yamlImportModal.result.errors && yamlImportModal.result.errors.length > 0 && (
+              <Alert
+                type="error"
+                message={t('compile.yamlImportErrorsTitle')}
+                description={
+                  <ul style={{ margin: 0, paddingLeft: 20 }}>
+                    {yamlImportModal.result.errors.map((err, idx) => (
+                      <li key={idx}>{err}</li>
+                    ))}
+                  </ul>
+                }
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+            )}
+            <Typography.Title level={5}>{t('compile.yamlImportSummary')}</Typography.Title>
+            <div style={{ paddingLeft: 8 }}>
+              {yamlImportModal.result.counts?.entities != null && (
+                <div>{t('compile.yamlImportCountEntities', { count: yamlImportModal.result.counts.entities })}</div>
+              )}
+              {yamlImportModal.result.counts?.attributes != null && (
+                <div>{t('compile.yamlImportCountAttributes', { count: yamlImportModal.result.counts.attributes })}</div>
+              )}
+              {yamlImportModal.result.counts?.relations != null && (
+                <div>{t('compile.yamlImportCountRelations', { count: yamlImportModal.result.counts.relations })}</div>
+              )}
+              {yamlImportModal.result.counts?.constraints != null && (
+                <div>{t('compile.yamlImportCountConstraints', { count: yamlImportModal.result.counts.constraints })}</div>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 }

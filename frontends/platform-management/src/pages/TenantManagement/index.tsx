@@ -92,12 +92,6 @@ export default function TenantManagement() {
     },
   ];
 
-  if (loading)
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', minHeight: 300, alignItems: 'center' }}>
-        <Spin size="large" />
-      </div>
-    );
   if (error)
     return (
       <Result
@@ -134,6 +128,7 @@ export default function TenantManagement() {
         <Table
           columns={columns}
           dataSource={filtered}
+          loading={loading}
           rowKey="id"
           pagination={{ total: filtered.length, pageSize: 10 }}
           size="middle"

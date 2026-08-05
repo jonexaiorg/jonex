@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Empty, Modal, Spin, message } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { observer } from 'mobx-react-lite';
 import { useStore } from '@/store';
 import ReactMarkdown from 'react-markdown';
 import {
@@ -412,7 +411,7 @@ function renderStepDetail(step: ReasoningStep, t: (key: string, opts?: any) => s
   }
 }
 
-const KnowledgeSearch = observer(function KnowledgeSearch() {
+const KnowledgeSearch = function KnowledgeSearch() {
   const { t } = useTranslation();
   const { global } = useStore();
   const [query, setQuery] = useState('');
@@ -1540,7 +1539,6 @@ const KnowledgeSearch = observer(function KnowledgeSearch() {
       {viewer}
     </div>
   );
-});
+};
 
-KnowledgeSearch.displayName = 'KnowledgeSearch';
 export default KnowledgeSearch;

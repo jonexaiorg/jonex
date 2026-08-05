@@ -274,3 +274,44 @@ export async function deleteTemplateConstraint(constraintId: string): Promise<vo
   const resp = await apiClient.delete<ApiEnvelope<void>>(`/api/v1/ecosystem/templates/constraints/${constraintId}`);
   unwrapEnvelope(resp.data);
 }
+
+// ── YAML Import/Export ───────────────────────────────────
+
+export interface YamlImportSummary {
+  entities: { create: number; update: number; skip: number }
+  attributes: { create: number; update: number; skip: number }
+  relations: { create: number; update: number; skip: number }
+  constraints: { create: number; update: number; skip: number }
+}
+
+export interface YamlImportResult {
+  dry_run: boolean
+  mode: string
+  summary: YamlImportSummary
+  warnings: string[]
+  errors: string[]
+}
+
+export async function exportScenarioOntologyYaml(
+  scenarioId: string,
+): Promise<{ filename: string; yaml_text: string; warnings: string[] }> {
+  const resp = await apiClient.get<
+    ApiEnvelope<{ filename: string; yaml_text: string; warnings: string[] }>
+  >(`/api/v1/ecosystem/templates/scenarios/${scenarioId}/ontology-yaml/export`)
+  return unwrapEnvelope(resp.data)
+}
+
+export async function importScenarioOntologyYaml(
+  scenarioId: string,
+  file: File,
+  dryRun: boolean,
+): Promise<YamlImportResult> {
+  const fd = new FormData()
+  fd.append('file', file)
+  const resp = await apiClient.post<ApiEnvelope<YamlImportResult>>(
+    `/api/v1/ecosystem/templates/scenarios/${scenarioId}/ontology-yaml/import?dry_run=${dryRun}&mode=merge`,
+    fd,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  )
+  return unwrapEnvelope(resp.data)
+}

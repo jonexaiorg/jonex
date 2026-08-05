@@ -185,18 +185,35 @@ class VideoModalProcessor(BaseModalProcessor):
         modal_content["_video_quick_hash"] = _quick
         modal_content["_video_source_id"] = _quick
 
+        # 获取真实视频时长，用于修复 scene 缺失/为零的时间数据
+        real_duration = self._get_duration(video_path) or 0.0
+
         # 将 MPS scenes 合成 faux segments，复用下游 chunk 管线
         scenes = result.scenes or []
         if scenes:
             synthetic_segments = []
-            for i, scene in enumerate(scenes):
+            sorted_scenes = sorted(
+                scenes,
+                key=lambda s: s.get("start_time", 0.0) or 0.0,
+            )
+            for i, scene in enumerate(sorted_scenes):
                 desc = scene.get("description", "")
+                st = scene.get("start_time")
+                et = scene.get("end_time")
+                # 若 scene 缺少或为零的时间数据，按索引均分视频时长
+                if st is None and et is None:
+                    n = len(sorted_scenes)
+                    st = (i / n) * real_duration if n > 0 and real_duration > 0 else 0.0
+                    et = ((i + 1) / n) * real_duration if n > 0 and real_duration > 0 else 0.0
+                else:
+                    st = float(st or 0)
+                    et = float(et or 0)
                 synthetic_segments.append({
                     "text": desc or json.dumps(scene, ensure_ascii=False),
-                    "start_time": scene.get("start_time", 0.0),
-                    "end_time": scene.get("end_time", 0.0),
+                    "start_time": st,
+                    "end_time": et,
                     "segment_index": i,
-                    "relative_position": i / max(len(scenes), 1),
+                    "relative_position": i / max(len(sorted_scenes), 1),
                     "source_segment_indices": [i],
                     "speaker_labels": [],
                     "group_summary": desc or result.summary,
@@ -206,7 +223,7 @@ class VideoModalProcessor(BaseModalProcessor):
             synthetic_segments = [{
                 "text": result.summary or result.raw_json,
                 "start_time": 0.0,
-                "end_time": 0.0,
+                "end_time": real_duration or 0.0,
                 "segment_index": 0,
                 "relative_position": 0.0,
                 "source_segment_indices": [],
@@ -220,7 +237,7 @@ class VideoModalProcessor(BaseModalProcessor):
             "segments": synthetic_segments,
             "transcript": result.summary,
             "language": "unknown",
-            "duration": 0,
+            "duration": real_duration,
             "audio_sha256": _quick,
         }
         modal_content["_video_keyframes"] = []

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Input, Select, Switch, Button, message, Card, Spin, Result } from 'antd';
+import { Form, Input, Select, Switch, Button, message, Card, Spin, Result } from 'antd';
 import {
   SaveOutlined,
   UndoOutlined,
@@ -9,7 +9,7 @@ import {
   MailOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { listSystemConfigs, updateSystemConfig, type SystemConfigItem } from '../../api/systemConfig';
+import { listSystemConfigs, updateSystemConfig } from '../../api/systemConfig';
 
 interface ConfigMap {
   [key: string]: string;
@@ -37,9 +37,12 @@ const DEFAULTS: ConfigMap = {
   webhook_url: 'https://hooks.example.com/jonex/notify',
 };
 
+/** 布尔配置项（Switch 使用） */
+const BOOL_KEYS = new Set(['two_factor', 'auto_backup']);
+
 export default function SystemConfig() {
   const { t } = useTranslation();
-  const [configs, setConfigs] = useState<ConfigMap>({});
+  const [form] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [changed, setChanged] = useState<Set<string>>(new Set());
@@ -54,26 +57,23 @@ export default function SystemConfig() {
       r.items.forEach((c) => {
         map[c.config_key] = c.config_value || '';
       });
-      setConfigs({ ...DEFAULTS, ...map });
+      const merged: ConfigMap = { ...DEFAULTS, ...map };
+      // Switch 字段转换为 boolean 供 Form 使用
+      const values: Record<string, string | boolean> = {};
+      Object.entries(merged).forEach(([k, v]) => {
+        values[k] = BOOL_KEYS.has(k) ? v === 'true' : v;
+      });
+      form.setFieldsValue(values);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t('common.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, form]);
 
   useEffect(() => {
     load();
   }, [load]);
-
-  const get = (key: string) => configs[key] || DEFAULTS[key] || '';
-  const set = (key: string, value: string) => {
-    setConfigs((p) => ({ ...p, [key]: value }));
-    setChanged((p) => new Set(p).add(key));
-  };
-
-  const getBool = (key: string) => get(key) === 'true';
-  const setBool = (key: string, v: boolean) => set(key, v ? 'true' : 'false');
 
   const handleSave = async () => {
     if (changed.size === 0) {
@@ -81,11 +81,14 @@ export default function SystemConfig() {
       return;
     }
     setSaving(true);
+    const values = form.getFieldsValue();
     let done = 0;
     let fail = 0;
     for (const key of changed) {
+      const raw = values[key];
+      const str = BOOL_KEYS.has(key) ? String(raw === true || raw === 'true') : String(raw ?? '');
       try {
-        await updateSystemConfig(key, get(key));
+        await updateSystemConfig(key, str);
         done++;
       } catch {
         fail++;
@@ -101,7 +104,11 @@ export default function SystemConfig() {
   };
 
   const handleReset = () => {
-    setConfigs({ ...DEFAULTS });
+    const values: Record<string, string | boolean> = {};
+    Object.entries(DEFAULTS).forEach(([k, v]) => {
+      values[k] = BOOL_KEYS.has(k) ? v === 'true' : v;
+    });
+    form.setFieldsValue(values);
     setChanged(new Set(Object.keys(DEFAULTS)));
     message.info(t('systemConfig.resetToDefaultMsg'));
   };
@@ -127,6 +134,9 @@ export default function SystemConfig() {
     );
 
   const changedStyle = { borderColor: '#f59e0b', boxShadow: '0 0 0 2px rgba(245,158,11,0.15)' };
+  const fieldStyle = (key: string) => (changed.has(key) ? changedStyle : undefined);
+  const grid = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 } as const;
+  const gridTop = { ...grid, marginTop: 14 } as const;
 
   return (
     <div>
@@ -135,264 +145,189 @@ export default function SystemConfig() {
         <p style={{ color: '#64748b', margin: '4px 0 0', fontSize: 14 }}>{t('systemConfig.description')}</p>
       </div>
 
-      <Card
-        style={{ borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 20 }}
-        styles={{ body: { padding: 24 } }}
-      >
-        <h3
-          style={{
-            margin: '0 0 16px',
-            fontSize: 16,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            paddingBottom: 12,
-            borderBottom: '1px solid #e2e8f0',
-          }}
+      <Form form={form} layout="vertical" onValuesChange={(cv) => setChanged((p) => new Set([...p, ...Object.keys(cv)]))}>
+        <Card
+          style={{ borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 20 }}
+          styles={{ body: { padding: 24 } }}
         >
-          <InfoCircleOutlined style={{ color: '#3b82f6' }} /> {t('systemConfig.basicSettings')}
-        </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.platformName')}</label>
-            <Input
-              value={get('platform_name')}
-              onChange={(e) => set('platform_name', e.target.value)}
-              style={changed.has('platform_name') ? changedStyle : undefined}
-            />
+          <h3
+            style={{
+              margin: '0 0 16px',
+              fontSize: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              paddingBottom: 12,
+              borderBottom: '1px solid #e2e8f0',
+            }}
+          >
+            <InfoCircleOutlined style={{ color: '#3b82f6' }} /> {t('systemConfig.basicSettings')}
+          </h3>
+          <div style={grid}>
+            <Form.Item name="platform_name" label={t('systemConfig.platformName')}>
+              <Input style={fieldStyle('platform_name')} />
+            </Form.Item>
+            <Form.Item name="logo_url" label={t('systemConfig.logoUrl')}>
+              <Input style={fieldStyle('logo_url')} />
+            </Form.Item>
           </div>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.logoUrl')}</label>
-            <Input
-              value={get('logo_url')}
-              onChange={(e) => set('logo_url', e.target.value)}
-              style={changed.has('logo_url') ? changedStyle : undefined}
-            />
+          <div style={gridTop}>
+            <Form.Item name="default_language" label={t('systemConfig.defaultLanguage')}>
+              <Select
+                style={{ width: '100%', ...(fieldStyle('default_language') || {}) }}
+                options={[
+                  { value: 'zh', label: t('systemConfig.chinese') },
+                  { value: 'en', label: t('systemConfig.english') },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="timezone" label={t('systemConfig.timezone')}>
+              <Select
+                style={{ width: '100%', ...(fieldStyle('timezone') || {}) }}
+                options={[
+                  { value: 'shanghai', label: 'Asia/Shanghai (UTC+8)' },
+                  { value: 'utc', label: 'UTC' },
+                ]}
+              />
+            </Form.Item>
           </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 14 }}>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.defaultLanguage')}</label>
-            <Select
-              value={get('default_language')}
-              onChange={(v) => set('default_language', v)}
-              style={{ width: '100%', ...(changed.has('default_language') ? changedStyle : {}) }}
-              options={[
-                { value: 'zh', label: t('systemConfig.chinese') },
-                { value: 'en', label: t('systemConfig.english') },
-              ]}
-            />
-          </div>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.timezone')}</label>
-            <Select
-              value={get('timezone')}
-              onChange={(v) => set('timezone', v)}
-              style={{ width: '100%', ...(changed.has('timezone') ? changedStyle : {}) }}
-              options={[
-                { value: 'shanghai', label: 'Asia/Shanghai (UTC+8)' },
-                { value: 'utc', label: 'UTC' },
-              ]}
-            />
-          </div>
-        </div>
-      </Card>
+        </Card>
 
-      <Card
-        style={{ borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 20 }}
-        styles={{ body: { padding: 24 } }}
-      >
-        <h3
-          style={{
-            margin: '0 0 16px',
-            fontSize: 16,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            paddingBottom: 12,
-            borderBottom: '1px solid #e2e8f0',
-          }}
+        <Card
+          style={{ borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 20 }}
+          styles={{ body: { padding: 24 } }}
         >
-          <SafetyOutlined style={{ color: '#3b82f6' }} /> {t('systemConfig.securitySettings')}
-        </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.sessionTimeout')}</label>
-            <Input
-              value={get('session_timeout')}
-              onChange={(e) => set('session_timeout', e.target.value)}
-              style={changed.has('session_timeout') ? changedStyle : undefined}
-            />
+          <h3
+            style={{
+              margin: '0 0 16px',
+              fontSize: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              paddingBottom: 12,
+              borderBottom: '1px solid #e2e8f0',
+            }}
+          >
+            <SafetyOutlined style={{ color: '#3b82f6' }} /> {t('systemConfig.securitySettings')}
+          </h3>
+          <div style={grid}>
+            <Form.Item name="session_timeout" label={t('systemConfig.sessionTimeout')}>
+              <Input style={fieldStyle('session_timeout')} />
+            </Form.Item>
+            <Form.Item name="password_min_length" label={t('systemConfig.passwordMinLength')}>
+              <Input style={fieldStyle('password_min_length')} />
+            </Form.Item>
           </div>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.passwordMinLength')}</label>
-            <Input
-              value={get('password_min_length')}
-              onChange={(e) => set('password_min_length', e.target.value)}
-              style={changed.has('password_min_length') ? changedStyle : undefined}
-            />
+          <div style={gridTop}>
+            <Form.Item name="login_lock_threshold" label={t('systemConfig.loginLockThreshold')}>
+              <Select
+                style={{ width: '100%', ...(fieldStyle('login_lock_threshold') || {}) }}
+                options={[
+                  { value: '5', label: t('systemConfig.lockAfter5') },
+                  { value: '3', label: t('systemConfig.lockAfter3') },
+                  { value: '0', label: t('systemConfig.noLock') },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="lock_duration" label={t('systemConfig.lockDuration')}>
+              <Input style={fieldStyle('lock_duration')} />
+            </Form.Item>
           </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 14 }}>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.loginLockThreshold')}</label>
-            <Select
-              value={get('login_lock_threshold')}
-              onChange={(v) => set('login_lock_threshold', v)}
-              style={{ width: '100%', ...(changed.has('login_lock_threshold') ? changedStyle : {}) }}
-              options={[
-                { value: '5', label: t('systemConfig.lockAfter5') },
-                { value: '3', label: t('systemConfig.lockAfter3') },
-                { value: '0', label: t('systemConfig.noLock') },
-              ]}
-            />
-          </div>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.lockDuration')}</label>
-            <Input
-              value={get('lock_duration')}
-              onChange={(e) => set('lock_duration', e.target.value)}
-              style={changed.has('lock_duration') ? changedStyle : undefined}
-            />
-          </div>
-        </div>
-        <div style={{ marginTop: 14 }}>
-          <Switch checked={getBool('two_factor')} onChange={(v) => setBool('two_factor', v)} />{' '}
-          <span style={{ marginLeft: 8 }}>{t('systemConfig.twoFactorAuth')}</span>
-        </div>
-      </Card>
+          <Form.Item name="two_factor" label={t('systemConfig.twoFactorAuth')} valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Card>
 
-      <Card
-        style={{ borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 20 }}
-        styles={{ body: { padding: 24 } }}
-      >
-        <h3
-          style={{
-            margin: '0 0 16px',
-            fontSize: 16,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            paddingBottom: 12,
-            borderBottom: '1px solid #e2e8f0',
-          }}
+        <Card
+          style={{ borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 20 }}
+          styles={{ body: { padding: 24 } }}
         >
-          <HddOutlined style={{ color: '#3b82f6' }} /> {t('systemConfig.storageSettings')}
-        </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.storagePath')}</label>
-            <Input
-              value={get('storage_path')}
-              onChange={(e) => set('storage_path', e.target.value)}
-              style={changed.has('storage_path') ? changedStyle : undefined}
-            />
+          <h3
+            style={{
+              margin: '0 0 16px',
+              fontSize: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              paddingBottom: 12,
+              borderBottom: '1px solid #e2e8f0',
+            }}
+          >
+            <HddOutlined style={{ color: '#3b82f6' }} /> {t('systemConfig.storageSettings')}
+          </h3>
+          <div style={grid}>
+            <Form.Item name="storage_path" label={t('systemConfig.storagePath')}>
+              <Input style={fieldStyle('storage_path')} />
+            </Form.Item>
+            <Form.Item name="backup_path" label={t('systemConfig.backupPath')}>
+              <Input style={fieldStyle('backup_path')} />
+            </Form.Item>
           </div>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.backupPath')}</label>
-            <Input
-              value={get('backup_path')}
-              onChange={(e) => set('backup_path', e.target.value)}
-              style={changed.has('backup_path') ? changedStyle : undefined}
-            />
+          <div style={gridTop}>
+            <Form.Item name="storage_limit" label={t('systemConfig.storageLimit')}>
+              <Input style={fieldStyle('storage_limit')} />
+            </Form.Item>
+            <Form.Item name="storage_used" label={t('systemConfig.storageUsed')}>
+              <Input disabled addonAfter="GB (25.4%)" />
+            </Form.Item>
           </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 14 }}>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.storageLimit')}</label>
-            <Input
-              value={get('storage_limit')}
-              onChange={(e) => set('storage_limit', e.target.value)}
-              style={changed.has('storage_limit') ? changedStyle : undefined}
-            />
-          </div>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.storageUsed')}</label>
-            <Input value={get('storage_used') + ' GB (25.4%)'} disabled />
-          </div>
-        </div>
-        <div style={{ marginTop: 14 }}>
-          <Switch checked={getBool('auto_backup')} onChange={(v) => setBool('auto_backup', v)} />{' '}
-          <span style={{ marginLeft: 8 }}>{t('systemConfig.autoBackup')}</span>
-        </div>
-      </Card>
+          <Form.Item name="auto_backup" label={t('systemConfig.autoBackup')} valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Card>
 
-      <Card
-        style={{ borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 20 }}
-        styles={{ body: { padding: 24 } }}
-      >
-        <h3
-          style={{
-            margin: '0 0 16px',
-            fontSize: 16,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            paddingBottom: 12,
-            borderBottom: '1px solid #e2e8f0',
-          }}
+        <Card
+          style={{ borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 20 }}
+          styles={{ body: { padding: 24 } }}
         >
-          <MailOutlined style={{ color: '#3b82f6' }} /> {t('systemConfig.notificationSettings')}
-        </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.smtpServer')}</label>
-            <Input
-              value={get('smtp_server')}
-              onChange={(e) => set('smtp_server', e.target.value)}
-              style={changed.has('smtp_server') ? changedStyle : undefined}
-            />
+          <h3
+            style={{
+              margin: '0 0 16px',
+              fontSize: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              paddingBottom: 12,
+              borderBottom: '1px solid #e2e8f0',
+            }}
+          >
+            <MailOutlined style={{ color: '#3b82f6' }} /> {t('systemConfig.notificationSettings')}
+          </h3>
+          <div style={grid}>
+            <Form.Item name="smtp_server" label={t('systemConfig.smtpServer')}>
+              <Input style={fieldStyle('smtp_server')} />
+            </Form.Item>
+            <Form.Item name="smtp_port" label={t('systemConfig.smtpPort')}>
+              <Input style={fieldStyle('smtp_port')} />
+            </Form.Item>
           </div>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.smtpPort')}</label>
-            <Input
-              value={get('smtp_port')}
-              onChange={(e) => set('smtp_port', e.target.value)}
-              style={changed.has('smtp_port') ? changedStyle : undefined}
-            />
+          <div style={gridTop}>
+            <Form.Item name="sender_email" label={t('systemConfig.senderEmail')}>
+              <Input style={fieldStyle('sender_email')} />
+            </Form.Item>
+            <Form.Item name="admin_email" label={t('systemConfig.adminEmail')}>
+              <Input style={fieldStyle('admin_email')} />
+            </Form.Item>
           </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 14 }}>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.senderEmail')}</label>
-            <Input
-              value={get('sender_email')}
-              onChange={(e) => set('sender_email', e.target.value)}
-              style={changed.has('sender_email') ? changedStyle : undefined}
-            />
-          </div>
-          <div className="yx-form-row">
-            <label>{t('systemConfig.adminEmail')}</label>
-            <Input
-              value={get('admin_email')}
-              onChange={(e) => set('admin_email', e.target.value)}
-              style={changed.has('admin_email') ? changedStyle : undefined}
-            />
-          </div>
-        </div>
-        <div className="yx-form-row" style={{ marginTop: 14 }}>
-          <label>{t('systemConfig.webhookUrl')}</label>
-          <Input
-            value={get('webhook_url')}
-            onChange={(e) => set('webhook_url', e.target.value)}
-            style={changed.has('webhook_url') ? changedStyle : undefined}
-          />
-        </div>
-      </Card>
+          <Form.Item name="webhook_url" label={t('systemConfig.webhookUrl')}>
+            <Input style={fieldStyle('webhook_url')} />
+          </Form.Item>
+        </Card>
 
-      <div style={{ display: 'flex', gap: 12 }}>
-        <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
-          {t('systemConfig.saveAll')}
-        </Button>
-        <Button icon={<UndoOutlined />} onClick={handleReset}>
-          {t('systemConfig.resetToDefault')}
-        </Button>
-        {changed.size > 0 && (
-          <span style={{ color: '#f59e0b', fontSize: 13, alignSelf: 'center' }}>
-            {t('systemConfig.changedItems', { count: changed.size })}
-          </span>
-        )}
-      </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
+            {t('systemConfig.saveAll')}
+          </Button>
+          <Button icon={<UndoOutlined />} onClick={handleReset}>
+            {t('systemConfig.resetToDefault')}
+          </Button>
+          {changed.size > 0 && (
+            <span style={{ color: '#f59e0b', fontSize: 13, alignSelf: 'center' }}>
+              {t('systemConfig.changedItems', { count: changed.size })}
+            </span>
+          )}
+        </div>
+      </Form>
     </div>
   );
 }

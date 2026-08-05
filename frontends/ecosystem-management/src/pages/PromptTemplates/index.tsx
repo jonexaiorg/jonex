@@ -343,7 +343,12 @@ export default function PromptTemplates() {
         onClose={() => setDetailVersion(null)}
       />
 
-      <DeleteConfirmModal deletingId={deletingId} onClose={() => setDeletingId(null)} onDeleted={loadData} />
+      <DeleteConfirmModal
+        deletingId={deletingId}
+        domainSpaceId={domainSpaceId}
+        onClose={() => setDeletingId(null)}
+        onDeleted={loadData}
+      />
     </div>
   );
 }

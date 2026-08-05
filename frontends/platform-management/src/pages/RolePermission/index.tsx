@@ -52,12 +52,6 @@ export default function RolePermission() {
     load();
   }, [load]);
 
-  if (loading)
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', minHeight: 300, alignItems: 'center' }}>
-        <Spin size="large" />
-      </div>
-    );
   if (error)
     return (
       <Result
@@ -83,54 +77,61 @@ export default function RolePermission() {
           {t('rolePermission.newRole')}
         </Button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 20 }}>
-        {roles.map((r) => {
-          const isAdmin = r.is_system === 1;
-          const display = roleCopy(r, t);
-          return (
-            <div key={r.id} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 24 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <span style={{ fontSize: 16, fontWeight: 600 }}>
-                  {display.name}
-                  {isAdmin ? t('rolePermission.system') : ''}
-                </span>
-                <span style={{ fontSize: 13, color: '#64748b' }}>
-                  <TeamOutlined /> {display.description}
-                </span>
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, minHeight: 32 }}>
-                {isAdmin ? (
-                  <Tag
-                    style={{
-                      background: '#eff6ff',
-                      color: '#3b82f6',
-                      border: 'none',
-                      borderRadius: 6,
-                      padding: '4px 12px',
-                    }}
-                  >
-                    {t('rolePermission.allPermissions')}
-                  </Tag>
-                ) : (
-                  <Tag style={{ background: '#f1f5f9', color: '#475569', border: 'none' }}>
-                    {t('rolePermission.clickToEditPerms')}
-                  </Tag>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button
-                  type="primary"
-                  size="small"
-                  icon={<EditOutlined />}
-                  onClick={() => permModalRef.current?.open(r)}
+      <Spin spinning={loading}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 20 }}>
+          {roles.map((r) => {
+            const isAdmin = r.is_system === 1;
+            const display = roleCopy(r, t);
+            return (
+              <div
+                key={r.id}
+                style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 24 }}
+              >
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}
                 >
-                  {t('rolePermission.editPerms')}
-                </Button>
+                  <span style={{ fontSize: 16, fontWeight: 600 }}>
+                    {display.name}
+                    {isAdmin ? t('rolePermission.system') : ''}
+                  </span>
+                  <span style={{ fontSize: 13, color: '#64748b' }}>
+                    <TeamOutlined /> {display.description}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, minHeight: 32 }}>
+                  {isAdmin ? (
+                    <Tag
+                      style={{
+                        background: '#eff6ff',
+                        color: '#3b82f6',
+                        border: 'none',
+                        borderRadius: 6,
+                        padding: '4px 12px',
+                      }}
+                    >
+                      {t('rolePermission.allPermissions')}
+                    </Tag>
+                  ) : (
+                    <Tag style={{ background: '#f1f5f9', color: '#475569', border: 'none' }}>
+                      {t('rolePermission.clickToEditPerms')}
+                    </Tag>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => permModalRef.current?.open(r)}
+                  >
+                    {t('rolePermission.editPerms')}
+                  </Button>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </Spin>
 
       <PermissionEditModal ref={permModalRef} perms={perms} onSaved={load} />
       <NewRoleModal ref={newRoleModalRef} onCreated={load} />
